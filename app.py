@@ -3,28 +3,26 @@ import time
 import tempfile
 from datetime import datetime
 
+import altair as alt
+import folium
 import pandas as pd
 import requests
 import streamlit as st
-import folium
 from streamlit_folium import st_folium
 
-from devices import DEVICES
+from devices import DEVICES, SOLAR_ENGINES
 from simulate import simulate_for_devices
 from report import make_pdf
 
 
 st.set_page_config(
-    page_title="SALA Solar Feasibility Simulator",
+    page_title="SALA Standardized Feasibility Study for Solar AGL",
     layout="wide"
 )
 
 LOGO_PATH = "sala_logo.png"
 
 
-# ----------------------------
-# Helpers
-# ----------------------------
 def format_seconds(seconds):
     seconds = max(0, int(seconds))
     mins, secs = divmod(seconds, 60)
@@ -65,44 +63,7 @@ def geocode_airport(query):
     }
 
 
-def build_results_table(results):
-    rows = []
-    for name, r in results.items():
-        rows.append({
-            "Device": name,
-            "Engine": r["engine"],
-            "PV (W)": r["pv"],
-            "Battery (Wh)": r["batt"],
-            "Power (W)": r["power"],
-            "Tilt": r["tilt"],
-            "Azimuth": round(r["azim"], 1),
-            "Lowest-month difference (hrs)": round(r["min_margin"], 2),
-            "Status": r["status"],
-            "Fail months": ", ".join(r["fail_months"]) if r["fail_months"] else "-"
-        })
-    return pd.DataFrame(rows)
-
-
-def status_badge(text, ok=True):
-    bg = "#0f9d58" if ok else "#d93025"
-    return f"""
-    <div style="
-        display:inline-block;
-        padding:7px 14px;
-        border-radius:999px;
-        background:{bg};
-        color:white;
-        font-weight:700;
-        font-size:14px;
-        margin-top:6px;
-    ">
-        {text}
-    </div>
-    """
-
-
 def create_map(lat, lon, label):
-    # default zoom closer to airport
     fmap = folium.Map(
         location=[lat, lon],
         zoom_start=14,
@@ -110,20 +71,18 @@ def create_map(lat, lon, label):
         tiles="CartoDB positron"
     )
 
-    # larger visible circle
     folium.CircleMarker(
         location=[lat, lon],
         radius=14,
         color="#d9534f",
         fill=True,
         fill_color="#d9534f",
-        fill_opacity=0.9,
+        fill_opacity=0.92,
         weight=3,
         popup=label if label else f"{lat:.6f}, {lon:.6f}",
         tooltip=label if label else "Selected airport"
     ).add_to(fmap)
 
-    # extra ring to make location clearer
     folium.Circle(
         location=[lat, lon],
         radius=220,
@@ -137,22 +96,65 @@ def create_map(lat, lon, label):
     return fmap
 
 
-# ----------------------------
-# Session state
-# ----------------------------
-if "lat" not in st.session_state:
-    st.session_state.lat = 40.416775
-if "lon" not in st.session_state:
-    st.session_state.lon = -3.703790
-if "airport_label" not in st.session_state:
-    st.session_state.airport_label = ""
-if "search_message" not in st.session_state:
-    st.session_state.search_message = ""
+def build_results_table(results):
+    rows = []
+    for key, r in results.items():
+        rows.append({
+            "Device": key,
+            "Engine": r["engine"],
+            "PV (W)": r["pv"],
+            "Battery (Wh)": r["batt"],
+            "Power (W)": r["power"],
+            "Tilt (deg)": r["tilt"],
+            "Azimuth (deg)": round(r["azim"], 1),
+            "Lowest-month difference (hrs)": round(r["min_margin"], 2),
+            "Status": r["status"],
+            "Fail months": ", ".join(r["fail_months"]) if r["fail_months"] else "-"
+        })
+    return pd.DataFrame(rows)
 
 
-# ----------------------------
-# Styling
-# ----------------------------
+def build_chart_df(results, required_hrs):
+    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    rows = []
+
+    for device_name, r in results.items():
+        for i, m in enumerate(months):
+            rows.append({
+                "Month": m,
+                "Hours": round(r["hours"][i], 2),
+                "Series": device_name
+            })
+
+    for m in months:
+        rows.append({
+            "Month": m,
+            "Hours": required_hrs,
+            "Series": "Required operating hours"
+        })
+
+    return pd.DataFrame(rows)
+
+
+def status_badge(text, ok=True):
+    bg = "#0f9d58" if ok else "#d93025"
+    return f"""
+    <div style="
+        display:inline-block;
+        padding:8px 14px;
+        border-radius:999px;
+        background:{bg};
+        color:white;
+        font-weight:700;
+        font-size:14px;
+        margin-top:8px;
+    ">
+        {text}
+    </div>
+    """
+
+
 st.markdown("""
 <style>
 .block-container {
@@ -163,20 +165,17 @@ st.markdown("""
 header[data-testid="stHeader"] {
     background: rgba(255,255,255,0);
 }
-div[data-testid="stToolbar"] {
-    z-index: 1000;
-}
 .main-title {
     font-size: 2.1rem;
     font-weight: 800;
     line-height: 1.05;
-    margin-bottom: 0.2rem;
+    margin-bottom: 0.25rem;
     color: #1f2937;
 }
 .sub-title {
     font-size: 1rem;
     color: #6b7280;
-    margin-bottom: 0.6rem;
+    margin-bottom: 0.55rem;
 }
 .card {
     border: 1px solid #e8edf4;
@@ -191,10 +190,6 @@ div[data-testid="stToolbar"] {
     font-weight: 800;
     margin-bottom: 14px;
     color: #1f2937;
-}
-.small-muted {
-    color: #6b7280;
-    font-size: 0.92rem;
 }
 .metric-box {
     border: 1px solid #edf1f7;
@@ -214,7 +209,7 @@ div[data-testid="stToolbar"] {
     color: #1f2937;
 }
 .device-title {
-    font-size: 1.25rem;
+    font-size: 1.2rem;
     font-weight: 800;
     margin-bottom: 0.2rem;
 }
@@ -224,6 +219,16 @@ div[data-testid="stToolbar"] {
     border-radius: 999px;
     background: #eef4ff;
     color: #234ea5;
+    font-size: 0.82rem;
+    font-weight: 700;
+    margin-top: 4px;
+}
+.builtin-tag {
+    display: inline-block;
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: #edf7ed;
+    color: #1d7a43;
     font-size: 0.82rem;
     font-weight: 700;
     margin-top: 4px;
@@ -241,9 +246,16 @@ div[data-testid="stTextInput"] input {
 """, unsafe_allow_html=True)
 
 
-# ----------------------------
-# Header
-# ----------------------------
+if "lat" not in st.session_state:
+    st.session_state.lat = 40.416775
+if "lon" not in st.session_state:
+    st.session_state.lon = -3.703790
+if "airport_label" not in st.session_state:
+    st.session_state.airport_label = ""
+if "search_message" not in st.session_state:
+    st.session_state.search_message = ""
+
+
 h1, h2 = st.columns([1, 8])
 
 with h1:
@@ -251,16 +263,13 @@ with h1:
         st.image(LOGO_PATH, width=95)
 
 with h2:
-    st.markdown('<div class="main-title">Solar Feasibility Simulator</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-title">SALA Standardized Feasibility Study for Solar AGL</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="sub-title">Airport search, accurate map preview, custom power setup, battery mode selection, PDF export</div>',
+        '<div class="sub-title">Airport search, PVGIS-based transparency, manual/default power setup, solar engine selection, graph preview, PDF export</div>',
         unsafe_allow_html=True
     )
 
 
-# ----------------------------
-# Top section: location + map
-# ----------------------------
 left, right = st.columns([1.05, 1])
 
 with left:
@@ -348,13 +357,10 @@ with right:
     st.markdown('</div>', unsafe_allow_html=True)
 
 
-# ----------------------------
-# Device selection
-# ----------------------------
 st.markdown('<div class="card">', unsafe_allow_html=True)
 st.markdown('<div class="section-title">Select devices</div>', unsafe_allow_html=True)
 
-device_options = {f"{k}. {v['name']}": k for k, v in DEVICES.items()}
+device_options = {f"{k}. {v['code']} — {v['name']}": k for k, v in DEVICES.items()}
 selected_labels = st.multiselect(
     "Choose devices to analyze",
     list(device_options.keys()),
@@ -365,35 +371,80 @@ selected_ids = [device_options[x] for x in selected_labels]
 st.markdown('</div>', unsafe_allow_html=True)
 
 
-# ----------------------------
-# Device cards
-# ----------------------------
-batt_mode_by_engine = {}
-power_override = {}
+per_device_config = {}
 
 if selected_ids:
     st.markdown('<div class="section-title">Device configuration</div>', unsafe_allow_html=True)
 
 for did in selected_ids:
     dspec = DEVICES[did]
-    device_name = dspec["name"]
-    engine_name = dspec["engine"]
-    default_power = float(dspec["power"])
-    pv = dspec["pv"]
-    batt_std = dspec["batt"]
-    has_ext = "batt_ext" in dspec
-    batt_ext = dspec.get("batt_ext")
+    system_type = dspec["system_type"]
+    default_power = float(dspec["default_power"])
 
     st.markdown('<div class="card">', unsafe_allow_html=True)
 
-    top_left, top_right = st.columns([2, 3])
+    t1, t2 = st.columns([2, 3])
 
-    with top_left:
-        st.markdown(f'<div class="device-title">{did}. {device_name}</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="engine-tag">{engine_name}</div>', unsafe_allow_html=True)
+    with t1:
+        st.markdown(f'<div class="device-title">{dspec["code"]} — {dspec["name"]}</div>', unsafe_allow_html=True)
+        if system_type == "builtin":
+            st.markdown('<div class="builtin-tag">Built-in solar and battery</div>', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="engine-tag">External Solar Engine</div>', unsafe_allow_html=True)
 
-    with top_right:
-        m1, m2, m3 = st.columns(3)
+    engine_key = None
+    battery_mode = "Std"
+    pv_display = dspec.get("pv", 0)
+    batt_display = dspec.get("batt", 0)
+    engine_label = "BUILT-IN"
+
+    if system_type == "external_engine":
+        default_engine_key = dspec["default_engine"]
+        default_engine = SOLAR_ENGINES[default_engine_key]
+        engine_mode = st.radio(
+            f"Solar Engine selection for {dspec['code']}",
+            options=["Use default Solar Engine", "Choose Solar Engine manually"],
+            horizontal=True,
+            key=f"engine_mode_{did}"
+        )
+
+        compatible_engine_keys = dspec.get("compatible_engines", list(SOLAR_ENGINES.keys()))
+
+        if engine_mode == "Use default Solar Engine":
+            engine_key = default_engine_key
+        else:
+            engine_options = {
+                f"{SOLAR_ENGINES[k]['short_name']} — {SOLAR_ENGINES[k]['name']}": k
+                for k in compatible_engine_keys
+            }
+            engine_value_list = list(engine_options.values())
+            chosen_label = st.selectbox(
+                f"Choose Solar Engine for {dspec['code']}",
+                list(engine_options.keys()),
+                index=engine_value_list.index(default_engine_key) if default_engine_key in engine_value_list else 0,
+                key=f"engine_select_{did}"
+            )
+            engine_key = engine_options[chosen_label]
+
+        eng = SOLAR_ENGINES[engine_key]
+        engine_label = eng["short_name"]
+
+        if eng.get("batt_ext"):
+            battery_mode = st.radio(
+                f"Battery mode for {dspec['code']}",
+                options=["Std", "Ext"],
+                horizontal=True,
+                key=f"battery_mode_{did}"
+            )
+            batt_display = eng["batt_ext"] if battery_mode == "Ext" else eng["batt"]
+        else:
+            battery_mode = "Std"
+            batt_display = eng["batt"]
+
+        pv_display = eng["pv"]
+
+    with t2:
+        m1, m2, m3, m4 = st.columns(4)
         with m1:
             st.markdown(f"""
             <div class="metric-box">
@@ -405,64 +456,54 @@ for did in selected_ids:
             st.markdown(f"""
             <div class="metric-box">
                 <div class="metric-label">Solar panel size</div>
-                <div class="metric-value">{pv} W</div>
+                <div class="metric-value">{pv_display} W</div>
             </div>
             """, unsafe_allow_html=True)
         with m3:
-            batt_text = f"{batt_std} Wh"
-            if has_ext:
-                batt_text += f" / {batt_ext} Wh"
             st.markdown(f"""
             <div class="metric-box">
                 <div class="metric-label">Battery size</div>
-                <div class="metric-value">{batt_text}</div>
+                <div class="metric-value">{batt_display} Wh</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with m4:
+            st.markdown(f"""
+            <div class="metric-box">
+                <div class="metric-label">Active source</div>
+                <div class="metric-value">{engine_label}</div>
             </div>
             """, unsafe_allow_html=True)
 
     st.write("")
-    cfg1, cfg2 = st.columns([1.25, 1])
 
-    with cfg1:
-        use_default = st.checkbox(
-            f"Use default power for {did}",
-            value=True,
-            key=f"use_default_power_{did}"
+    power_mode = st.radio(
+        f"Power setup for {dspec['code']}",
+        options=["Use default power", "Enter power manually"],
+        horizontal=True,
+        key=f"power_mode_{did}"
+    )
+
+    if power_mode == "Use default power":
+        selected_power = default_power
+        st.caption(f"Using default power: {default_power:.2f} W")
+    else:
+        selected_power = st.number_input(
+            f"Manual power for {dspec['code']} (W)",
+            min_value=0.01,
+            value=float(default_power),
+            step=0.01,
+            key=f"manual_power_{did}"
         )
 
-        if use_default:
-            power_override[did] = default_power
-            st.caption(f"Using default power: {default_power:.2f} W")
-        else:
-            manual_power = st.number_input(
-                f"Manual power for {did} (W)",
-                min_value=0.01,
-                value=float(default_power),
-                step=0.01,
-                key=f"manual_power_{did}"
-            )
-            power_override[did] = float(manual_power)
-
-    with cfg2:
-        if has_ext:
-            batt_mode = st.radio(
-                f"Battery mode for {engine_name}",
-                options=["Std", "Ext"],
-                horizontal=True,
-                key=f"battery_mode_{did}"
-            )
-            batt_mode_by_engine[engine_name] = batt_mode
-            selected_batt = batt_std if batt_mode == "Std" else batt_ext
-            st.caption(f"Selected battery: {selected_batt} Wh")
-        else:
-            batt_mode_by_engine[engine_name] = "Std"
-            st.caption(f"Battery mode: Standard ({batt_std} Wh)")
+    per_device_config[did] = {
+        "power": float(selected_power),
+        "engine_key": engine_key,
+        "battery_mode": battery_mode,
+    }
 
     st.markdown('</div>', unsafe_allow_html=True)
 
 
-# ----------------------------
-# Run simulation
-# ----------------------------
 st.write("")
 run = st.button("Run simulation", type="primary")
 
@@ -498,8 +539,7 @@ if run:
                 loc=loc,
                 required_hrs=required_hrs,
                 selected_ids=selected_ids,
-                batt_mode_by_engine=batt_mode_by_engine,
-                power_override=power_override,
+                per_device_config=per_device_config,
                 az_override=None,
                 progress_callback=on_progress
             )
@@ -537,6 +577,20 @@ if run:
                 st.markdown('</div>', unsafe_allow_html=True)
 
             st.markdown('<div class="card">', unsafe_allow_html=True)
+            st.markdown("### Results graph")
+
+            chart_df = build_chart_df(results, required_hrs)
+            chart = alt.Chart(chart_df).mark_line(point=True).encode(
+                x=alt.X("Month:N", sort=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]),
+                y=alt.Y("Hours:Q", title="Autonomy (hours/day)"),
+                color=alt.Color("Series:N", title="Series"),
+                tooltip=["Series:N", "Month:N", "Hours:Q"]
+            ).properties(height=420)
+
+            st.altair_chart(chart, use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+
+            st.markdown('<div class="card">', unsafe_allow_html=True)
             st.markdown("### Results table")
             df = build_results_table(results)
             st.dataframe(df, use_container_width=True)
@@ -554,6 +608,41 @@ if run:
             st.dataframe(pd.DataFrame(month_rows), use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
+            st.markdown('<div class="card">', unsafe_allow_html=True)
+            st.markdown("### PVGIS transparency")
+            st.write(
+                "This tool does **not replace PVGIS with an internal solar model**. "
+                "It sends selected inputs to PVGIS endpoints, retrieves the responses, "
+                "and then SALA organizes them into a device-level feasibility assessment."
+            )
+
+            for device_name, r in results.items():
+                meta = r["pvgis_meta"]
+                with st.expander(f"Show PVGIS request details — {device_name}"):
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.markdown("**PVGIS endpoints used**")
+                        st.write(f"- {meta['pvcalc_endpoint']}")
+                        st.write(f"- {meta['shs_endpoint']}")
+                        st.write(f"- Dataset: {meta['dataset']}")
+
+                        st.markdown("**PVcalc parameters**")
+                        st.json(meta["pvcalc_params"])
+
+                    with c2:
+                        st.markdown("**SHScalc parameters**")
+                        st.json(meta["shs_params"])
+
+                    st.markdown("**Example PVcalc request URL**")
+                    st.code(meta["pvcalc_url_example"], language="text")
+
+                    st.markdown("**Example SHScalc request URL**")
+                    st.code(meta["shs_url_example"], language="text")
+
+                    st.info(meta["explanation"])
+
+            st.markdown('</div>', unsafe_allow_html=True)
+
             with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
                 make_pdf(
                     tmp.name,
@@ -563,7 +652,7 @@ if run:
                     overall,
                     worst_name,
                     abs(worst_gap),
-                    "varies",
+                    f"{round(slope)}°",
                     airport_name_for_report.strip(),
                     datetime.now().strftime("%Y-%m-%d %H:%M"),
                     None
@@ -573,7 +662,7 @@ if run:
                     st.download_button(
                         "Download PDF report",
                         f,
-                        file_name="solar_report.pdf",
+                        file_name="sala_standardized_feasibility_study.pdf",
                         mime="application/pdf"
                     )
 

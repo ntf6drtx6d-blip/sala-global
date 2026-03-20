@@ -7,3 +7,4 @@ Pillow
 tqdm
 folium
 streamlit-folium
+altair

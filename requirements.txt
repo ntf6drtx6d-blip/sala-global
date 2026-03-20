@@ -1,0 +1,7 @@
+streamlit
+requests
+matplotlib
+reportlab
+pandas
+Pillow
+tqdm

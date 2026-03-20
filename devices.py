@@ -1,185 +1,131 @@
 # devices.py
 
 SOLAR_ENGINES = {
-    "mini": {
-        "code": "mini",
+    "se_mini": {
+        "key": "se_mini",
         "name": "Solar Engine Mini",
+        "short_name": "SE MINI",
         "pv": 40,
         "batt": 336,
         "batt_ext": None,
-        "tilt": 33,
+        "tilt_options": [33],
         "fixed": True,
-        "tiltset": [33],
     },
-    "compact": {
-        "code": "compact",
+    "se_compact": {
+        "key": "se_compact",
         "name": "Solar Engine Compact",
+        "short_name": "SE COMPACT",
         "pv": 185,
         "batt": 1440,
         "batt_ext": 2880,
-        "tilt": None,
+        "tilt_options": [15, 35, 55],
         "fixed": False,
-        "tiltset": [15, 35, 55],
     },
-    "max": {
-        "code": "max",
+    "se_max": {
+        "key": "se_max",
         "name": "Solar Engine Max",
+        "short_name": "SE MAX",
         "pv": 720,
         "batt": 2640,
         "batt_ext": 5280,
-        "tilt": None,
+        "tilt_options": [15, 35, 55],
         "fixed": False,
-        "tiltset": [15, 35, 55],
     },
 }
 
 DEVICES = {
     1: {
+        "code": "SP-401SMI",
         "name": "PRO SP-401SMI",
         "system_type": "builtin",
-        "power": 2.6,
+        "default_power": 2.6,
         "pv": 25,
         "batt": 216,
         "tilt": 33,
         "fixed": True,
-        "builtin_label": "Built-in solar module and battery",
     },
     2: {
+        "code": "SP-501SHI",
         "name": "CAT-I SP-501SHI",
         "system_type": "builtin",
-        "power": 8.0,
+        "default_power": 8.0,
         "pv": 25,
         "batt": 216,
         "tilt": 33,
         "fixed": True,
-        "builtin_label": "Built-in solar module and battery",
     },
     3: {
-        "name": "SP-301SLI",
+        "code": "SP-103SLI",
+        "name": "SP-103SLI",
         "system_type": "builtin",
-        "power": 1.4,
+        "default_power": 1.4,
         "pv": 5,
         "batt": 54,
         "tilt": 33,
         "fixed": True,
-        "builtin_label": "Built-in solar module and battery",
     },
     4: {
+        "code": "SP-200",
         "name": "SP-200 Inset Light",
         "system_type": "external_engine",
-        "power": 5.0,
-        "default_engine": "mini",
-        "allowed_engines": ["mini", "compact", "max"],
+        "default_power": 5.0,
+        "default_engine": "se_mini",
+        "compatible_engines": ["se_mini", "se_compact", "se_max"],
     },
     5: {
+        "code": "PAPI",
         "name": "PAPI",
         "system_type": "external_engine",
-        "power": 320.0,
-        "default_engine": "max",
-        "allowed_engines": ["max"],
+        "default_power": 320.0,
+        "default_engine": "se_max",
+        "compatible_engines": ["se_mini", "se_compact", "se_max"],
     },
     6: {
+        "code": "A-PAPI",
         "name": "A-PAPI",
         "system_type": "external_engine",
-        "power": 160.0,
-        "default_engine": "max",
-        "allowed_engines": ["max"],
+        "default_power": 160.0,
+        "default_engine": "se_max",
+        "compatible_engines": ["se_mini", "se_compact", "se_max"],
     },
     7: {
-        "name": "RGL",
+        "code": "RGL",
+        "name": "Runway Guard Light",
         "system_type": "external_engine",
-        "power": 3.0,
-        "default_engine": "mini",
-        "allowed_engines": ["mini", "compact", "max"],
+        "default_power": 3.0,
+        "default_engine": "se_mini",
+        "compatible_engines": ["se_mini", "se_compact", "se_max"],
     },
     8: {
-        "name": "WDI",
+        "code": "WDI",
+        "name": "Wind Direction Indicator",
         "system_type": "external_engine",
-        "power": 10.0,
-        "default_engine": "mini",
-        "allowed_engines": ["mini", "compact", "max"],
+        "default_power": 10.0,
+        "default_engine": "se_mini",
+        "compatible_engines": ["se_mini", "se_compact", "se_max"],
     },
     9: {
-        "name": "Large Sign",
+        "code": "SIGN-L",
+        "name": "Large Guidance Sign",
         "system_type": "external_engine",
-        "power": 35.0,
-        "default_engine": "compact",
-        "allowed_engines": ["compact", "max"],
+        "default_power": 35.0,
+        "default_engine": "se_compact",
+        "compatible_engines": ["se_mini", "se_compact", "se_max"],
     },
     10: {
-        "name": "Medium Sign",
+        "code": "SIGN-M",
+        "name": "Medium Guidance Sign",
         "system_type": "external_engine",
-        "power": 22.0,
-        "default_engine": "compact",
-        "allowed_engines": ["compact", "max"],
+        "default_power": 22.0,
+        "default_engine": "se_compact",
+        "compatible_engines": ["se_mini", "se_compact", "se_max"],
     },
     11: {
-        "name": "Small Sign",
+        "code": "SIGN-S",
+        "name": "Small Guidance Sign",
         "system_type": "external_engine",
-        "power": 15.0,
-        "default_engine": "compact",
-        "allowed_engines": ["compact", "max"],
+        "default_power": 15.0,
+        "default_engine": "se_compact",
+        "compatible_engines": ["se_mini", "se_compact", "se_max"],
     },
 }
-
-
-def get_engine(engine_code: str) -> dict:
-    if engine_code not in SOLAR_ENGINES:
-        raise KeyError(f"Unknown solar engine: {engine_code}")
-    return SOLAR_ENGINES[engine_code]
-
-
-def resolve_device_configuration(
-    device_id: int,
-    selected_engine_code: str | None = None,
-    battery_mode: str = "Std",
-    power_override: float | None = None,
-) -> dict:
-    """
-    Returns a normalized device configuration ready for simulation.
-    """
-    d = DEVICES[device_id]
-    default_power = float(d["power"])
-    power = default_power if power_override is None else float(power_override)
-
-    if d["system_type"] == "builtin":
-        return {
-            "device_id": device_id,
-            "name": d["name"],
-            "system_type": "builtin",
-            "engine_code": None,
-            "engine_name": "Built-in",
-            "power": power,
-            "default_power": default_power,
-            "pv": float(d["pv"]),
-            "batt": float(d["batt"]),
-            "batt_mode": "Std",
-            "tilt": d.get("tilt", 33),
-            "fixed": bool(d.get("fixed", True)),
-            "tiltset": d.get("tiltset", [d.get("tilt", 33)]),
-            "config_label": d.get("builtin_label", "Built-in configuration"),
-        }
-
-    engine_code = selected_engine_code or d["default_engine"]
-    eng = get_engine(engine_code)
-
-    batt = eng["batt"]
-    if battery_mode == "Ext" and eng.get("batt_ext"):
-        batt = eng["batt_ext"]
-
-    return {
-        "device_id": device_id,
-        "name": d["name"],
-        "system_type": "external_engine",
-        "engine_code": engine_code,
-        "engine_name": eng["name"],
-        "power": power,
-        "default_power": default_power,
-        "pv": float(eng["pv"]),
-        "batt": float(batt),
-        "batt_mode": battery_mode,
-        "tilt": eng.get("tilt"),
-        "fixed": bool(eng.get("fixed", False)),
-        "tiltset": eng.get("tiltset", [15, 35, 55]),
-        "config_label": f"{eng['name']} ({'Extended battery' if battery_mode == 'Ext' else 'Standard battery'})",
-    }

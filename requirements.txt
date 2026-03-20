@@ -5,3 +5,5 @@ reportlab
 pandas
 Pillow
 tqdm
+folium
+streamlit-folium

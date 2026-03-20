@@ -6,16 +6,25 @@ from datetime import datetime
 import pandas as pd
 import requests
 import streamlit as st
+import folium
+from streamlit_folium import st_folium
 
 from devices import DEVICES
 from simulate import simulate_for_devices
 from report import make_pdf
 
-st.set_page_config(page_title="SALA Solar Feasibility Simulator", layout="wide")
+
+st.set_page_config(
+    page_title="SALA Solar Feasibility Simulator",
+    layout="wide"
+)
 
 LOGO_PATH = "sala_logo.png"
 
 
+# ----------------------------
+# Helpers
+# ----------------------------
 def format_seconds(seconds):
     seconds = max(0, int(seconds))
     mins, secs = divmod(seconds, 60)
@@ -74,50 +83,114 @@ def build_results_table(results):
     return pd.DataFrame(rows)
 
 
-def get_device_battery_options(dspec):
-    options = [("Std", dspec["batt"])]
-    if "batt_ext" in dspec:
-        options.append(("Ext", dspec["batt_ext"]))
-    return options
-
-
 def status_badge(text, ok=True):
     bg = "#0f9d58" if ok else "#d93025"
     return f"""
     <div style="
         display:inline-block;
-        padding:6px 12px;
+        padding:7px 14px;
         border-radius:999px;
         background:{bg};
         color:white;
-        font-weight:600;
+        font-weight:700;
         font-size:14px;
-        margin-top:4px;
+        margin-top:6px;
     ">
         {text}
     </div>
     """
 
 
-# ---------- style ----------
+def create_map(lat, lon, label):
+    # default zoom closer to airport
+    fmap = folium.Map(
+        location=[lat, lon],
+        zoom_start=14,
+        control_scale=True,
+        tiles="CartoDB positron"
+    )
+
+    # larger visible circle
+    folium.CircleMarker(
+        location=[lat, lon],
+        radius=14,
+        color="#d9534f",
+        fill=True,
+        fill_color="#d9534f",
+        fill_opacity=0.9,
+        weight=3,
+        popup=label if label else f"{lat:.6f}, {lon:.6f}",
+        tooltip=label if label else "Selected airport"
+    ).add_to(fmap)
+
+    # extra ring to make location clearer
+    folium.Circle(
+        location=[lat, lon],
+        radius=220,
+        color="#d9534f",
+        weight=2,
+        fill=True,
+        fill_color="#d9534f",
+        fill_opacity=0.10
+    ).add_to(fmap)
+
+    return fmap
+
+
+# ----------------------------
+# Session state
+# ----------------------------
+if "lat" not in st.session_state:
+    st.session_state.lat = 40.416775
+if "lon" not in st.session_state:
+    st.session_state.lon = -3.703790
+if "airport_label" not in st.session_state:
+    st.session_state.airport_label = ""
+if "search_message" not in st.session_state:
+    st.session_state.search_message = ""
+
+
+# ----------------------------
+# Styling
+# ----------------------------
 st.markdown("""
 <style>
 .block-container {
-    padding-top: 1.2rem;
+    padding-top: 1rem;
     padding-bottom: 2rem;
+    max-width: 1500px;
+}
+header[data-testid="stHeader"] {
+    background: rgba(255,255,255,0);
+}
+div[data-testid="stToolbar"] {
+    z-index: 1000;
+}
+.main-title {
+    font-size: 2.1rem;
+    font-weight: 800;
+    line-height: 1.05;
+    margin-bottom: 0.2rem;
+    color: #1f2937;
+}
+.sub-title {
+    font-size: 1rem;
+    color: #6b7280;
+    margin-bottom: 0.6rem;
 }
 .card {
-    border: 1px solid #e9edf3;
-    border-radius: 18px;
-    padding: 18px 18px 14px 18px;
+    border: 1px solid #e8edf4;
+    border-radius: 20px;
+    padding: 20px 20px 16px 20px;
     background: #ffffff;
-    box-shadow: 0 2px 10px rgba(18, 38, 63, 0.04);
-    margin-bottom: 14px;
+    box-shadow: 0 4px 18px rgba(17, 24, 39, 0.05);
+    margin-bottom: 16px;
 }
 .section-title {
-    font-size: 1.05rem;
-    font-weight: 700;
-    margin-bottom: 8px;
+    font-size: 1.2rem;
+    font-weight: 800;
+    margin-bottom: 14px;
+    color: #1f2937;
 }
 .small-muted {
     color: #6b7280;
@@ -125,10 +198,10 @@ st.markdown("""
 }
 .metric-box {
     border: 1px solid #edf1f7;
-    border-radius: 14px;
-    padding: 10px 12px;
-    background: #fafcff;
-    min-height: 76px;
+    border-radius: 16px;
+    padding: 12px 14px;
+    background: linear-gradient(180deg, #fbfdff 0%, #f6f9fc 100%);
+    min-height: 82px;
 }
 .metric-label {
     color: #6b7280;
@@ -136,61 +209,59 @@ st.markdown("""
     margin-bottom: 4px;
 }
 .metric-value {
-    font-size: 1.05rem;
-    font-weight: 700;
-}
-.header-wrap {
-    display:flex;
-    align-items:center;
-    gap:16px;
-    margin-bottom: 8px;
-}
-.header-title {
-    font-size: 2rem;
+    font-size: 1.08rem;
     font-weight: 800;
-    line-height: 1.1;
-    margin: 0;
+    color: #1f2937;
 }
-.header-subtitle {
-    color:#6b7280;
+.device-title {
+    font-size: 1.25rem;
+    font-weight: 800;
+    margin-bottom: 0.2rem;
+}
+.engine-tag {
+    display: inline-block;
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: #eef4ff;
+    color: #234ea5;
+    font-size: 0.82rem;
+    font-weight: 700;
     margin-top: 4px;
-    font-size: 0.96rem;
+}
+.map-note {
+    color:#6b7280;
+    font-size:0.92rem;
+    margin-top:8px;
+}
+div[data-testid="stNumberInput"] input,
+div[data-testid="stTextInput"] input {
+    border-radius: 12px !important;
 }
 </style>
 """, unsafe_allow_html=True)
 
 
-# ---------- session ----------
-if "lat" not in st.session_state:
-    st.session_state.lat = 0.0
-if "lon" not in st.session_state:
-    st.session_state.lon = 0.0
-if "airport_label" not in st.session_state:
-    st.session_state.airport_label = ""
+# ----------------------------
+# Header
+# ----------------------------
+h1, h2 = st.columns([1, 8])
 
-
-# ---------- header ----------
-logo_col, title_col = st.columns([1, 8])
-
-with logo_col:
+with h1:
     if os.path.exists(LOGO_PATH):
         st.image(LOGO_PATH, width=95)
 
-with title_col:
-    st.markdown("""
-    <div class="header-wrap">
-        <div>
-            <div class="header-title">Solar Feasibility Simulator</div>
-            <div class="header-subtitle">Airport search, map preview, custom power setup, battery mode selection, PDF export</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-st.write("")
+with h2:
+    st.markdown('<div class="main-title">Solar Feasibility Simulator</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="sub-title">Airport search, accurate map preview, custom power setup, battery mode selection, PDF export</div>',
+        unsafe_allow_html=True
+    )
 
 
-# ---------- top layout ----------
-left, right = st.columns([1.1, 1])
+# ----------------------------
+# Top section: location + map
+# ----------------------------
+left, right = st.columns([1.05, 1])
 
 with left:
     st.markdown('<div class="card">', unsafe_allow_html=True)
@@ -199,7 +270,7 @@ with left:
     airport_query = st.text_input(
         "Airport name",
         value=st.session_state.airport_label,
-        placeholder="e.g. Schiphol Airport or Torreón Airport"
+        placeholder="e.g. Schiphol Airport, Radom Airport, Torreón Airport"
     )
 
     if st.button("Find airport"):
@@ -209,23 +280,41 @@ with left:
                 st.session_state.lat = result["lat"]
                 st.session_state.lon = result["lon"]
                 st.session_state.airport_label = airport_query.strip() or result["display_name"]
-                st.success(f"Found: {result['display_name']}")
+                st.session_state.search_message = f"Found: {result['display_name']}"
             else:
-                st.error("Airport not found. Enter coordinates manually.")
+                st.session_state.search_message = "Airport not found. Enter coordinates manually."
         except Exception as e:
-            st.error(f"Search error: {e}")
+            st.session_state.search_message = f"Search error: {e}"
 
-    col_a, col_b = st.columns(2)
-    with col_a:
-        lat = st.number_input("Latitude", format="%.6f", value=float(st.session_state.lat))
-    with col_b:
-        lon = st.number_input("Longitude", format="%.6f", value=float(st.session_state.lon))
+    if st.session_state.search_message:
+        if st.session_state.search_message.startswith("Found:"):
+            st.success(st.session_state.search_message)
+        else:
+            st.warning(st.session_state.search_message)
+
+    c1, c2 = st.columns(2)
+    with c1:
+        lat = st.number_input(
+            "Latitude",
+            min_value=-90.0,
+            max_value=90.0,
+            value=float(st.session_state.lat),
+            format="%.6f"
+        )
+    with c2:
+        lon = st.number_input(
+            "Longitude",
+            min_value=-180.0,
+            max_value=180.0,
+            value=float(st.session_state.lon),
+            format="%.6f"
+        )
 
     st.session_state.lat = lat
     st.session_state.lon = lon
 
-    col_c, col_d = st.columns(2)
-    with col_c:
+    c3, c4 = st.columns(2)
+    with c3:
         required_hrs = st.number_input(
             "Required operating hours/day",
             min_value=0.0,
@@ -233,7 +322,7 @@ with left:
             value=8.0,
             step=0.5
         )
-    with col_d:
+    with c4:
         airport_name_for_report = st.text_input(
             "Airport label for report",
             value=st.session_state.airport_label
@@ -244,16 +333,24 @@ with left:
 with right:
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.markdown('<div class="section-title">Map</div>', unsafe_allow_html=True)
+
     try:
-        map_df = pd.DataFrame([{"lat": lat, "lon": lon}])
-        st.map(map_df, zoom=7)
-        st.caption(f"Selected point: {lat:.6f}, {lon:.6f}")
-    except Exception:
-        st.info("Map will appear after valid coordinates are entered.")
+        selected_label = airport_name_for_report.strip() if airport_name_for_report.strip() else "Selected airport"
+        fmap = create_map(lat, lon, selected_label)
+        st_folium(fmap, width=None, height=430, returned_objects=[])
+        st.markdown(
+            f'<div class="map-note"><b>Selected point:</b> {lat:.6f}, {lon:.6f}</div>',
+            unsafe_allow_html=True
+        )
+    except Exception as e:
+        st.info(f"Map could not be displayed: {e}")
+
     st.markdown('</div>', unsafe_allow_html=True)
 
 
-# ---------- device selection ----------
+# ----------------------------
+# Device selection
+# ----------------------------
 st.markdown('<div class="card">', unsafe_allow_html=True)
 st.markdown('<div class="section-title">Select devices</div>', unsafe_allow_html=True)
 
@@ -268,7 +365,9 @@ selected_ids = [device_options[x] for x in selected_labels]
 st.markdown('</div>', unsafe_allow_html=True)
 
 
-# ---------- device config cards ----------
+# ----------------------------
+# Device cards
+# ----------------------------
 batt_mode_by_engine = {}
 power_override = {}
 
@@ -287,13 +386,13 @@ for did in selected_ids:
 
     st.markdown('<div class="card">', unsafe_allow_html=True)
 
-    top1, top2 = st.columns([2, 3])
+    top_left, top_right = st.columns([2, 3])
 
-    with top1:
-        st.markdown(f"### {did}. {device_name}")
-        st.markdown(f'<div class="small-muted">Engine: {engine_name}</div>', unsafe_allow_html=True)
+    with top_left:
+        st.markdown(f'<div class="device-title">{did}. {device_name}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="engine-tag">{engine_name}</div>', unsafe_allow_html=True)
 
-    with top2:
+    with top_right:
         m1, m2, m3 = st.columns(3)
         with m1:
             st.markdown(f"""
@@ -305,7 +404,7 @@ for did in selected_ids:
         with m2:
             st.markdown(f"""
             <div class="metric-box">
-                <div class="metric-label">Solar panel</div>
+                <div class="metric-label">Solar panel size</div>
                 <div class="metric-value">{pv} W</div>
             </div>
             """, unsafe_allow_html=True)
@@ -315,12 +414,13 @@ for did in selected_ids:
                 batt_text += f" / {batt_ext} Wh"
             st.markdown(f"""
             <div class="metric-box">
-                <div class="metric-label">Battery</div>
+                <div class="metric-label">Battery size</div>
                 <div class="metric-value">{batt_text}</div>
             </div>
             """, unsafe_allow_html=True)
 
-    cfg1, cfg2 = st.columns([1.2, 1])
+    st.write("")
+    cfg1, cfg2 = st.columns([1.25, 1])
 
     with cfg1:
         use_default = st.checkbox(
@@ -360,7 +460,9 @@ for did in selected_ids:
     st.markdown('</div>', unsafe_allow_html=True)
 
 
-# ---------- run ----------
+# ----------------------------
+# Run simulation
+# ----------------------------
 st.write("")
 run = st.button("Run simulation", type="primary")
 
@@ -412,22 +514,22 @@ if run:
             current_step_text.caption("Simulation completed.")
 
             st.write("")
-            res1, res2, res3 = st.columns([1, 1, 2])
+            r1, r2, r3 = st.columns([1, 1, 2])
 
-            with res1:
+            with r1:
                 st.markdown('<div class="card">', unsafe_allow_html=True)
                 st.markdown("**Overall result**")
                 st.markdown(status_badge(overall, ok=(overall == "PASS")), unsafe_allow_html=True)
                 st.markdown('</div>', unsafe_allow_html=True)
 
-            with res2:
+            with r2:
                 st.markdown('<div class="card">', unsafe_allow_html=True)
                 st.markdown("**Worst-case device**")
                 st.markdown(f"**{worst_name}**")
                 st.caption(f"Gap vs requirement: {round(abs(worst_gap), 2)} hrs")
                 st.markdown('</div>', unsafe_allow_html=True)
 
-            with res3:
+            with r3:
                 st.markdown('<div class="card">', unsafe_allow_html=True)
                 st.markdown("**Location**")
                 st.markdown(f"**{loc['label']}**")

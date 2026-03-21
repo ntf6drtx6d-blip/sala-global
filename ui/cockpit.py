@@ -31,6 +31,15 @@ def now_ts():
     return datetime.now().strftime("%H:%M:%S")
 
 
+def short_device_label_from_id(device_id):
+    try:
+        from core.devices import DEVICES
+        d = DEVICES[device_id]
+        return d.get("code", str(device_id))
+    except Exception:
+        return str(device_id)
+
+
 def pvgis_short_card():
     st.markdown(
         """
@@ -78,6 +87,10 @@ def reset_study():
     st.session_state.pdf_bytes = None
     st.session_state.pdf_name = "sala_standardized_feasibility_study.pdf"
     st.session_state.elapsed = None
+    st.session_state.running = False
+    st.session_state.run_progress = 0
+    st.session_state.run_stage = "Ready"
+    st.session_state.run_log = []
 
     st.rerun()
 
@@ -91,7 +104,7 @@ def _run_simulation():
     progress_host = st.container()
 
     with progress_host:
-        st.markdown("## Simulation in progress")
+        st.markdown("## 4. Simulation in progress")
         st.write(
             "The study is validating inputs, requesting solar/off-grid data from PVGIS, "
             "checking monthly performance and building the annual feasibility result."
@@ -188,9 +201,9 @@ def _run_simulation():
                 st.session_state.required_hours,
                 results,
                 overall,
-                worst_name,
-                abs(worst_gap),
-                f"{round(slope)}°",
+                "",
+                0,
+                "",
                 st.session_state.airport_label,
                 datetime.now().strftime("%Y-%m-%d %H:%M"),
                 None,
@@ -202,7 +215,7 @@ def _run_simulation():
         st.rerun()
 
 
-# ---------------- MAIN COCKPIT ----------------
+# ---------------- MAIN DASHBOARD ----------------
 
 def render_cockpit():
     if "running" not in st.session_state:
@@ -215,7 +228,7 @@ def render_cockpit():
         st.session_state.run_log = []
 
     with st.sidebar:
-        st.markdown("## Study cockpit")
+        st.markdown("## Feasibility dashboard")
 
         st.markdown("**Airport**")
         st.write(st.session_state.get("airport_label", "") or "Not defined")
@@ -223,32 +236,35 @@ def render_cockpit():
         st.markdown("**Planned daily operating hours**")
         st.write(f"{float(st.session_state.get('required_hours', 8.0)):.1f} hrs/day")
 
-        st.markdown("**Devices selected**")
-        st.write(len(st.session_state.get("selected_ids", [])))
+        st.markdown("**Selected devices**")
+        selected_ids = st.session_state.get("selected_ids", [])
+        if selected_ids:
+            for did in selected_ids:
+                st.write(f"• {short_device_label_from_id(did)}")
+        else:
+            st.write("No devices selected")
 
         st.markdown("---")
-        st.markdown("### Controls")
+        st.markdown("### Simulation")
 
-        # Running state
+        # RUNNING STATE
         if st.session_state.running:
-            st.button(
-                f"Running… {st.session_state.run_progress}%",
-                disabled=True,
-                use_container_width=True,
-            )
-            st.info(st.session_state.run_stage)
+            st.progress(st.session_state.run_progress / 100.0)
+            st.markdown(f"**Running… {st.session_state.run_progress}%**")
+            st.caption(st.session_state.run_stage)
 
-        # Fresh / not yet run
+        # NOT RUN YET
         elif st.session_state.get("results") is None:
             if st.button("Run simulation", type="primary", use_container_width=True):
                 _run_simulation()
 
-        # Completed
+        # COMPLETED
         else:
+            st.success("Simulation completed")
             if st.session_state.overall == "PASS":
-                st.success("Completed — PASS")
+                st.markdown("**Feasibility result:** PASS")
             else:
-                st.error("Completed — FAIL")
+                st.markdown("**Feasibility result:** FAIL")
 
             if st.session_state.elapsed is not None:
                 st.write(f"Run time: {format_seconds(st.session_state.elapsed)}")
@@ -266,6 +282,18 @@ def render_cockpit():
             )
         else:
             st.button("Download report", disabled=True, use_container_width=True)
+
+        # show live status details while running
+        if st.session_state.running:
+            st.markdown("---")
+            st.markdown("### Live status")
+            if st.session_state.run_log:
+                st.markdown(
+                    '<div style="border:1px solid #e5eaf1;border-radius:12px;padding:10px 12px;background:#fbfcfe;">'
+                    + "<br/>".join(st.session_state.run_log[-5:])
+                    + "</div>",
+                    unsafe_allow_html=True,
+                )
 
         st.markdown("---")
 

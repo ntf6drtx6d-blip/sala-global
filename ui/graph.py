@@ -6,6 +6,10 @@ import pandas as pd
 import streamlit as st
 
 
+MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+          "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
 def short_device_label(full_name):
     if " — " in full_name:
         return full_name.split(" — ", 1)[1]
@@ -13,18 +17,14 @@ def short_device_label(full_name):
 
 
 def build_monthly_df(results, required_hrs):
-    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
-              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-
     rows = []
 
     for device_name, r in results.items():
         label = short_device_label(device_name)
 
-        for i, month in enumerate(months):
+        for i, month in enumerate(MONTHS):
             hours = float(r["hours"][i])
             required = float(required_hrs)
-            diff = hours - required
 
             rows.append({
                 "Month": month,
@@ -32,10 +32,18 @@ def build_monthly_df(results, required_hrs):
                 "Device": label,
                 "Hours": hours,
                 "RequiredHours": required,
-                "Difference": diff,
-                "StatusBand": "Above requirement" if diff >= 0 else "Below requirement",
-                "FillTop": max(hours, required),
-                "FillBottom": min(hours, required),
+
+                # Green band only when above requirement
+                "GreenTop": hours if hours >= required else required,
+                "GreenBottom": required if hours >= required else required,
+
+                # Red band only when below requirement
+                "RedTop": required if hours < required else hours,
+                "RedBottom": hours if hours < required else hours,
+
+                "AboveRequirement": hours >= required,
+                "BelowRequirement": hours < required,
+
                 "Meaning": (
                     f"{label}: {hours:.2f} hrs/day in {month}. "
                     f"Required daily operation: {required:.2f} hrs/day."
@@ -63,89 +71,74 @@ def render_graph():
     )
 
     plot_df = chart_df[chart_df["Device"].isin(visible_devices)].copy()
-    above_df = plot_df[plot_df["Hours"] >= plot_df["RequiredHours"]].copy()
-    below_df = plot_df[plot_df["Hours"] < plot_df["RequiredHours"]].copy()
+    green_df = plot_df[plot_df["AboveRequirement"]].copy()
+    red_df = plot_df[plot_df["BelowRequirement"]].copy()
 
-    month_order = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-
-    # Green fill where device is above requirement
-    green_fill = alt.Chart(above_df).mark_area(
+    # Green fill only where device is above requirement
+    green_fill = alt.Chart(green_df).mark_area(
         color="#16a34a",
-        opacity=0.17
+        opacity=0.18
     ).encode(
-        x=alt.X(
-            "Month:N",
-            sort=month_order,
-            title="Annual cycle (Jan–Dec)"
-        ),
+        x=alt.X("Month:N", sort=MONTHS, title="Annual cycle (Jan–Dec)"),
         y=alt.Y(
-            "FillTop:Q",
+            "GreenTop:Q",
             scale=alt.Scale(domain=[0, 24]),
             title="Operating hours per day"
         ),
-        y2="FillBottom:Q",
+        y2="GreenBottom:Q",
         detail="Device:N",
         tooltip=[
             alt.Tooltip("Device:N", title="Device"),
             alt.Tooltip("Month:N", title="Month"),
-            alt.Tooltip("Hours:Q", title="Simulated hrs/day", format=".2f"),
+            alt.Tooltip("Hours:Q", title="Guaranteed hrs/day", format=".2f"),
             alt.Tooltip("RequiredHours:Q", title="Required hrs/day", format=".2f"),
-            alt.Tooltip("StatusBand:N", title="Status"),
             alt.Tooltip("Meaning:N", title="Meaning"),
         ],
     )
 
-    # Red fill where device is below requirement
-    red_fill = alt.Chart(below_df).mark_area(
+    # Red fill only where device is below requirement
+    red_fill = alt.Chart(red_df).mark_area(
         color="#dc2626",
-        opacity=0.22
+        opacity=0.18
     ).encode(
-        x=alt.X("Month:N", sort=month_order),
-        y=alt.Y("FillTop:Q", scale=alt.Scale(domain=[0, 24])),
-        y2="FillBottom:Q",
+        x=alt.X("Month:N", sort=MONTHS),
+        y=alt.Y("RedTop:Q", scale=alt.Scale(domain=[0, 24])),
+        y2="RedBottom:Q",
         detail="Device:N",
         tooltip=[
             alt.Tooltip("Device:N", title="Device"),
             alt.Tooltip("Month:N", title="Month"),
-            alt.Tooltip("Hours:Q", title="Simulated hrs/day", format=".2f"),
+            alt.Tooltip("Hours:Q", title="Guaranteed hrs/day", format=".2f"),
             alt.Tooltip("RequiredHours:Q", title="Required hrs/day", format=".2f"),
-            alt.Tooltip("StatusBand:N", title="Status"),
             alt.Tooltip("Meaning:N", title="Meaning"),
         ],
     )
 
-    # Device lines
     line_chart = alt.Chart(plot_df).mark_line(
         point=True,
         strokeWidth=2.8
     ).encode(
-        x=alt.X("Month:N", sort=month_order),
+        x=alt.X("Month:N", sort=MONTHS),
         y=alt.Y("Hours:Q", scale=alt.Scale(domain=[0, 24])),
         color=alt.Color(
             "Device:N",
-            title="Device",
+            title="Selected devices",
             scale=alt.Scale(scheme="tableau10"),
-            legend=alt.Legend(
-                orient="top-right",
-                title="Selected devices"
-            ),
+            legend=alt.Legend(orient="top-right"),
         ),
         tooltip=[
             alt.Tooltip("Device:N", title="Device"),
             alt.Tooltip("Month:N", title="Month"),
-            alt.Tooltip("Hours:Q", title="Simulated hrs/day", format=".2f"),
+            alt.Tooltip("Hours:Q", title="Guaranteed hrs/day", format=".2f"),
             alt.Tooltip("RequiredHours:Q", title="Required hrs/day", format=".2f"),
-            alt.Tooltip("StatusBand:N", title="Status"),
             alt.Tooltip("Meaning:N", title="Meaning"),
         ],
     )
 
-    # Required operating line
     req_df = pd.DataFrame({
-        "Month": month_order,
+        "Month": MONTHS,
         "Required": [required_hours] * 12,
-        "Label": [f"Required daily operation: {required_hours:.1f} hrs/day"] * 12,
+        "Label": [f"Required daily operation = {required_hours:.1f} hrs/day"] * 12,
     })
 
     req_line = alt.Chart(req_df).mark_line(
@@ -153,7 +146,7 @@ def render_graph():
         strokeDash=[10, 5],
         strokeWidth=3.2
     ).encode(
-        x=alt.X("Month:N", sort=month_order),
+        x=alt.X("Month:N", sort=MONTHS),
         y=alt.Y("Required:Q", scale=alt.Scale(domain=[0, 24])),
         tooltip=[
             alt.Tooltip("Month:N", title="Month"),
@@ -162,7 +155,6 @@ def render_graph():
         ],
     )
 
-    # Label directly on the dashed line
     line_label_df = pd.DataFrame({
         "Month": ["Dec"],
         "Required": [required_hours],
@@ -177,19 +169,19 @@ def render_graph():
         fontWeight="bold",
         color="#111827"
     ).encode(
-        x=alt.X("Month:N", sort=month_order),
+        x=alt.X("Month:N", sort=MONTHS),
         y=alt.Y("Required:Q", scale=alt.Scale(domain=[0, 24])),
         text="Text:N",
     )
 
-    chart = (green_fill + red_fill + line_chart + req_line + line_label).properties(
+    chart = (red_fill + green_fill + line_chart + req_line + line_label).properties(
         height=500
     ).interactive()
 
     st.altair_chart(chart, use_container_width=True)
 
     st.caption(
-        "Each point shows achievable daily operating hours in a given month across the full annual cycle. "
+        "Blue line = guaranteed operating hours per day by month. "
         "Black dashed line = required daily operation. "
-        "Green = above requirement. Red = below requirement."
+        "Green area = above requirement. Red area = below requirement."
     )

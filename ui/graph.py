@@ -29,21 +29,13 @@ def build_monthly_df(results, required_hrs):
             rows.append({
                 "Month": month,
                 "MonthIndex": i + 1,
+                "MonthStart": i + 0.55,
+                "MonthEnd": i + 1.45,
                 "Device": label,
                 "Hours": hours,
                 "RequiredHours": required,
-
-                # Green band only when above requirement
-                "GreenTop": hours if hours >= required else required,
-                "GreenBottom": required if hours >= required else required,
-
-                # Red band only when below requirement
-                "RedTop": required if hours < required else hours,
-                "RedBottom": hours if hours < required else hours,
-
                 "AboveRequirement": hours >= required,
                 "BelowRequirement": hours < required,
-
                 "Meaning": (
                     f"{label}: {hours:.2f} hrs/day in {month}. "
                     f"Required daily operation: {required:.2f} hrs/day."
@@ -74,18 +66,27 @@ def render_graph():
     green_df = plot_df[plot_df["AboveRequirement"]].copy()
     red_df = plot_df[plot_df["BelowRequirement"]].copy()
 
-    # Green fill only where device is above requirement
-    green_fill = alt.Chart(green_df).mark_area(
+    # Green month-by-month bands
+    green_rect = alt.Chart(green_df).mark_rect(
         color="#16a34a",
         opacity=0.18
     ).encode(
-        x=alt.X("Month:N", sort=MONTHS, title="Annual cycle (Jan–Dec)"),
+        x=alt.X(
+            "MonthStart:Q",
+            scale=alt.Scale(domain=[0.5, 12.5]),
+            axis=alt.Axis(
+                title="Annual cycle (Jan–Dec)",
+                values=list(range(1, 13)),
+                labelExpr="['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][datum.value-1]"
+            )
+        ),
+        x2="MonthEnd:Q",
         y=alt.Y(
-            "GreenTop:Q",
+            "RequiredHours:Q",
             scale=alt.Scale(domain=[0, 24]),
             title="Operating hours per day"
         ),
-        y2="GreenBottom:Q",
+        y2="Hours:Q",
         detail="Device:N",
         tooltip=[
             alt.Tooltip("Device:N", title="Device"),
@@ -96,14 +97,15 @@ def render_graph():
         ],
     )
 
-    # Red fill only where device is below requirement
-    red_fill = alt.Chart(red_df).mark_area(
+    # Red month-by-month bands
+    red_rect = alt.Chart(red_df).mark_rect(
         color="#dc2626",
         opacity=0.18
     ).encode(
-        x=alt.X("Month:N", sort=MONTHS),
-        y=alt.Y("RedTop:Q", scale=alt.Scale(domain=[0, 24])),
-        y2="RedBottom:Q",
+        x=alt.X("MonthStart:Q", scale=alt.Scale(domain=[0.5, 12.5])),
+        x2="MonthEnd:Q",
+        y=alt.Y("Hours:Q", scale=alt.Scale(domain=[0, 24])),
+        y2="RequiredHours:Q",
         detail="Device:N",
         tooltip=[
             alt.Tooltip("Device:N", title="Device"),
@@ -114,11 +116,20 @@ def render_graph():
         ],
     )
 
+    # Device line
     line_chart = alt.Chart(plot_df).mark_line(
         point=True,
         strokeWidth=2.8
     ).encode(
-        x=alt.X("Month:N", sort=MONTHS),
+        x=alt.X(
+            "MonthIndex:Q",
+            scale=alt.Scale(domain=[0.5, 12.5]),
+            axis=alt.Axis(
+                title="Annual cycle (Jan–Dec)",
+                values=list(range(1, 13)),
+                labelExpr="['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][datum.value-1]"
+            )
+        ),
         y=alt.Y("Hours:Q", scale=alt.Scale(domain=[0, 24])),
         color=alt.Color(
             "Device:N",
@@ -135,10 +146,10 @@ def render_graph():
         ],
     )
 
+    # Required line
     req_df = pd.DataFrame({
-        "Month": MONTHS,
+        "MonthIndex": list(range(1, 13)),
         "Required": [required_hours] * 12,
-        "Label": [f"Required daily operation = {required_hours:.1f} hrs/day"] * 12,
     })
 
     req_line = alt.Chart(req_df).mark_line(
@@ -146,17 +157,13 @@ def render_graph():
         strokeDash=[10, 5],
         strokeWidth=3.2
     ).encode(
-        x=alt.X("Month:N", sort=MONTHS),
+        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0.5, 12.5])),
         y=alt.Y("Required:Q", scale=alt.Scale(domain=[0, 24])),
-        tooltip=[
-            alt.Tooltip("Month:N", title="Month"),
-            alt.Tooltip("Required:Q", title="Required hrs/day", format=".1f"),
-            alt.Tooltip("Label:N", title="Reference"),
-        ],
+        tooltip=[alt.Tooltip("Required:Q", title="Required hrs/day", format=".1f")],
     )
 
     line_label_df = pd.DataFrame({
-        "Month": ["Dec"],
+        "MonthIndex": [12],
         "Required": [required_hours],
         "Text": [f"Required daily operation = {required_hours:.1f} hrs/day"],
     })
@@ -169,12 +176,12 @@ def render_graph():
         fontWeight="bold",
         color="#111827"
     ).encode(
-        x=alt.X("Month:N", sort=MONTHS),
-        y=alt.Y("Required:Q", scale=alt.Scale(domain=[0, 24])),
+        x="MonthIndex:Q",
+        y="Required:Q",
         text="Text:N",
     )
 
-    chart = (red_fill + green_fill + line_chart + req_line + line_label).properties(
+    chart = (red_rect + green_rect + line_chart + req_line + line_label).properties(
         height=500
     ).interactive()
 
@@ -183,5 +190,5 @@ def render_graph():
     st.caption(
         "Blue line = guaranteed operating hours per day by month. "
         "Black dashed line = required daily operation. "
-        "Green area = above requirement. Red area = below requirement."
+        "Green rectangles = above requirement. Red rectangles = below requirement."
     )

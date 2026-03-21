@@ -221,18 +221,20 @@ def render_cockpit():
         st.markdown("---")
         st.markdown("### Simulation")
 
+        ready = bool(st.session_state.get("study_ready", False))
+        has_results = st.session_state.get("results") is not None
+
         if st.session_state.running:
             st.markdown("**Simulation in progress**")
             st.caption(st.session_state.run_stage)
 
-        elif st.session_state.get("results") is None:
-            ready = bool(st.session_state.get("study_ready", False))
-
+        elif not has_results:
             if st.button(
                 "Run simulation",
                 type="primary",
                 use_container_width=True,
-                disabled=not ready
+                disabled=not ready,
+                key="sidebar_run_simulation",
             ):
                 st.session_state.running = True
                 st.session_state.run_stage = "Preparing simulation"
@@ -243,6 +245,21 @@ def render_cockpit():
                 st.caption("To start the study, select an airport or study point and at least one device.")
 
         else:
+            if st.button(
+                "Run updated simulation",
+                type="primary",
+                use_container_width=True,
+                disabled=not ready,
+                key="sidebar_run_updated_simulation",
+            ):
+                st.session_state.running = True
+                st.session_state.run_stage = "Preparing simulation"
+                st.session_state.trigger_run = True
+                st.rerun()
+
+            st.caption("You can adjust the same location or devices and run the study again.")
+
+            st.markdown("---")
             st.success("Simulation completed")
             if st.session_state.overall == "PASS":
                 st.markdown("**Feasibility result:** PASS")

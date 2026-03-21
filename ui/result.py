@@ -13,15 +13,22 @@ def short_device_label(full_name):
     return full_name
 
 
-def operating_mode_label():
-    mode = st.session_state.get("operating_profile_mode", "Custom hours per day")
-    hrs = float(st.session_state.get("required_hours", 12.0))
+def format_hours_digital(h):
+    h_int = int(h)
+    minutes = int(round((h - h_int) * 60))
+    if minutes == 60:
+        h_int += 1
+        minutes = 0
+    return f"{h_int:02d}:{minutes:02d}"
 
+
+def operating_mode_name():
+    mode = st.session_state.get("operating_profile_mode", "Custom hours per day")
     if mode == "24/7":
         return "24/7 operation"
     if mode == "Dusk to dawn":
-        return f"Dusk-to-Dawn ({hrs:.1f} hrs/day)"
-    return f"Custom mode ({hrs:.1f} hrs/day)"
+        return "Dusk-to-Dawn"
+    return "Custom operation"
 
 
 def annual_empty_battery_stats(results):
@@ -43,12 +50,13 @@ def annual_empty_battery_stats(results):
 
 
 def overall_conclusion_text(results):
-    mode_text = operating_mode_label()
+    mode_name = operating_mode_name()
+    required_hours = float(st.session_state.get("required_hours", 12.0))
     all_pass = all(r.get("status") == "PASS" for r in results.values())
 
     if all_pass:
-        return f"All selected devices can operate in {mode_text} throughout the year."
-    return f"Selected devices cannot sustain {mode_text} throughout the year."
+        return f"All selected devices can operate in {mode_name} ({required_hours:.1f} hrs/day) throughout the year."
+    return f"Selected devices cannot sustain {mode_name} ({required_hours:.1f} hrs/day) throughout the year."
 
 
 def overall_interpretation_text(results):
@@ -103,7 +111,7 @@ def device_worst_month_line(r):
     return f"Worst month: {months[idx]} ({worst_days} days)"
 
 
-def render_kpi_card(title, value, subtitle=""):
+def render_text_kpi_card(title, value, subtitle=""):
     st.markdown(
         f"""
         <div style="
@@ -111,13 +119,92 @@ def render_kpi_card(title, value, subtitle=""):
             border-radius:16px;
             padding:18px 20px;
             background:#ffffff;
-            min-height:148px;
+            min-height:170px;
             box-shadow: 0 2px 10px rgba(16,24,40,0.04);
             display:flex;
             flex-direction:column;
             justify-content:space-between;">
             <div style="font-size:0.95rem;color:#667085;font-weight:700;margin-bottom:10px;">{title}</div>
-            <div style="font-size:2rem;color:#1f2937;font-weight:800;line-height:1.1;word-break:break-word;">{value}</div>
+            <div style="font-size:1.75rem;color:#1f2937;font-weight:800;line-height:1.15;word-break:break-word;">{value}</div>
+            <div style="font-size:0.93rem;color:#667085;margin-top:12px;line-height:1.4;">{subtitle}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_big_time_kpi_card(title, hours_value, mode_text, subtitle=""):
+    st.markdown(
+        f"""
+        <div style="
+            border:1px solid #e6eaf0;
+            border-radius:16px;
+            padding:18px 20px;
+            background:#ffffff;
+            min-height:170px;
+            box-shadow: 0 2px 10px rgba(16,24,40,0.04);
+            display:flex;
+            flex-direction:column;
+            justify-content:space-between;">
+            <div style="font-size:0.95rem;color:#667085;font-weight:700;margin-bottom:10px;">{title}</div>
+            <div>
+                <div style="
+                    font-size:2.9rem;
+                    color:#1f2937;
+                    font-weight:900;
+                    line-height:1;">
+                    {hours_value}
+                </div>
+                <div style="
+                    font-size:1rem;
+                    font-weight:700;
+                    color:#667085;
+                    margin-top:4px;">
+                    hrs/day
+                </div>
+                <div style="
+                    font-size:1rem;
+                    color:#667085;
+                    margin-top:10px;">
+                    {mode_text}
+                </div>
+            </div>
+            <div style="font-size:0.93rem;color:#667085;margin-top:12px;line-height:1.4;">{subtitle}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_big_number_kpi_card(title, number_value, secondary_line, subtitle=""):
+    st.markdown(
+        f"""
+        <div style="
+            border:1px solid #e6eaf0;
+            border-radius:16px;
+            padding:18px 20px;
+            background:#ffffff;
+            min-height:170px;
+            box-shadow: 0 2px 10px rgba(16,24,40,0.04);
+            display:flex;
+            flex-direction:column;
+            justify-content:space-between;">
+            <div style="font-size:0.95rem;color:#667085;font-weight:700;margin-bottom:10px;">{title}</div>
+            <div>
+                <div style="
+                    font-size:2.9rem;
+                    color:#1f2937;
+                    font-weight:900;
+                    line-height:1;">
+                    {number_value}
+                </div>
+                <div style="
+                    font-size:1rem;
+                    color:#667085;
+                    margin-top:10px;">
+                    {secondary_line}
+                </div>
+            </div>
             <div style="font-size:0.93rem;color:#667085;margin-top:12px;line-height:1.4;">{subtitle}</div>
         </div>
         """,
@@ -198,7 +285,8 @@ def render_result():
     all_pass = all(r.get("status") == "PASS" for r in results.values())
     days, pct = annual_empty_battery_stats(results)
     airport_name = st.session_state.get("airport_label", "") or "Selected study point"
-    mode_text = operating_mode_label()
+    required_hours = float(st.session_state.get("required_hours", 12.0))
+    mode_name = operating_mode_name()
 
     box_bg = "#ecfdf3" if all_pass else "#fef3f2"
     box_fg = "#067647" if all_pass else "#b42318"
@@ -246,31 +334,34 @@ def render_result():
     c1, c2, c3 = st.columns(3)
 
     with c1:
-        render_kpi_card(
+        render_text_kpi_card(
             "Airport",
             airport_name,
             "Study location used for the feasibility assessment"
         )
 
     with c2:
-        render_kpi_card(
-            "Required operating mode",
-            mode_text,
+        render_big_time_kpi_card(
+            "Required operating time",
+            format_hours_digital(required_hours),
+            mode_name,
             "Applied requirement used for the study"
         )
 
     with c3:
         if days is None or pct is None:
-            render_kpi_card(
+            render_big_number_kpi_card(
                 "Days with empty battery",
                 "N/A",
-                "PVGIS annual depletion metric not available"
+                "PVGIS annual depletion metric not available",
+                ""
             )
         else:
-            render_kpi_card(
+            render_big_number_kpi_card(
                 "Days with empty battery",
                 f"{days}",
-                f"{pct:.1f}% of days per year"
+                f"{pct:.1f}% of days per year",
+                ""
             )
 
     st.markdown("### Results by device")

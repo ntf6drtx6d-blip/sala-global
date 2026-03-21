@@ -46,7 +46,8 @@ def build_monthly_df(results, required_hrs):
 
 
 def render_graph():
-    st.markdown("## Annual operating profile (12-month solar performance)")
+    st.markdown("## Annual operating profile")
+    st.caption("12-month solar performance from January to December")
 
     results = st.session_state.results
     required_hours = float(st.session_state.required_hours)
@@ -73,7 +74,11 @@ def render_graph():
         color="#16a34a",
         opacity=0.17
     ).encode(
-        x=alt.X("Month:N", sort=month_order, title="Annual cycle (Jan–Dec)"),
+        x=alt.X(
+            "Month:N",
+            sort=month_order,
+            title="Annual cycle (Jan–Dec)"
+        ),
         y=alt.Y(
             "FillTop:Q",
             scale=alt.Scale(domain=[0, 24]),
@@ -121,7 +126,10 @@ def render_graph():
             "Device:N",
             title="Device",
             scale=alt.Scale(scheme="tableau10"),
-            legend=alt.Legend(orient="top-right"),
+            legend=alt.Legend(
+                orient="top-right",
+                title="Selected devices"
+            ),
         ),
         tooltip=[
             alt.Tooltip("Device:N", title="Device"),
@@ -158,13 +166,13 @@ def render_graph():
     line_label_df = pd.DataFrame({
         "Month": ["Dec"],
         "Required": [required_hours],
-        "Text": [f"Required daily operation: {required_hours:.1f} hrs/day"],
+        "Text": [f"Required daily operation = {required_hours:.1f} hrs/day"],
     })
 
     line_label = alt.Chart(line_label_df).mark_text(
         align="right",
-        dx=-10,
-        dy=-8,
+        dx=-8,
+        dy=-10,
         fontSize=12,
         fontWeight="bold",
         color="#111827"
@@ -175,13 +183,13 @@ def render_graph():
     )
 
     chart = (green_fill + red_fill + line_chart + req_line + line_label).properties(
-        height=470
+        height=500
     ).interactive()
 
     st.altair_chart(chart, use_container_width=True)
 
     st.caption(
-        "Each point shows achievable daily operating hours in a given month. "
+        "Each point shows achievable daily operating hours in a given month across the full annual cycle. "
         "Black dashed line = required daily operation. "
         "Green = above requirement. Red = below requirement."
     )

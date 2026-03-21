@@ -1,6 +1,7 @@
 # ui/battery.py
 # ACTION: REPLACE ENTIRE FILE
 
+import math
 import pandas as pd
 import altair as alt
 import streamlit as st
@@ -9,23 +10,26 @@ MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 
-def short_device_label(full_name):
+def short_device_label(full_name: str) -> str:
     if " — " in full_name:
         return full_name.split(" — ", 1)[1]
     return full_name
 
 
-def calc_battery_reserve_hours(result_row):
+def calc_battery_reserve_hours(result_row: dict):
     """
     Battery reserve = usable battery energy / consumption
     Usable battery assumed at 70%
     """
-    batt = float(result_row["batt"])
-    power = max(float(result_row["power"]), 0.01)
-    return batt * 0.70 / power
+    try:
+        batt = float(result_row["batt"])
+        power = max(float(result_row["power"]), 0.01)
+        return batt * 0.70 / power
+    except Exception:
+        return None
 
 
-def build_empty_battery_df(results):
+def build_empty_battery_df(results: dict) -> pd.DataFrame:
     rows = []
 
     for device_name, r in results.items():
@@ -45,19 +49,43 @@ def build_empty_battery_df(results):
     return pd.DataFrame(rows)
 
 
-def render_battery():
-    st.markdown("## Empty battery risk by month")
+def compact_device_note(label: str, result_row: dict) -> str:
+    reserve = calc_battery_reserve_hours(result_row)
+    monthly_days = result_row.get("empty_battery_days_by_month") or [0] * 12
+    monthly_pct = result_row.get("empty_battery_pct_by_month") or [0] * 12
 
-    st.caption(
-        "This section shows how many days in each month the battery would become fully discharged "
-        "for the selected operating mode."
+    idx = max(range(12), key=lambda i: monthly_days[i])
+    worst_days = monthly_days[idx]
+    worst_pct = float(monthly_pct[idx]) if monthly_pct else 0.0
+    worst_month = MONTHS[idx]
+
+    if reserve is None:
+        reserve_text = "Battery autonomy not available."
+    else:
+        reserve_text = f"Battery autonomy: approx. {reserve:.1f} hrs from stored battery energy only."
+
+    if worst_days == 0:
+        return (
+            f"{reserve_text} No empty-battery days are expected in any month for the selected operating mode."
+        )
+
+    return (
+        f"{reserve_text} Highest battery depletion risk appears in {worst_month}: "
+        f"{worst_days} days ({worst_pct:.1f}% of days in that month)."
     )
 
-    results = st.session_state.get("results", {})
-    required_hours = float(st.session_state.get("required_hours", 12.0))
 
+def render_battery():
+    results = st.session_state.get("results", {})
     if not results:
         return
+
+    st.markdown("## Battery depletion risk")
+
+    st.caption(
+        "This graph shows how many days in each month the battery would become fully discharged "
+        "for the selected operating mode."
+    )
 
     df = build_empty_battery_df(results)
     device_labels = list(df["Device"].unique())
@@ -72,61 +100,108 @@ def render_battery():
 
     plot_df = df[df["Device"].isin(visible_devices)].copy()
 
-    # Summary cards per device
-    st.markdown("### Device summary")
-
-    for device_name, r in results.items():
-        label = short_device_label(device_name)
-        if label not in visible_devices:
-            continue
-
-        reserve = calc_battery_reserve_hours(r)
-        monthly_days = r.get("empty_battery_days_by_month") or [0] * 12
-        monthly_pct = r.get("empty_battery_pct_by_month") or [0] * 12
-
-        worst_idx = max(range(12), key=lambda i: monthly_days[i])
-        worst_days = monthly_days[worst_idx]
-        worst_pct = monthly_pct[worst_idx]
-        worst_month = MONTHS[worst_idx]
-
-        total_days = sum(monthly_days)
-
-        c1, c2, c3, c4 = st.columns([1.4, 1.1, 1.2, 1.4])
-
-        with c1:
-            st.markdown(f"**{label}**")
-
-        with c2:
-            st.metric("Battery reserve", f"{reserve:.1f} hrs")
-
-        with c3:
-            st.metric("Worst month", worst_month)
-
-        with c4:
-            st.metric("Empty-battery days", f"{worst_days} days")
-
-        if worst_days == 0:
-            st.caption(
-                f"{label} shows no battery depletion days in any month for the selected operating profile "
-                f"({required_hours:.1f} hrs/day)."
-            )
-        else:
-            st.caption(
-                f"{label} may experience battery depletion in {worst_month} "
-                f"({worst_days} days, {worst_pct:.1f}% of days in that month)."
-            )
-
-        st.markdown("---")
-
-    st.markdown("### Monthly empty-battery days")
-
     if plot_df.empty:
         st.info("No devices selected for display.")
         return
 
-    chart = alt.Chart(plot_df).mark_bar().encode(
-        x=alt.X("Month:N", sort=MONTHS, title="Month"),
-        y=alt.Y("EmptyBatteryDays:Q", title="Days with empty battery"),
+    all_zero = plot_df["EmptyBatteryDays"].sum() == 0
+
+    # Compact explanation cards
+    st.markdown("### What this means")
+
+    for device_name, result_row in results.items():
+        label = short_device_label(device_name)
+        if label not in visible_devices:
+            continue
+
+        monthly_days = result_row.get("empty_battery_days_by_month") or [0] * 12
+        idx = max(range(12), key=lambda i: monthly_days[i])
+        worst_days = monthly_days[idx]
+        worst_month = MONTHS[idx]
+        reserve = calc_battery_reserve_hours(result_row)
+
+        c1, c2, c3 = st.columns(3)
+
+        with c1:
+            reserve_value = f"{reserve:.1f} hrs" if reserve is not None else "N/A"
+            st.markdown(
+                f"""
+                <div style="
+                    border:1px solid #e6eaf0;
+                    border-radius:14px;
+                    padding:16px 18px;
+                    background:#ffffff;
+                    min-height:120px;
+                    box-shadow:0 2px 10px rgba(16,24,40,0.04);">
+                    <div style="font-size:0.95rem;color:#667085;font-weight:700;">{label}</div>
+                    <div style="font-size:2.2rem;font-weight:900;color:#1f2937;margin-top:8px;">{reserve_value}</div>
+                    <div style="font-size:0.95rem;color:#667085;margin-top:8px;">Battery autonomy</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        with c2:
+            st.markdown(
+                f"""
+                <div style="
+                    border:1px solid #e6eaf0;
+                    border-radius:14px;
+                    padding:16px 18px;
+                    background:#ffffff;
+                    min-height:120px;
+                    box-shadow:0 2px 10px rgba(16,24,40,0.04);">
+                    <div style="font-size:0.95rem;color:#667085;font-weight:700;">Worst month</div>
+                    <div style="font-size:2.2rem;font-weight:900;color:#1f2937;margin-top:8px;">{worst_month}</div>
+                    <div style="font-size:0.95rem;color:#667085;margin-top:8px;">Highest depletion risk month</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        with c3:
+            st.markdown(
+                f"""
+                <div style="
+                    border:1px solid #e6eaf0;
+                    border-radius:14px;
+                    padding:16px 18px;
+                    background:#ffffff;
+                    min-height:120px;
+                    box-shadow:0 2px 10px rgba(16,24,40,0.04);">
+                    <div style="font-size:0.95rem;color:#667085;font-weight:700;">Empty-battery days</div>
+                    <div style="font-size:2.2rem;font-weight:900;color:#1f2937;margin-top:8px;">{worst_days} days</div>
+                    <div style="font-size:0.95rem;color:#667085;margin-top:8px;">In the worst month</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        st.markdown(
+            f"""
+            <div style="font-size:0.96rem;color:#475467;margin-top:10px;margin-bottom:16px;line-height:1.55;">
+                {compact_device_note(label, result_row)}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    if all_zero:
+        st.success("No empty-battery days are expected in any month for the selected operating mode.")
+        return
+
+    st.markdown("### Monthly empty-battery days")
+
+    base = alt.Chart(plot_df).encode(
+        x=alt.X(
+            "Month:N",
+            sort=MONTHS,
+            title="Month"
+        ),
+        y=alt.Y(
+            "EmptyBatteryDays:Q",
+            title="Days with empty battery"
+        ),
         color=alt.Color(
             "Device:N",
             title="Device",
@@ -139,16 +214,24 @@ def render_battery():
             alt.Tooltip("EmptyBatteryDays:Q", title="Days with empty battery"),
             alt.Tooltip("EmptyBatteryPct:Q", title="Share of month", format=".1f"),
         ],
-    ).properties(height=420)
-
-    st.altair_chart(chart, use_container_width=True)
-
-    st.caption(
-        "Bars show the number of days in each month when the battery would become fully discharged "
-        "for the selected operating mode."
     )
 
-    st.markdown("### Monthly table")
+    compact_chart = (
+        base.mark_line(point=True, strokeWidth=2.5)
+        + base.mark_area(opacity=0.12)
+    ).properties(height=240)
 
-    pivot_days = plot_df.pivot(index="Month", columns="Device", values="EmptyBatteryDays").reindex(MONTHS)
-    st.dataframe(pivot_days.fillna(0).astype(int), use_container_width=True)
+    st.altair_chart(compact_chart, use_container_width=True)
+
+    with st.expander("Expand monthly battery-risk chart", expanded=False):
+        expanded_chart = (
+            base.mark_line(point=True, strokeWidth=3)
+            + base.mark_area(opacity=0.14)
+        ).properties(height=420)
+
+        st.altair_chart(expanded_chart, use_container_width=True)
+
+    st.caption(
+        "The line shows monthly battery depletion risk for the selected operating mode. "
+        "Filled area is used only to improve readability."
+    )

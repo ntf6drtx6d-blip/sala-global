@@ -1,90 +1,93 @@
 # ui/weather_basis.py
-# ACTION: CREATE / REPLACE ENTIRE FILE
+# ACTION: REPLACE ENTIRE FILE
 
 import streamlit as st
 
 
 def render_weather_basis():
-    st.markdown("## Weather validation basis")
+    st.markdown("## Weather basis")
 
-    st.caption(
-        "This assessment is not based on a single sunny-day calculation. "
-        "It is based on long-term historical solar data for the selected location."
-    )
+    # --- LAYOUT: half-width ---
+    col, _ = st.columns([0.6, 0.4])
 
-    years = [
-        "2010", "2011", "2012", "2013", "2014",
-        "2015", "2016", "2017", "2018", "2019",
-        "2020", "2021", "2022", "2023", "2024"
-    ]
+    with col:
 
-    # Top summary cards
-    c1, c2, c3 = st.columns(3)
+        # --- KPI ROW ---
+        c1, c2, c3 = st.columns(3)
 
-    with c1:
-        st.metric("Historical data window", "15 years")
+        with c1:
+            st.markdown("""
+            <div style="font-weight:800;font-size:1.6rem;">15 years</div>
+            <div style="color:#667085;font-size:0.9rem;">Historical data window</div>
+            """, unsafe_allow_html=True)
 
-    with c2:
-        st.metric("Weather basis", "TMY")
+        with c2:
+            st.markdown("""
+            <div style="font-weight:800;font-size:1.6rem;">TMY</div>
+            <div style="color:#667085;font-size:0.9rem;">Typical Meteorological Year</div>
+            """, unsafe_allow_html=True)
 
-    with c3:
-        st.metric("Coverage", "Full annual cycle")
+        with c3:
+            st.markdown("""
+            <div style="font-weight:800;font-size:1.6rem;">Jan–Dec</div>
+            <div style="color:#667085;font-size:0.9rem;">Full annual cycle</div>
+            """, unsafe_allow_html=True)
 
-    st.markdown("### Historical data coverage")
+        # --- TIMELINE ---
+        st.markdown("###")
 
-    # Timeline-like visual
-    year_cols = st.columns(len(years))
-    for col, year in zip(year_cols, years):
-        with col:
-            st.markdown(
-                f"""
-                <div style="text-align:center;">
-                    <div style="
-                        height:42px;
-                        border-radius:8px;
-                        background:#1f77b4;
-                        opacity:0.88;
-                        margin-bottom:6px;">
-                    </div>
-                    <div style="font-size:0.72rem;color:#475467;">{year}</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+        years = list(range(2010, 2025))
+        year_boxes = ""
 
-    st.info(
-        "Typical Meteorological Year (TMY) generated from long-term historical data "
-        "for this specific location."
-    )
-
-    st.markdown("### What this means")
-
-    b1, b2 = st.columns(2)
-
-    with b1:
-        st.success("Includes low-solar winter conditions")
-        st.write("The simulation covers the full annual cycle, not only summer or average conditions.")
-
-    with b2:
-        st.success("Based on real historical weather data")
-        st.write("The result reflects long-term solar conditions for the selected airport location.")
-
-    st.markdown(
-        """
-        <div style="
-            border:1px solid #d9e2ef;
-            border-radius:14px;
-            padding:12px 14px;
-            background:#f8fbff;
-            margin-top:10px;">
-            <div style="font-weight:700; color:#12355b; margin-bottom:6px;">
-                Why airports care
+        for y in years:
+            year_boxes += f"""
+            <div style="
+                background:#5b83ad;
+                width:32px;
+                height:22px;
+                border-radius:6px;
+                display:inline-block;
+                margin-right:6px;
+                margin-bottom:6px;">
             </div>
-            <div style="font-size:0.95rem; color:#475467; line-height:1.5;">
-                This means the system is checked against realistic seasonal weather variation.
-                It is not assuming perfect sunshine every day.
+            """
+
+        st.markdown(year_boxes, unsafe_allow_html=True)
+
+        st.markdown(
+            "<div style='font-size:0.8rem;color:#667085;margin-top:4px;'>"
+            + " ".join(str(y) for y in years) +
+            "</div>",
+            unsafe_allow_html=True
+        )
+
+        # --- ENGINE + DATA (MAIN TRUST BLOCK) ---
+        st.markdown("###")
+
+        st.markdown("""
+        <div style="
+            border:1px solid #d6e0ef;
+            border-radius:14px;
+            padding:14px 16px;
+            background:#f7faff;
+        ">
+            <div style="font-weight:800;color:#12355b;margin-bottom:6px;">
+                Powered by PVGIS
+            </div>
+
+            <div style="font-size:0.92rem;color:#475467;line-height:1.5;">
+                <b>PVGIS — Photovoltaic Geographical Information System</b><br/>
+                Joint Research Centre, European Commission<br/>
+                Dataset: <b>PVGIS-SARAH3</b>
             </div>
         </div>
-        """,
-        unsafe_allow_html=True,
-    )
+        """, unsafe_allow_html=True)
+
+        # --- ENGINEERING INTERPRETATION ---
+        st.markdown("###")
+
+        st.markdown("""
+        <div style="font-size:0.95rem;color:#344054;">
+            Results account for seasonal variation and low-solar conditions using long-term historical data.
+        </div>
+        """, unsafe_allow_html=True)

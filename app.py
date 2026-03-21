@@ -4,9 +4,8 @@
 import os
 import streamlit as st
 
-# UI modules
 from ui.setup import render_setup
-from ui.cockpit import render_cockpit
+from ui.cockpit import render_cockpit, _run_simulation, reset_study
 from ui.result import render_result
 from ui.graph import render_graph
 from ui.battery import render_battery
@@ -39,6 +38,10 @@ def init_state():
         "elapsed": None,
         "search_message": "",
         "map_click_info": "",
+        "running": False,
+        "run_progress": 0,
+        "run_stage": "Ready",
+        "run_log": [],
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -71,6 +74,20 @@ def apply_global_styles():
             color: #6b7280;
             margin-bottom: 0.5rem;
         }
+        .top-action-wrap {
+            border: 1px solid #e8edf4;
+            border-radius: 16px;
+            padding: 12px 14px;
+            background: #ffffff;
+            box-shadow: 0 4px 18px rgba(17, 24, 39, 0.05);
+            margin-bottom: 16px;
+        }
+        .top-action-title {
+            font-size: 0.92rem;
+            font-weight: 700;
+            color: #344054;
+            margin-bottom: 8px;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -95,32 +112,83 @@ def render_header():
         )
 
 
+# ---------------- TOP ACTION BAR ----------------
+
+def render_top_action_bar():
+    st.markdown('<div class="top-action-wrap">', unsafe_allow_html=True)
+    st.markdown('<div class="top-action-title">Actions</div>', unsafe_allow_html=True)
+
+    # BEFORE RUN
+    if not st.session_state.get("running") and st.session_state.get("results") is None:
+        c1, c2 = st.columns([1.2, 4])
+
+        with c1:
+            if st.button("Run simulation", type="primary", use_container_width=True, key="top_run_simulation"):
+                _run_simulation()
+
+        with c2:
+            st.caption("Start the feasibility check using the selected study setup.")
+
+    # DURING RUN
+    elif st.session_state.get("running"):
+        c1, c2 = st.columns([2.2, 3])
+
+        with c1:
+            st.progress(st.session_state.get("run_progress", 0) / 100.0)
+            st.caption(f"Running… {st.session_state.get('run_progress', 0)}%")
+
+        with c2:
+            st.caption(st.session_state.get("run_stage", "Simulation in progress"))
+
+    # AFTER RUN
+    else:
+        c1, c2, c3 = st.columns([1.2, 1.2, 3])
+
+        with c1:
+            if st.session_state.get("pdf_bytes") is not None:
+                st.download_button(
+                    "Download report",
+                    data=st.session_state.pdf_bytes,
+                    file_name=st.session_state.pdf_name,
+                    mime="application/pdf",
+                    use_container_width=True,
+                    key="top_download_report",
+                )
+            else:
+                st.button("Download report", disabled=True, use_container_width=True, key="top_download_disabled")
+
+        with c2:
+            if st.button("Start new study", use_container_width=True, key="top_start_new_study"):
+                reset_study()
+
+        with c3:
+            st.caption("Simulation finished. You can download the report or reset the study and start again.")
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
 # ---------------- INIT ----------------
 
 init_state()
 apply_global_styles()
 render_header()
 
+# top bar first
+render_top_action_bar()
 
-# ---------------- LAYOUT ----------------
-
-# Sidebar (cockpit)
+# desktop dashboard in sidebar
 render_cockpit()
 
 # Main flow
-
-# RESULT (after simulation)
 if st.session_state.get("results") is not None:
     render_result()
 
-# SETUP
 if not st.session_state.get("results"):
     render_setup()
 else:
     with st.expander("Show study setup", expanded=False):
         render_setup()
 
-# GRAPH + BATTERY
 if st.session_state.get("results") is not None:
     render_graph()
     render_battery()

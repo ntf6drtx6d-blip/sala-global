@@ -102,52 +102,63 @@ def render_header():
         )
 
 
+def _trigger_simulation():
+    st.session_state.running = True
+    st.session_state.run_stage = "Preparing simulation"
+    st.session_state.trigger_run = True
+    st.rerun()
+
+
 def render_top_action_bar():
     st.markdown('<div class="top-action-wrap">', unsafe_allow_html=True)
     st.markdown('<div class="top-action-title">Actions</div>', unsafe_allow_html=True)
 
     ready = bool(st.session_state.get("study_ready", False))
+    has_results = st.session_state.get("results") is not None
+    is_running = bool(st.session_state.get("running", False))
 
-    if not st.session_state.get("running") and st.session_state.get("results") is None:
-        c1, c2 = st.columns([1.2, 4])
+    if is_running:
+        c1, c2 = st.columns([1.5, 4])
+        with c1:
+            st.markdown("**Simulation in progress**")
+        with c2:
+            st.caption(st.session_state.get("run_stage", "Processing"))
 
+    elif not has_results:
+        c1, c2 = st.columns([1.4, 4])
         with c1:
             if st.button(
                 "Run simulation",
                 type="primary",
                 use_container_width=True,
-                key="top_run_simulation",
                 disabled=not ready,
+                key="top_run_simulation",
             ):
-                st.session_state.running = True
-                st.session_state.run_stage = "Preparing simulation"
-                st.session_state.trigger_run = True
-                st.rerun()
-
+                _trigger_simulation()
         with c2:
             if ready:
                 st.caption("Start the feasibility check using the selected study setup.")
             else:
                 st.caption("Select an airport or study point and at least one device to enable simulation.")
 
-    elif st.session_state.get("running"):
-        c1, c2 = st.columns([1.5, 4])
-
+    else:
+        c1, c2, c3 = st.columns([1.5, 1.4, 4])
         with c1:
-            st.markdown("**Simulation in progress**")
+            if st.button(
+                "Run updated simulation",
+                type="primary",
+                use_container_width=True,
+                disabled=not ready,
+                key="top_run_updated_simulation",
+            ):
+                _trigger_simulation()
 
         with c2:
-            st.caption(st.session_state.get("run_stage", "Processing"))
-
-    else:
-        c1, c2 = st.columns([1.2, 4])
-
-        with c1:
             if st.button("Start new study", use_container_width=True, key="top_start_new_study"):
                 reset_study()
 
-        with c2:
-            st.caption("Simulation finished. You can review the results below or start a new study.")
+        with c3:
+            st.caption("You can change the same location, devices or operating mode and run the study again.")
 
     st.markdown('</div>', unsafe_allow_html=True)
 

@@ -5,7 +5,7 @@ import os
 import streamlit as st
 
 from ui.setup import render_setup
-from ui.cockpit import render_cockpit, _run_simulation, reset_study
+from ui.cockpit import _run_simulation, reset_study
 from ui.result import render_result
 from ui.graph import render_graph
 from ui.battery import render_battery
@@ -167,7 +167,6 @@ init_state()
 apply_global_styles()
 render_header()
 render_top_action_bar()
-render_cockpit()
 
 if st.session_state.get("trigger_run"):
     st.session_state.trigger_run = False

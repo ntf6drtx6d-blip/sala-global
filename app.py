@@ -74,7 +74,7 @@ def apply_global_styles():
         """
         <style>
         .block-container {
-            padding-top: 1.6rem;
+            padding-top: 1.4rem;
             padding-bottom: 2rem;
             max-width: 1500px;
         }
@@ -107,7 +107,7 @@ def apply_global_styles():
             margin-bottom: 8px;
         }
 
-        div[data-testid="stDownloadButton"] > button.top-download-btn {
+        div[data-testid="stDownloadButton"] > button {
             background: #1f4fbf !important;
             color: white !important;
             border: 1px solid #1f4fbf !important;
@@ -116,7 +116,7 @@ def apply_global_styles():
             min-height: 46px !important;
         }
 
-        div[data-testid="stDownloadButton"] > button.top-download-btn:hover {
+        div[data-testid="stDownloadButton"] > button:hover {
             background: #183f98 !important;
             border-color: #183f98 !important;
             color: white !important;
@@ -127,6 +127,10 @@ def apply_global_styles():
             font-size: 0.95rem;
             line-height: 1.45;
             margin-top: 6px;
+        }
+
+        button[kind="secondary"] {
+            border-radius: 12px !important;
         }
         </style>
         """,
@@ -224,6 +228,18 @@ def render_top_action_bar():
                 _trigger_simulation()
 
         with c3:
+            st.markdown(
+                """
+                <style>
+                div[data-testid="stButton"] button[kind="secondary"]#top_start_new_study {
+                    background: #fff7db !important;
+                    border: 1px solid #f5c451 !important;
+                    color: #7a5a00 !important;
+                }
+                </style>
+                """,
+                unsafe_allow_html=True,
+            )
             if st.button(
                 "Start new study",
                 use_container_width=True,
@@ -243,17 +259,13 @@ init_state()
 apply_global_styles()
 render_header()
 
-# Render setup first so session state is updated before top actions are drawn
 if not st.session_state.get("results"):
     render_setup()
 else:
     with st.expander("Show study setup", expanded=False):
         render_setup()
 
-# Recalculate readiness after setup fields potentially changed
 refresh_study_ready_from_state()
-
-# Now draw actions using fresh state
 render_top_action_bar()
 
 if st.session_state.get("trigger_run"):

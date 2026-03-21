@@ -1,7 +1,12 @@
 # ui/battery.py
 # ACTION: REPLACE ENTIRE FILE
 
+import pandas as pd
+import altair as alt
 import streamlit as st
+
+MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+          "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 
 def short_device_label(full_name):
@@ -20,88 +25,130 @@ def calc_battery_reserve_hours(result_row):
     return batt * 0.70 / power
 
 
-def visual_ratio(value, scale_max):
-    if scale_max <= 0:
-        return 0.0
-    return min(max(value / scale_max, 0.0), 1.0)
+def build_empty_battery_df(results):
+    rows = []
 
+    for device_name, r in results.items():
+        label = short_device_label(device_name)
+        monthly_days = r.get("empty_battery_days_by_month") or [0] * 12
+        monthly_pct = r.get("empty_battery_pct_by_month") or [0] * 12
 
-def result_badge(status):
-    if status == "PASS":
-        st.success("PASS")
-    else:
-        st.error("FAIL")
+        for i, month in enumerate(MONTHS):
+            rows.append({
+                "Device": label,
+                "Month": month,
+                "MonthIndex": i + 1,
+                "EmptyBatteryDays": int(monthly_days[i]),
+                "EmptyBatteryPct": float(monthly_pct[i]),
+            })
+
+    return pd.DataFrame(rows)
 
 
 def render_battery():
-    st.markdown("## Battery reserve vs daily solar sustainability")
+    st.markdown("## Empty battery risk by month")
 
     st.caption(
-        "Battery reserve is not the same as annual solar feasibility. "
-        "Battery reserve shows how long the lamp can operate from stored battery energy only. "
-        "Annual solar feasibility shows whether the system can maintain the required daily operating pattern throughout the year."
+        "This section shows how many days in each month the battery would become fully discharged "
+        "for the selected operating mode."
     )
 
-    results = st.session_state.results
-    required_hours = float(st.session_state.required_hours)
+    results = st.session_state.get("results", {})
+    required_hours = float(st.session_state.get("required_hours", 12.0))
 
     if not results:
         return
 
+    df = build_empty_battery_df(results)
+    device_labels = list(df["Device"].unique())
+
+    visible_devices = st.multiselect(
+        "Devices shown in battery-risk chart",
+        device_labels,
+        default=device_labels,
+        help="Untick devices to hide them from the chart.",
+        key="battery_devices_filter"
+    )
+
+    plot_df = df[df["Device"].isin(visible_devices)].copy()
+
+    # Summary cards per device
+    st.markdown("### Device summary")
+
     for device_name, r in results.items():
         label = short_device_label(device_name)
+        if label not in visible_devices:
+            continue
+
         reserve = calc_battery_reserve_hours(r)
-        annual_result = r["status"]
-        fail_months = ", ".join(r["fail_months"]) if r["fail_months"] else "None"
+        monthly_days = r.get("empty_battery_days_by_month") or [0] * 12
+        monthly_pct = r.get("empty_battery_pct_by_month") or [0] * 12
 
-        st.markdown(f"### {label}")
+        worst_idx = max(range(12), key=lambda i: monthly_days[i])
+        worst_days = monthly_days[worst_idx]
+        worst_pct = monthly_pct[worst_idx]
+        worst_month = MONTHS[worst_idx]
 
-        top_left, top_mid, top_right = st.columns([1.3, 1.1, 1.0])
+        total_days = sum(monthly_days)
 
-        with top_left:
-            st.markdown("**Battery reserve**")
-            st.metric("Stored energy only", f"{reserve:.1f} hrs")
+        c1, c2, c3, c4 = st.columns([1.4, 1.1, 1.2, 1.4])
 
-        with top_mid:
-            st.markdown("**Required daily operation**")
-            st.metric("Target", f"{required_hours:.1f} hrs/day")
+        with c1:
+            st.markdown(f"**{label}**")
 
-        with top_right:
-            st.markdown("**Annual solar result**")
-            result_badge(annual_result)
+        with c2:
+            st.metric("Battery reserve", f"{reserve:.1f} hrs")
 
-        # Visual comparison bars
-        st.markdown("**Visual comparison**")
+        with c3:
+            st.metric("Worst month", worst_month)
 
-        bar_left, bar_right = st.columns([1, 1])
+        with c4:
+            st.metric("Empty-battery days", f"{worst_days} days")
 
-        # choose visual max so both bars are readable
-        scale_max = max(24.0, reserve, required_hours)
-
-        with bar_left:
-            st.write("Battery reserve")
-            st.progress(
-                visual_ratio(reserve, scale_max),
-                text=f"{reserve:.1f} hrs available from battery only"
-            )
-
-        with bar_right:
-            st.write("Required daily operation")
-            st.progress(
-                visual_ratio(required_hours, scale_max),
-                text=f"{required_hours:.1f} hrs/day required"
-            )
-
-        if annual_result == "PASS":
+        if worst_days == 0:
             st.caption(
-                f"{label} has battery reserve and also passes the annual solar feasibility check. "
-                f"It can sustain the required daily operation across the full year."
+                f"{label} shows no battery depletion days in any month for the selected operating profile "
+                f"({required_hours:.1f} hrs/day)."
             )
         else:
             st.caption(
-                f"{label} may still have usable battery reserve ({reserve:.1f} hrs from stored energy), "
-                f"but this does not mean it can operate {required_hours:.1f} hrs/day every day throughout the year. "
-                f"Annual limiting months: {fail_months}."
+                f"{label} may experience battery depletion in {worst_month} "
+                f"({worst_days} days, {worst_pct:.1f}% of days in that month)."
             )
 
         st.markdown("---")
+
+    st.markdown("### Monthly empty-battery days")
+
+    if plot_df.empty:
+        st.info("No devices selected for display.")
+        return
+
+    chart = alt.Chart(plot_df).mark_bar().encode(
+        x=alt.X("Month:N", sort=MONTHS, title="Month"),
+        y=alt.Y("EmptyBatteryDays:Q", title="Days with empty battery"),
+        color=alt.Color(
+            "Device:N",
+            title="Device",
+            scale=alt.Scale(scheme="tableau10"),
+            legend=alt.Legend(orient="top-right")
+        ),
+        tooltip=[
+            alt.Tooltip("Device:N", title="Device"),
+            alt.Tooltip("Month:N", title="Month"),
+            alt.Tooltip("EmptyBatteryDays:Q", title="Days with empty battery"),
+            alt.Tooltip("EmptyBatteryPct:Q", title="Share of month", format=".1f"),
+        ],
+    ).properties(height=420)
+
+    st.altair_chart(chart, use_container_width=True)
+
+    st.caption(
+        "Bars show the number of days in each month when the battery would become fully discharged "
+        "for the selected operating mode."
+    )
+
+    st.markdown("### Monthly table")
+
+    pivot_days = plot_df.pivot(index="Month", columns="Device", values="EmptyBatteryDays").reindex(MONTHS)
+    st.dataframe(pivot_days.fillna(0).astype(int), use_container_width=True)

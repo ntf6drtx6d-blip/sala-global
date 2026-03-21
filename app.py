@@ -21,6 +21,7 @@ st.set_page_config(
 )
 
 LOGO_PATH = "sala_logo.png"
+EU_LOGO_PATH = "logo_en.gif"
 
 
 # ---------------------------------------------------------
@@ -39,6 +40,12 @@ def format_seconds(seconds):
 
 def now_ts():
     return datetime.now().strftime("%H:%M:%S")
+
+
+def short_device_label(full_name):
+    if " — " in full_name:
+        return full_name.split(" — ", 1)[1]
+    return full_name
 
 
 def geocode_airport(query):
@@ -80,24 +87,24 @@ def create_map(lat, lon, label):
 
     folium.CircleMarker(
         location=[lat, lon],
-        radius=14,
+        radius=7,
         color="#d9534f",
         fill=True,
         fill_color="#d9534f",
-        fill_opacity=0.92,
-        weight=3,
+        fill_opacity=0.9,
+        weight=2,
         popup=label if label else f"{lat:.6f}, {lon:.6f}",
         tooltip=label if label else "Selected airport"
     ).add_to(fmap)
 
     folium.Circle(
         location=[lat, lon],
-        radius=220,
+        radius=90,
         color="#d9534f",
-        weight=2,
+        weight=1.5,
         fill=True,
         fill_color="#d9534f",
-        fill_opacity=0.10
+        fill_opacity=0.08
     ).add_to(fmap)
 
     return fmap
@@ -107,7 +114,7 @@ def build_results_table(results):
     rows = []
     for key, r in results.items():
         rows.append({
-            "Device": key,
+            "Device": short_device_label(key),
             "Engine": r["engine"],
             "PV (W)": r["pv"],
             "Battery (Wh)": r["batt"],
@@ -127,21 +134,21 @@ def build_monthly_df(results, required_hrs):
     rows = []
 
     for device_name, r in results.items():
+        label = short_device_label(device_name)
         for i, m in enumerate(months):
             value = float(r["hours"][i])
             diff = value - float(required_hrs)
             rows.append({
                 "Month": m,
                 "MonthNum": i + 1,
-                "Device": device_name,
+                "Device": label,
                 "Hours": value,
                 "RequiredHours": float(required_hrs),
                 "Difference": diff,
                 "StatusBand": "Above requirement" if diff >= 0 else "Below requirement",
-                "AbsDiff": abs(diff),
                 "Explanation": (
-                    f"{device_name} can operate for {value:.2f} hrs/day in {m}. "
-                    f"Required profile is {required_hrs:.2f} hrs/day."
+                    f"{label}: {value:.2f} hrs/day in {m}. "
+                    f"Required profile: {required_hrs:.2f} hrs/day."
                 )
             })
 
@@ -161,13 +168,26 @@ def build_fill_data(monthly_df):
     return above, below
 
 
-def short_device_label(full_name):
-    if " — " in full_name:
-        return full_name.split(" — ", 1)[1]
-    return full_name
+def generate_recommendation(overall, worst_name, results):
+    if overall == "PASS":
+        return (
+            "Recommended next step: proceed to installation-specific validation, "
+            "including exact mounting geometry, shading review and final hardware selection."
+        )
+
+    weak = results.get(worst_name, {})
+    fail_months = weak.get("fail_months", [])
+    fail_months_text = ", ".join(fail_months) if fail_months else "one or more months"
+
+    return (
+        f"Recommended next step: review the weakest configuration "
+        f"({short_device_label(worst_name)}) which falls below the target in {fail_months_text}. "
+        f"Consider a stronger Solar Engine, higher battery reserve, lower power demand, "
+        f"or a reduced required daily operating window."
+    )
 
 
-def pvgis_card():
+def pvgis_data_card():
     st.markdown(
         """
         <div style="
@@ -175,16 +195,15 @@ def pvgis_card():
             border-radius:16px;
             padding:14px 16px;
             background:#f8fbff;
-            margin-top:6px;
+            margin-top:4px;
             margin-bottom:10px;">
             <div style="font-weight:700; color:#12355b; margin-bottom:6px;">
-                External calculation engine and data source
+                External data and calculation engine
             </div>
-            <div style="font-size:0.95rem; color:#475467; line-height:1.55;">
+            <div style="font-size:0.92rem; color:#475467; line-height:1.45;">
                 <b>PVGIS — Photovoltaic Geographical Information System</b><br/>
-                <b>Institution:</b> Joint Research Centre (European Commission)<br/>
-                This tool sends the selected inputs to PVGIS, retrieves the solar/off-grid results,
-                and then organizes them into an annual feasibility assessment for Solar AGL applications.
+                <b>Institution:</b> Joint Research Centre, European Commission<br/>
+                <b>Dataset:</b> PVGIS-SARAH3
             </div>
         </div>
         """,
@@ -203,7 +222,7 @@ def status_badge(text, ok=True):
         color:white;
         font-weight:700;
         font-size:14px;
-        margin-top:8px;
+        margin-top:6px;
     ">
         {text}
     </div>
@@ -216,7 +235,7 @@ def status_badge(text, ok=True):
 st.markdown("""
 <style>
 .block-container {
-    padding-top: 0.9rem;
+    padding-top: 0.85rem;
     padding-bottom: 2rem;
     max-width: 1520px;
 }
@@ -224,29 +243,29 @@ header[data-testid="stHeader"] {
     background: rgba(255,255,255,0);
 }
 .main-title {
-    font-size: 2.05rem;
+    font-size: 2.0rem;
     font-weight: 800;
     line-height: 1.05;
-    margin-bottom: 0.25rem;
+    margin-bottom: 0.22rem;
     color: #1f2937;
 }
 .sub-title {
     font-size: 1rem;
     color: #6b7280;
-    margin-bottom: 0.55rem;
+    margin-bottom: 0.5rem;
 }
 .card {
     border: 1px solid #e8edf4;
     border-radius: 20px;
-    padding: 20px 20px 16px 20px;
+    padding: 18px 18px 14px 18px;
     background: #ffffff;
     box-shadow: 0 4px 18px rgba(17, 24, 39, 0.05);
     margin-bottom: 16px;
 }
 .section-title {
-    font-size: 1.18rem;
+    font-size: 1.16rem;
     font-weight: 800;
-    margin-bottom: 14px;
+    margin-bottom: 12px;
     color: #1f2937;
 }
 .metric-box {
@@ -267,7 +286,7 @@ header[data-testid="stHeader"] {
     color: #1f2937;
 }
 .device-title {
-    font-size: 1.2rem;
+    font-size: 1.15rem;
     font-weight: 800;
     margin-bottom: 0.2rem;
 }
@@ -295,7 +314,7 @@ header[data-testid="stHeader"] {
     color:#667085;
     font-size:0.88rem;
     margin-top:4px;
-    line-height:1.45;
+    line-height:1.42;
 }
 .map-note {
     color:#6b7280;
@@ -305,13 +324,18 @@ header[data-testid="stHeader"] {
 .log-box {
     border: 1px solid #e5eaf1;
     border-radius: 14px;
-    padding: 12px 14px;
+    padding: 10px 12px;
     background: #fbfcfe;
 }
-.sidebar-note {
-    font-size: 0.9rem;
-    color: #667085;
-    line-height: 1.45;
+.cockpit-label {
+    color:#667085;
+    font-size:0.83rem;
+    margin-bottom:2px;
+}
+.cockpit-value {
+    font-weight:700;
+    font-size:0.98rem;
+    margin-bottom:10px;
 }
 div[data-testid="stNumberInput"] input,
 div[data-testid="stTextInput"] input {
@@ -338,7 +362,6 @@ defaults = {
     "last_slope": None,
     "map_click_info": "",
     "last_elapsed": None,
-    "last_run_completed": False,
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -357,22 +380,22 @@ with h1:
 with h2:
     st.markdown('<div class="main-title">SALA Standardized Feasibility Study for Solar AGL</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="sub-title">Step-by-step PVGIS-based feasibility workflow for Solar AGL, PAPI and A-PAPI systems</div>',
+        '<div class="sub-title">A guided feasibility workflow using PVGIS solar and off-grid simulation outputs</div>',
         unsafe_allow_html=True
     )
 
-# Top dynamic sections
+# Top dynamic containers
 simulation_area = st.container()
 results_top_area = st.container()
 
 # ---------------------------------------------------------
-# Main input layout
+# Inputs
 # ---------------------------------------------------------
 left, right = st.columns([1.02, 1])
 
 with left:
     st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<div class="section-title">1. Location and operating profile</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">1. Define study location and operating profile</div>', unsafe_allow_html=True)
 
     airport_query = st.text_input(
         "Airport name",
@@ -390,7 +413,7 @@ with left:
                 st.session_state.search_message = f"Found: {result['display_name']}"
                 st.rerun()
             else:
-                st.session_state.search_message = "Airport not found. Enter coordinates manually or click the map."
+                st.session_state.search_message = "Airport not found. Enter coordinates manually or click on the map."
                 st.rerun()
         except Exception as e:
             st.session_state.search_message = f"Search error: {e}"
@@ -433,14 +456,13 @@ with left:
             step=0.5,
             help=(
                 "How many hours per day the system must operate reliably throughout the year. "
-                "This is not standalone battery autonomy and not 'solar range'."
+                "This is not battery autonomy in isolation and not solar range."
             )
         )
         st.markdown(
             '<div class="field-note">'
-            '<b>Critical input.</b> Enter the real daily operating requirement. '
-            'This is often confused with battery autonomy or solar range. '
-            'Example: if a runway system must work every night for 8 hours, enter 8.'
+            '<b>Critical input.</b> Enter the actual daily operating requirement. '
+            'Example: if the lights must operate from 18:00 to 02:00 every day, enter 8.'
             '</div>',
             unsafe_allow_html=True
         )
@@ -455,7 +477,7 @@ with left:
 
 with right:
     st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<div class="section-title">Map — click to select location</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Map — click to define the exact study point</div>', unsafe_allow_html=True)
 
     selected_label = airport_name_for_report.strip() if airport_name_for_report.strip() else "Selected airport"
     fmap = create_map(lat, lon, selected_label)
@@ -463,9 +485,9 @@ with right:
     map_data = st_folium(
         fmap,
         width=None,
-        height=530,
+        height=520,
         returned_objects=["last_clicked"],
-        key="airport_map_v3"
+        key="airport_map_v4"
     )
 
     clicked = map_data.get("last_clicked") if isinstance(map_data, dict) else None
@@ -475,7 +497,7 @@ with right:
         if abs(clicked_lat - st.session_state.lat) > 1e-7 or abs(clicked_lon - st.session_state.lon) > 1e-7:
             st.session_state.lat = clicked_lat
             st.session_state.lon = clicked_lon
-            st.session_state.map_click_info = f"Point selected from map: {clicked_lat:.6f}, {clicked_lon:.6f}"
+            st.session_state.map_click_info = f"Study point updated: {clicked_lat:.6f}, {clicked_lon:.6f}"
             st.rerun()
 
     if st.session_state.map_click_info:
@@ -486,7 +508,7 @@ with right:
         unsafe_allow_html=True
     )
     st.markdown(
-        '<div class="field-note">Zoom in and click directly on the airport area to place the simulation point.</div>',
+        '<div class="field-note">This exact point is used for the PVGIS calculation.</div>',
         unsafe_allow_html=True
     )
 
@@ -494,12 +516,12 @@ with right:
 
 
 # ---------------------------------------------------------
-# Devices
+# Devices selection
 # ---------------------------------------------------------
 st.markdown('<div class="card">', unsafe_allow_html=True)
 st.markdown('<div class="section-title">2. Select devices</div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="field-note">PAPI and A-PAPI are treated as two separate devices and should be selected independently.</div>',
+    '<div class="field-note">PAPI and A-PAPI are two separate device types and should be selected independently.</div>',
     unsafe_allow_html=True
 )
 
@@ -514,182 +536,217 @@ st.markdown('</div>', unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------
-# Device configuration cards
+# Device config
 # ---------------------------------------------------------
 per_device_config = {}
 
 if selected_ids:
-    st.markdown('<div class="section-title">3. Device configuration</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">3. Configure selected devices</div>', unsafe_allow_html=True)
 
 for did in selected_ids:
     dspec = DEVICES[did]
     system_type = dspec["system_type"]
     default_power = float(dspec["default_power"])
 
-    st.markdown('<div class="card">', unsafe_allow_html=True)
+    with st.expander(f"{dspec['code']} — {dspec['name']}", expanded=False):
+        st.markdown('<div class="card">', unsafe_allow_html=True)
 
-    t1, t2 = st.columns([2, 3])
+        t1, t2 = st.columns([2, 3])
 
-    with t1:
-        st.markdown(f'<div class="device-title">{dspec["code"]} — {dspec["name"]}</div>', unsafe_allow_html=True)
-        if system_type == "builtin":
-            st.markdown('<div class="builtin-tag">Built-in solar and battery</div>', unsafe_allow_html=True)
-        else:
-            st.markdown('<div class="engine-tag">External Solar Engine</div>', unsafe_allow_html=True)
+        with t1:
+            st.markdown(f'<div class="device-title">{dspec["code"]} — {dspec["name"]}</div>', unsafe_allow_html=True)
+            if system_type == "builtin":
+                st.markdown('<div class="builtin-tag">Built-in solar and battery</div>', unsafe_allow_html=True)
+            else:
+                st.markdown('<div class="engine-tag">External Solar Engine</div>', unsafe_allow_html=True)
 
-    engine_key = None
-    battery_mode = "Std"
-    pv_display = dspec.get("pv", 0)
-    batt_display = dspec.get("batt", 0)
-    engine_label = "BUILT-IN"
+        engine_key = None
+        battery_mode = "Std"
+        pv_display = dspec.get("pv", 0)
+        batt_display = dspec.get("batt", 0)
+        engine_label = "BUILT-IN"
 
-    if system_type == "external_engine":
-        default_engine_key = dspec["default_engine"]
-        engine_mode = st.radio(
-            f"Solar Engine selection for {dspec['code']}",
-            options=["Use default Solar Engine", "Choose Solar Engine manually"],
-            horizontal=True,
-            key=f"engine_mode_{did}"
-        )
-
-        compatible_engine_keys = dspec.get("compatible_engines", list(SOLAR_ENGINES.keys()))
-
-        if engine_mode == "Use default Solar Engine":
-            engine_key = default_engine_key
-        else:
-            engine_options = {
-                f"{SOLAR_ENGINES[k]['short_name']} — {SOLAR_ENGINES[k]['name']}": k
-                for k in compatible_engine_keys
-            }
-            engine_value_list = list(engine_options.values())
-            chosen_label = st.selectbox(
-                f"Choose Solar Engine for {dspec['code']}",
-                list(engine_options.keys()),
-                index=engine_value_list.index(default_engine_key) if default_engine_key in engine_value_list else 0,
-                key=f"engine_select_{did}"
-            )
-            engine_key = engine_options[chosen_label]
-
-        eng = SOLAR_ENGINES[engine_key]
-        engine_label = eng["short_name"]
-
-        if eng.get("batt_ext"):
-            battery_mode = st.radio(
-                f"Battery mode for {dspec['code']}",
-                options=["Std", "Ext"],
+        if system_type == "external_engine":
+            default_engine_key = dspec["default_engine"]
+            engine_mode = st.radio(
+                f"Solar Engine selection for {dspec['code']}",
+                options=["Use default Solar Engine", "Choose Solar Engine manually"],
                 horizontal=True,
-                key=f"battery_mode_{did}"
+                key=f"engine_mode_{did}"
             )
-            batt_display = eng["batt_ext"] if battery_mode == "Ext" else eng["batt"]
-        else:
-            battery_mode = "Std"
-            batt_display = eng["batt"]
 
-        pv_display = eng["pv"]
+            compatible_engine_keys = dspec.get("compatible_engines", list(SOLAR_ENGINES.keys()))
 
-    with t2:
-        m1, m2, m3, m4 = st.columns(4)
-        with m1:
-            st.markdown(f"""
-            <div class="metric-box">
-                <div class="metric-label">Default power</div>
-                <div class="metric-value">{default_power:.2f} W</div>
-            </div>
-            """, unsafe_allow_html=True)
-        with m2:
-            st.markdown(f"""
-            <div class="metric-box">
-                <div class="metric-label">Solar panel size</div>
-                <div class="metric-value">{pv_display} W</div>
-            </div>
-            """, unsafe_allow_html=True)
-        with m3:
-            st.markdown(f"""
-            <div class="metric-box">
-                <div class="metric-label">Battery size</div>
-                <div class="metric-value">{batt_display} Wh</div>
-            </div>
-            """, unsafe_allow_html=True)
-        with m4:
-            st.markdown(f"""
-            <div class="metric-box">
-                <div class="metric-label">Active source</div>
-                <div class="metric-value">{engine_label}</div>
-            </div>
-            """, unsafe_allow_html=True)
+            if engine_mode == "Use default Solar Engine":
+                engine_key = default_engine_key
+            else:
+                engine_options = {
+                    f"{SOLAR_ENGINES[k]['short_name']} — {SOLAR_ENGINES[k]['name']}": k
+                    for k in compatible_engine_keys
+                }
+                engine_value_list = list(engine_options.values())
+                chosen_label = st.selectbox(
+                    f"Choose Solar Engine for {dspec['code']}",
+                    list(engine_options.keys()),
+                    index=engine_value_list.index(default_engine_key) if default_engine_key in engine_value_list else 0,
+                    key=f"engine_select_{did}"
+                )
+                engine_key = engine_options[chosen_label]
 
-    st.write("")
+            eng = SOLAR_ENGINES[engine_key]
+            engine_label = eng["short_name"]
 
-    power_mode = st.radio(
-        f"Power setup for {dspec['code']}",
-        options=["Use default power", "Enter power manually"],
-        horizontal=True,
-        key=f"power_mode_{did}"
-    )
+            if eng.get("batt_ext"):
+                battery_mode = st.radio(
+                    f"Battery mode for {dspec['code']}",
+                    options=["Std", "Ext"],
+                    horizontal=True,
+                    key=f"battery_mode_{did}"
+                )
+                batt_display = eng["batt_ext"] if battery_mode == "Ext" else eng["batt"]
+            else:
+                battery_mode = "Std"
+                batt_display = eng["batt"]
 
-    if power_mode == "Use default power":
-        selected_power = default_power
-        st.caption(f"Using default power: {default_power:.2f} W")
-    else:
-        selected_power = st.number_input(
-            f"Manual power for {dspec['code']} (W)",
-            min_value=0.01,
-            value=float(default_power),
-            step=0.01,
-            key=f"manual_power_{did}"
+            pv_display = eng["pv"]
+
+        with t2:
+            m1, m2, m3, m4 = st.columns(4)
+            with m1:
+                st.markdown(f"""
+                <div class="metric-box">
+                    <div class="metric-label">Default power</div>
+                    <div class="metric-value">{default_power:.2f} W</div>
+                </div>
+                """, unsafe_allow_html=True)
+            with m2:
+                st.markdown(f"""
+                <div class="metric-box">
+                    <div class="metric-label">Solar panel size</div>
+                    <div class="metric-value">{pv_display} W</div>
+                </div>
+                """, unsafe_allow_html=True)
+            with m3:
+                st.markdown(f"""
+                <div class="metric-box">
+                    <div class="metric-label">Battery size</div>
+                    <div class="metric-value">{batt_display} Wh</div>
+                </div>
+                """, unsafe_allow_html=True)
+            with m4:
+                st.markdown(f"""
+                <div class="metric-box">
+                    <div class="metric-label">Active source</div>
+                    <div class="metric-value">{engine_label}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        st.write("")
+
+        power_mode = st.radio(
+            f"Power setup for {dspec['code']}",
+            options=["Use default power", "Enter power manually"],
+            horizontal=True,
+            key=f"power_mode_{did}"
         )
 
-    per_device_config[did] = {
-        "power": float(selected_power),
-        "engine_key": engine_key,
-        "battery_mode": battery_mode,
-    }
+        if power_mode == "Use default power":
+            selected_power = default_power
+            st.caption(f"Using default power: {default_power:.2f} W")
+        else:
+            selected_power = st.number_input(
+                f"Manual power for {dspec['code']} (W)",
+                min_value=0.01,
+                value=float(default_power),
+                step=0.01,
+                key=f"manual_power_{did}"
+            )
 
-    st.markdown('</div>', unsafe_allow_html=True)
+        per_device_config[did] = {
+            "power": float(selected_power),
+            "engine_key": engine_key,
+            "battery_mode": battery_mode,
+        }
+
+        st.markdown('</div>', unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------
-# Sidebar control center
+# Sidebar cockpit
 # ---------------------------------------------------------
+sidebar_status_placeholder = st.sidebar.empty()
+sidebar_actions_placeholder = st.sidebar.empty()
+
 with st.sidebar:
-    st.markdown("## Control center")
-    st.markdown(
-        '<div class="sidebar-note">Use this panel to run the study and download the report. '
-        'It stays visible while you work through the page.</div>',
-        unsafe_allow_html=True
-    )
-    st.markdown("---")
-    pvgis_card()
+    st.markdown("## Study cockpit")
 
-    run_clicked = st.button("Run simulation", type="primary", use_container_width=True)
+    st.markdown('<div class="cockpit-label">Location</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="cockpit-value">{airport_name_for_report or "Not defined"}</div>', unsafe_allow_html=True)
+
+    st.markdown('<div class="cockpit-label">Coordinates</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="cockpit-value">{st.session_state.lat:.5f}, {st.session_state.lon:.5f}</div>', unsafe_allow_html=True)
+
+    st.markdown('<div class="cockpit-label">Required operation</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="cockpit-value">{required_hrs:.1f} hrs/day</div>', unsafe_allow_html=True)
+
+    st.markdown('<div class="cockpit-label">Devices selected</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="cockpit-value">{len(selected_ids)}</div>', unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    if os.path.exists(EU_LOGO_PATH):
+        st.image(EU_LOGO_PATH, width=110)
+
+    pvgis_data_card()
+
+    with st.expander("About PVGIS-SARAH3", expanded=False):
+        st.write(
+            "PVGIS-SARAH3 is a satellite-based solar radiation dataset used in PVGIS. "
+            "It was calculated by CM SAF to replace SARAH-2 and covers Europe, Africa, "
+            "most of Asia, and parts of South America."
+        )
+        st.write(
+            "SALA uses this independent dataset and the European Commission JRC PVGIS engine "
+            "to organize the feasibility assessment."
+        )
+
+
+run_clicked = False
+
+with sidebar_status_placeholder.container():
+    st.sidebar.markdown("### Status")
+    if st.session_state.last_results is None:
+        st.sidebar.info("Not run")
+    else:
+        st.sidebar.markdown(
+            status_badge(
+                f"Completed — {st.session_state.last_overall}",
+                ok=(st.session_state.last_overall == "PASS")
+            ),
+            unsafe_allow_html=True
+        )
+        st.sidebar.write(f"**Weakest device:** {short_device_label(st.session_state.last_worst_name)}")
+        st.sidebar.write(f"**Gap:** {round(abs(st.session_state.last_worst_gap), 2)} hrs/day")
+        if st.session_state.last_elapsed is not None:
+            st.sidebar.write(f"**Run time:** {format_seconds(st.session_state.last_elapsed)}")
+
+with sidebar_actions_placeholder.container():
+    st.sidebar.markdown("### Actions")
+    if st.session_state.last_results is None:
+        run_clicked = st.sidebar.button("Run simulation", type="primary", use_container_width=True)
+    else:
+        st.sidebar.button("Simulation completed", disabled=True, use_container_width=True)
 
     if st.session_state.pdf_bytes is not None:
-        st.download_button(
-            "Download PDF",
+        st.sidebar.download_button(
+            "Download report",
             data=st.session_state.pdf_bytes,
             file_name=st.session_state.pdf_name,
             mime="application/pdf",
             use_container_width=True
         )
     else:
-        st.button("Download PDF", disabled=True, use_container_width=True)
-
-    st.markdown("---")
-    st.markdown("### Current study status")
-    if st.session_state.last_results is None:
-        st.info("Not run yet.")
-    else:
-        st.markdown(
-            status_badge(
-                st.session_state.last_overall,
-                ok=(st.session_state.last_overall == "PASS")
-            ),
-            unsafe_allow_html=True
-        )
-        st.write(f"**Weakest device:** {st.session_state.last_worst_name}")
-        st.write(f"**Gap vs requirement:** {round(abs(st.session_state.last_worst_gap), 2)} hrs/day")
-        if st.session_state.last_elapsed is not None:
-            st.write(f"**Last run time:** {format_seconds(st.session_state.last_elapsed)}")
+        st.sidebar.button("Download report", disabled=True, use_container_width=True)
 
 
 # ---------------------------------------------------------
@@ -698,33 +755,50 @@ with st.sidebar:
 if run_clicked:
     with simulation_area:
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown("## 4. Simulation in progress")
-        pvgis_card()
+        st.markdown("## 4. Run simulation")
+        pvgis_data_card()
 
         st.write(
-            "The tool is now validating the selected configuration and sending requests to "
-            "**PVGIS — Photovoltaic Geographical Information System**, maintained by the "
-            "**Joint Research Centre of the European Commission**."
+            "The study is now validating inputs, requesting solar/off-grid data from PVGIS, "
+            "checking monthly performance and building the annual feasibility conclusion."
         )
 
-        progress_bar = st.progress(0)
+        # step states
+        step_placeholders = [st.empty() for _ in range(5)]
         progress_summary = st.empty()
-        stage_box = st.empty()
+        progress_bar = st.progress(0)
         log_box = st.empty()
 
         live_log = []
+        current_step = {"idx": 0}
+
+        def render_steps(active_idx):
+            steps = [
+                "Step 1 — Validating study inputs",
+                "Step 2 — Requesting PVGIS data",
+                "Step 3 — Processing monthly off-grid responses",
+                "Step 4 — Checking weakest month against required operation",
+                "Step 5 — Building final conclusion and report package",
+            ]
+            for i, txt in enumerate(steps):
+                if i < active_idx:
+                    step_placeholders[i].success(f"{txt} — completed")
+                elif i == active_idx:
+                    step_placeholders[i].info(f"{txt} — running")
+                else:
+                    step_placeholders[i].write(txt)
 
         def add_log(msg):
             live_log.append(f"**{now_ts()}** — {msg}")
-            visible = live_log[-12:]
+            visible = live_log[-6:]
             log_box.markdown(
                 '<div class="log-box">' + "<br/>".join(visible) + "</div>",
                 unsafe_allow_html=True
             )
 
-        add_log("Preparing the simulation session.")
-        add_log("Confirming that PVGIS — Photovoltaic Geographical Information System — will be used as the external data engine.")
-        add_log("Checking the selected airport coordinates and study inputs.")
+        render_steps(0)
+        add_log("Checking selected airport coordinates and operating profile.")
+        add_log("Preparing the PVGIS study request.")
 
         loc = {
             "lat": st.session_state.lat,
@@ -733,50 +807,43 @@ if run_clicked:
             "country": ""
         }
 
-        last_stage = {"text": ""}
+        started = time.time()
 
         def on_progress(done, total, pct, elapsed, eta, device_name, month_name):
             percent_value = int(pct * 100)
             progress_bar.progress(min(percent_value, 100))
-
-            if percent_value < 10:
-                stage = "Opening a study session and preparing PVGIS input parameters"
-            elif percent_value < 25:
-                stage = "Sending location and system inputs to PVGIS"
-            elif percent_value < 45:
-                stage = "Retrieving PVGIS monthly solar and off-grid responses"
-            elif percent_value < 70:
-                stage = "Checking guaranteed daily operating hours against the required daily operating window"
-            elif percent_value < 90:
-                stage = "Verifying weakest-month performance and consolidating annual feasibility"
-            else:
-                stage = "Finalizing the feasibility conclusion and preparing report outputs"
-
-            if stage != last_stage["text"]:
-                last_stage["text"] = stage
-                add_log(stage)
-
-            if done == 1:
-                add_log("PVGIS connection confirmed. External study engine active.")
-            if month_name == "Jan":
-                add_log(f"Starting assessment for {device_name}.")
-            if month_name in ["Mar", "Jun", "Sep", "Dec"]:
-                add_log(
-                    f"Reviewing {device_name} — checking {month_name} against the required daily operating window."
-                )
-
-            stage_box.info(
-                f"**Current task:** {device_name} • {month_name}\n\n"
-                f"**Current stage:** {stage}"
-            )
-
             progress_summary.markdown(
                 f"**Progress:** {percent_value}%  \n"
-                f"**Elapsed time:** {format_seconds(elapsed)}  \n"
+                f"**Elapsed:** {format_seconds(elapsed)}  \n"
                 f"**Estimated time left:** {format_seconds(eta)}"
             )
 
-        started = time.time()
+            if percent_value < 12:
+                step_idx = 0
+            elif percent_value < 30:
+                step_idx = 1
+            elif percent_value < 65:
+                step_idx = 2
+            elif percent_value < 88:
+                step_idx = 3
+            else:
+                step_idx = 4
+
+            if step_idx != current_step["idx"]:
+                current_step["idx"] = step_idx
+                render_steps(step_idx)
+
+            short_name = short_device_label(device_name)
+
+            if done == 1:
+                add_log("Connecting to PVGIS — Photovoltaic Geographical Information System.")
+                add_log("Using the Joint Research Centre, European Commission engine and solar dataset.")
+            if month_name == "Jan":
+                add_log(f"Starting annual assessment for {short_name}.")
+            if month_name == "Jun":
+                add_log(f"Checking mid-year performance for {short_name}.")
+            if month_name == "Dec":
+                add_log(f"Verifying weakest winter performance for {short_name}.")
 
         try:
             results, overall, worst_name, worst_gap, slope = simulate_for_devices(
@@ -791,26 +858,23 @@ if run_clicked:
             total_time = time.time() - started
             st.session_state.last_elapsed = total_time
 
+            render_steps(5)
             progress_bar.progress(100)
             progress_summary.markdown(
                 f"**Progress:** 100%  \n"
-                f"**Elapsed time:** {format_seconds(total_time)}  \n"
+                f"**Elapsed:** {format_seconds(total_time)}  \n"
                 f"**Estimated time left:** 0s"
             )
 
             add_log("PVGIS responses received for all selected configurations.")
-            add_log("Comparing annual weakest-month performance against the required operating profile.")
-            add_log("Building final feasibility result and consultant-style summary.")
-            add_log("Preparing PDF report package.")
-
-            stage_box.success("Simulation completed successfully.")
+            add_log("Comparing annual weakest-month performance against the required daily operation.")
+            add_log("Preparing the final feasibility result and report package.")
 
             st.session_state.last_results = results
             st.session_state.last_overall = overall
             st.session_state.last_worst_name = worst_name
             st.session_state.last_worst_gap = worst_gap
             st.session_state.last_slope = slope
-            st.session_state.last_run_completed = True
 
             with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
                 make_pdf(
@@ -830,6 +894,9 @@ if run_clicked:
                     st.session_state.pdf_bytes = f.read()
                 st.session_state.pdf_name = "sala_standardized_feasibility_study.pdf"
 
+            st.success("Simulation completed successfully.")
+            st.rerun()
+
         except Exception as e:
             st.error(f"Simulation failed: {e}")
 
@@ -837,7 +904,7 @@ if run_clicked:
 
 
 # ---------------------------------------------------------
-# Top results area
+# Results top
 # ---------------------------------------------------------
 if st.session_state.last_results is not None:
     with results_top_area:
@@ -847,28 +914,27 @@ if st.session_state.last_results is not None:
         worst_gap = st.session_state.last_worst_gap
 
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown("## 5. Results summary")
+        st.markdown("## 5. Decision summary")
 
-        s1, s2, s3, s4 = st.columns([1, 1, 2, 1])
+        s1, s2, s3, s4 = st.columns([1, 1.2, 2.2, 1.2])
+
         with s1:
-            st.markdown("**Overall result**")
+            st.markdown("**Decision**")
             st.markdown(status_badge(overall, ok=(overall == "PASS")), unsafe_allow_html=True)
+
         with s2:
-            st.markdown("**Weakest device**")
-            st.write(worst_name)
+            st.markdown("**Reason**")
+            st.write(f"Weakest device: {short_device_label(worst_name)}")
+            st.write(f"Gap: {round(abs(worst_gap), 2)} hrs/day")
+
         with s3:
-            if overall == "PASS":
-                st.write(
-                    "All selected configurations remain above the required daily operating window in every month of the year."
-                )
-            else:
-                st.write(
-                    "At least one selected configuration drops below the required daily operating window in one or more months."
-                )
+            st.markdown("**Recommendation**")
+            st.write(generate_recommendation(overall, worst_name, results))
+
         with s4:
             if st.session_state.pdf_bytes is not None:
                 st.download_button(
-                    "Download PDF",
+                    "Download report",
                     data=st.session_state.pdf_bytes,
                     file_name=st.session_state.pdf_name,
                     mime="application/pdf",
@@ -883,27 +949,21 @@ if st.session_state.last_results is not None:
 # ---------------------------------------------------------
 if st.session_state.last_results is not None:
     results = st.session_state.last_results
-    overall = st.session_state.last_overall
-    worst_name = st.session_state.last_worst_name
-    worst_gap = st.session_state.last_worst_gap
 
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.markdown("### Results graph")
 
     monthly_df = build_monthly_df(results, required_hrs)
+    all_devices = list(monthly_df["Device"].unique())
 
-    device_name_map = {full: short_device_label(full) for full in monthly_df["Device"].unique()}
-    monthly_df["DeviceLabel"] = monthly_df["Device"].map(device_name_map)
-
-    all_device_labels = list(monthly_df["DeviceLabel"].unique())
-    visible_device_labels = st.multiselect(
+    visible_devices = st.multiselect(
         "Devices shown on graph",
-        all_device_labels,
-        default=all_device_labels,
-        help="Untick devices to hide them from the chart."
+        all_devices,
+        default=all_devices,
+        help="Untick devices to hide them from the graph."
     )
 
-    chart_df = monthly_df[monthly_df["DeviceLabel"].isin(visible_device_labels)].copy()
+    chart_df = monthly_df[monthly_df["Device"].isin(visible_devices)].copy()
     above_df, below_df = build_fill_data(chart_df)
 
     month_order = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -914,13 +974,17 @@ if st.session_state.last_results is not None:
         opacity=0.18
     ).encode(
         x=alt.X("Month:N", sort=month_order, title="Month of the year"),
-        y=alt.Y("FillTop:Q", title="Guaranteed operating hours per day"),
+        y=alt.Y(
+            "FillTop:Q",
+            title="Guaranteed operating hours per day",
+            scale=alt.Scale(domain=[0, 24])
+        ),
         y2="FillBottom:Q",
-        detail="DeviceLabel:N",
+        detail="Device:N",
         tooltip=[
-            alt.Tooltip("DeviceLabel:N", title="Device"),
+            alt.Tooltip("Device:N", title="Device"),
             alt.Tooltip("Month:N", title="Month"),
-            alt.Tooltip("Hours:Q", title="Simulated operating hrs/day", format=".2f"),
+            alt.Tooltip("Hours:Q", title="Simulated hrs/day", format=".2f"),
             alt.Tooltip("RequiredHours:Q", title="Required hrs/day", format=".2f"),
             alt.Tooltip("Difference:Q", title="Surplus vs requirement", format=".2f"),
             alt.Tooltip("StatusBand:N", title="Status"),
@@ -933,13 +997,13 @@ if st.session_state.last_results is not None:
         opacity=0.22
     ).encode(
         x=alt.X("Month:N", sort=month_order),
-        y="FillTop:Q",
+        y=alt.Y("FillTop:Q", scale=alt.Scale(domain=[0, 24])),
         y2="FillBottom:Q",
-        detail="DeviceLabel:N",
+        detail="Device:N",
         tooltip=[
-            alt.Tooltip("DeviceLabel:N", title="Device"),
+            alt.Tooltip("Device:N", title="Device"),
             alt.Tooltip("Month:N", title="Month"),
-            alt.Tooltip("Hours:Q", title="Simulated operating hrs/day", format=".2f"),
+            alt.Tooltip("Hours:Q", title="Simulated hrs/day", format=".2f"),
             alt.Tooltip("RequiredHours:Q", title="Required hrs/day", format=".2f"),
             alt.Tooltip("Difference:Q", title="Deficit vs requirement", format=".2f"),
             alt.Tooltip("StatusBand:N", title="Status"),
@@ -949,16 +1013,16 @@ if st.session_state.last_results is not None:
 
     device_lines = alt.Chart(chart_df).mark_line(point=True, strokeWidth=2.8).encode(
         x=alt.X("Month:N", sort=month_order),
-        y=alt.Y("Hours:Q", title="Guaranteed operating hours per day"),
+        y=alt.Y("Hours:Q", scale=alt.Scale(domain=[0, 24])),
         color=alt.Color(
-            "DeviceLabel:N",
+            "Device:N",
             title="Device lines",
             scale=alt.Scale(scheme="tableau10")
         ),
         tooltip=[
-            alt.Tooltip("DeviceLabel:N", title="Device"),
+            alt.Tooltip("Device:N", title="Device"),
             alt.Tooltip("Month:N", title="Month"),
-            alt.Tooltip("Hours:Q", title="Simulated operating hrs/day", format=".2f"),
+            alt.Tooltip("Hours:Q", title="Simulated hrs/day", format=".2f"),
             alt.Tooltip("RequiredHours:Q", title="Required hrs/day", format=".2f"),
             alt.Tooltip("Difference:Q", title="Difference vs requirement", format=".2f"),
             alt.Tooltip("StatusBand:N", title="Status"),
@@ -969,20 +1033,20 @@ if st.session_state.last_results is not None:
     req_line_df = pd.DataFrame({
         "Month": month_order,
         "Required": [float(required_hrs)] * 12,
-        "Label": [f"Required daily operating window = {required_hrs:.2f} hrs/day"] * 12
+        "Legend": [f"Required daily operation = {required_hrs:.2f} hrs/day"] * 12
     })
 
     req_line = alt.Chart(req_line_df).mark_line(
-        strokeDash=[8, 5],
-        strokeWidth=2.4,
+        strokeDash=[10, 5],
+        strokeWidth=3.0,
         color="#111827"
     ).encode(
         x=alt.X("Month:N", sort=month_order),
-        y=alt.Y("Required:Q"),
+        y=alt.Y("Required:Q", scale=alt.Scale(domain=[0, 24])),
         tooltip=[
             alt.Tooltip("Month:N", title="Month"),
             alt.Tooltip("Required:Q", title="Required hrs/day", format=".2f"),
-            alt.Tooltip("Label:N", title="Explanation")
+            alt.Tooltip("Legend:N", title="Reference")
         ]
     )
 
@@ -995,24 +1059,29 @@ if st.session_state.last_results is not None:
     st.markdown(
         '<div class="field-note">'
         '<b>How to read this chart:</b> each coloured line is one selected device. '
-        'The black dashed line is the required daily operating window. '
-        '<span style="color:#16a34a;"><b>Green fill</b></span> means the device is above the requirement in that month. '
-        '<span style="color:#dc2626;"><b>Red fill</b></span> means it is below the requirement in that month. '
-        'Hover on any point or coloured area to see exact values and explanation.'
+        'The thick black dashed line is the required daily operating window. '
+        '<span style="color:#16a34a;"><b>Green fill</b></span> means the device is above the requirement. '
+        '<span style="color:#dc2626;"><b>Red fill</b></span> means it is below the requirement. '
+        'The vertical axis is fixed from 0 to 24 hrs/day.'
         '</div>',
         unsafe_allow_html=True
     )
+
+    legend_df = pd.DataFrame({
+        "Series": ["Required daily operation"],
+        "Type": ["Black dashed reference line"]
+    })
+    st.dataframe(legend_df, use_container_width=False, hide_index=True)
 
     st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.markdown("### Results table")
-    df = build_results_table(results)
-    st.dataframe(df, use_container_width=True)
+    st.dataframe(build_results_table(results), use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown("### Monthly autonomy")
+    st.markdown("### Monthly operating profile")
     month_rows = []
     months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -1024,45 +1093,54 @@ if st.session_state.last_results is not None:
     st.dataframe(pd.DataFrame(month_rows), use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown("### PVGIS transparency")
-    st.write(
-        "This study uses **PVGIS — Photovoltaic Geographical Information System** as the external solar/off-grid calculation engine."
-    )
-    st.write(
-        "**Institution:** Joint Research Centre, European Commission."
-    )
-    st.write(
-        "The tool sends the selected inputs to PVGIS, receives the responses, and then organizes them into an annual feasibility assessment for Solar AGL applications."
-    )
+    with st.expander("6. PVGIS transparency", expanded=False):
+        pvgis_data_card()
+        st.write(
+            "SALA uses PVGIS as the external solar and off-grid calculation engine. "
+            "PVGIS then provides the responses used to build the annual feasibility assessment."
+        )
+        for device_name, r in results.items():
+            meta = r["pvgis_meta"]
+            with st.expander(f"Show PVGIS request details — {short_device_label(device_name)}", expanded=False):
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown("**PVGIS endpoints used**")
+                    st.write(f"- {meta['pvcalc_endpoint']}")
+                    st.write(f"- {meta['shs_endpoint']}")
+                    st.write(f"- Dataset: {meta['dataset']}")
+                    st.markdown("**PVcalc parameters**")
+                    st.json(meta["pvcalc_params"])
+                with c2:
+                    st.markdown("**SHScalc parameters**")
+                    st.json(meta["shs_params"])
 
-    for device_name, r in results.items():
-        meta = r["pvgis_meta"]
-        with st.expander(f"Show PVGIS request details — {short_device_label(device_name)}"):
-            c1, c2 = st.columns(2)
-            with c1:
-                st.markdown("**PVGIS endpoints used**")
-                st.write(f"- {meta['pvcalc_endpoint']}")
-                st.write(f"- {meta['shs_endpoint']}")
-                st.write(f"- Dataset: {meta['dataset']}")
-                st.markdown("**PVcalc parameters**")
-                st.json(meta["pvcalc_params"])
-            with c2:
-                st.markdown("**SHScalc parameters**")
-                st.json(meta["shs_params"])
+                st.markdown("**Example PVcalc request URL**")
+                st.code(meta["pvcalc_url_example"], language="text")
 
-            st.markdown("**Example PVcalc request URL**")
-            st.code(meta["pvcalc_url_example"], language="text")
+                st.markdown("**Example SHScalc request URL**")
+                st.code(meta["shs_url_example"], language="text")
 
-            st.markdown("**Example SHScalc request URL**")
-            st.code(meta["shs_url_example"], language="text")
+    with st.expander("7. Meaning of study inputs", expanded=False):
+        st.markdown("""
+        **Location**  
+        Defines the exact study point used for PVGIS solar and off-grid calculations.
 
-            st.info(
-                "PVGIS performs the solar and off-grid calculation. "
-                "SALA uses that output to build the feasibility result."
-            )
+        **Required daily operating window (hrs/day)**  
+        Defines how many hours per day the system must operate reliably throughout the year.  
+        This is not the same as standalone battery autonomy and not the same as "solar range".
 
-    st.markdown('</div>', unsafe_allow_html=True)
+        **Power**  
+        Defines the device load used during the feasibility assessment.
+
+        **Solar panel size**  
+        Defines the available PV generation capacity.
+
+        **Battery size**  
+        Defines the stored energy reserve available to support operation when solar generation is not sufficient.
+
+        **Solar Engine / Battery mode**  
+        Defines the external power source configuration for supported devices.
+        """)
 
     if st.session_state.pdf_bytes is not None:
         st.download_button(

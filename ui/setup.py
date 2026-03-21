@@ -1,12 +1,54 @@
 # ui/setup.py
 # ACTION: REPLACE ENTIRE FILE
 
+import math
 import streamlit as st
 import folium
 import requests
 from streamlit_folium import st_folium
 
 from core.devices import DEVICES, SOLAR_ENGINES
+
+
+# ---------------- INITIAL LOCAL STATE ----------------
+
+def _init_setup_defaults():
+    if "setup_initialized" not in st.session_state:
+        st.session_state.setup_initialized = True
+
+        # clean defaults
+        st.session_state.airport_label = ""
+        st.session_state.airport_query = ""
+        st.session_state.selected_ids = []
+        st.session_state.per_device_config = {}
+
+        # keep coordinates hidden in advanced, but default hours = 12
+        if "required_hours" not in st.session_state:
+            st.session_state.required_hours = 12.0
+        else:
+            st.session_state.required_hours = 12.0
+
+        if "operating_profile_mode" not in st.session_state:
+            st.session_state.operating_profile_mode = "Custom hours per day"
+
+        if "study_point_confirmed" not in st.session_state:
+            st.session_state.study_point_confirmed = False
+
+        if "lat" not in st.session_state:
+            st.session_state.lat = 40.416775
+        if "lon" not in st.session_state:
+            st.session_state.lon = -3.703790
+
+        if "search_message" not in st.session_state:
+            st.session_state.search_message = ""
+        if "map_click_info" not in st.session_state:
+            st.session_state.map_click_info = ""
+
+    # final flag used by next modules
+    st.session_state.study_ready = bool(
+        st.session_state.get("study_point_confirmed", False)
+        and len(st.session_state.get("selected_ids", [])) > 0
+    )
 
 
 # ---------------- GEO ----------------
@@ -68,6 +110,43 @@ def create_map(lat, lon, label):
     return fmap
 
 
+# ---------------- ASTRONOMY / DUSK-TO-DAWN ----------------
+
+def _day_length_hours(lat_deg: float, decl_deg: float) -> float:
+    """
+    Approximate daylight hours for a given latitude and solar declination.
+    Includes simple sunrise/sunset refraction correction via zenith 90.833°.
+    """
+    lat = math.radians(lat_deg)
+    decl = math.radians(decl_deg)
+    zenith = math.radians(90.833)
+
+    cos_h = (math.cos(zenith) - math.sin(lat) * math.sin(decl)) / (math.cos(lat) * math.cos(decl))
+
+    if cos_h <= -1:
+        return 24.0
+    if cos_h >= 1:
+        return 0.0
+
+    hour_angle = math.acos(cos_h)
+    return 24.0 * hour_angle / math.pi
+
+
+def longest_night_hours(lat_deg: float) -> float:
+    """
+    Approximate longest night at this latitude using winter-solstice declination.
+    Good enough for UX + feasibility profile mode.
+    """
+    abs_lat = max(min(float(lat_deg), 89.0), -89.0)
+
+    # winter solstice depends on hemisphere
+    decl = -23.44 if abs_lat >= 0 else 23.44
+    day = _day_length_hours(abs_lat, decl)
+    night = 24.0 - day
+
+    return max(0.0, min(24.0, night))
+
+
 # ---------------- HELPERS ----------------
 
 def _device_label(device_id):
@@ -79,26 +158,19 @@ def _engine_summary(device_id, engine_key, battery_mode):
     dspec = DEVICES[device_id]
 
     if dspec["system_type"] == "builtin":
-        pv = dspec.get("pv", 0)
-        batt = dspec.get("batt", 0)
         return {
             "source_label": "Built-in solar system",
-            "pv": pv,
-            "batt": batt,
+            "pv": dspec.get("pv", 0),
+            "batt": dspec.get("batt", 0),
             "battery_mode": "Built-in",
         }
 
     eng = SOLAR_ENGINES[engine_key]
-    pv = eng["pv"]
-
-    if battery_mode == "Ext" and eng.get("batt_ext"):
-        batt = eng["batt_ext"]
-    else:
-        batt = eng["batt"]
+    batt = eng["batt_ext"] if (battery_mode == "Ext" and eng.get("batt_ext")) else eng["batt"]
 
     return {
         "source_label": eng["short_name"],
-        "pv": pv,
+        "pv": eng["pv"],
         "batt": batt,
         "battery_mode": battery_mode,
     }
@@ -112,47 +184,60 @@ def _default_multiselect_labels():
     return labels
 
 
+def _apply_operating_profile():
+    mode = st.session_state.get("operating_profile_mode", "Custom hours per day")
+
+    if mode == "24/7":
+        st.session_state.required_hours = 24.0
+    elif mode == "Dusk to dawn":
+        st.session_state.required_hours = round(longest_night_hours(st.session_state.lat), 1)
+    # for Custom, required_hours already comes from user input
+
+
 # ---------------- MAIN UI ----------------
 
 def render_setup():
+    _init_setup_defaults()
+
     st.markdown("## Study setup")
 
     left, right = st.columns([1, 1])
 
     # ---------------- LEFT ----------------
     with left:
-        airport_query = st.text_input(
-            "Airport name",
-            value=st.session_state.airport_label,
-            placeholder="e.g. Madrid Barajas Airport",
-        )
+        st.markdown("### Location")
 
-        if st.button("Find airport"):
-            try:
-                result = geocode_airport(airport_query)
-                if result:
-                    st.session_state.lat = result["lat"]
-                    st.session_state.lon = result["lon"]
-                    st.session_state.airport_label = airport_query.strip() or result["display_name"]
-                    st.session_state.search_message = f"Found: {result['display_name']}"
+        airport_col, button_col = st.columns([3, 1])
+
+        with airport_col:
+            airport_query = st.text_input(
+                "Airport name",
+                value=st.session_state.get("airport_query", ""),
+                placeholder="e.g. Madrid Barajas Airport",
+                key="airport_query_input"
+            )
+
+        with button_col:
+            st.write("")
+            st.write("")
+            if st.button("Find airport", use_container_width=True):
+                try:
+                    result = geocode_airport(airport_query)
+                    if result:
+                        st.session_state.lat = result["lat"]
+                        st.session_state.lon = result["lon"]
+                        st.session_state.airport_label = airport_query.strip() or result["display_name"]
+                        st.session_state.airport_query = airport_query.strip() or result["display_name"]
+                        st.session_state.search_message = f"Found: {result['display_name']}"
+                        st.session_state.study_point_confirmed = True
+                        _apply_operating_profile()
+                        st.rerun()
+                    else:
+                        st.session_state.search_message = "Airport not found."
+                        st.rerun()
+                except Exception as e:
+                    st.session_state.search_message = f"Search error: {e}"
                     st.rerun()
-                else:
-                    st.session_state.search_message = "Airport not found."
-                    st.rerun()
-            except Exception as e:
-                st.session_state.search_message = f"Search error: {e}"
-                st.rerun()
-
-        st.session_state.required_hours = st.number_input(
-            "Planned daily operating hours",
-            min_value=0.0,
-            max_value=24.0,
-            value=float(st.session_state.required_hours),
-            step=0.5,
-            help="Total hours per day the lights are expected to operate.",
-        )
-
-        st.caption("Total hours per day the lights are expected to operate.")
 
         if st.session_state.search_message:
             if st.session_state.search_message.startswith("Found:"):
@@ -160,15 +245,51 @@ def render_setup():
             else:
                 st.warning(st.session_state.search_message)
 
+        st.markdown("### Operating profile")
+
+        mode = st.radio(
+            "Operating profile",
+            ["Custom hours per day", "24/7", "Dusk to dawn"],
+            horizontal=True,
+            index=["Custom hours per day", "24/7", "Dusk to dawn"].index(
+                st.session_state.get("operating_profile_mode", "Custom hours per day")
+            ),
+            key="operating_profile_mode_radio"
+        )
+        st.session_state.operating_profile_mode = mode
+
+        if mode == "Custom hours per day":
+            st.session_state.required_hours = st.number_input(
+                "Planned daily operating hours",
+                min_value=0.0,
+                max_value=24.0,
+                value=float(st.session_state.get("required_hours", 12.0)),
+                step=0.5,
+                help="Total hours per day the lights are expected to operate."
+            )
+            st.caption("Total hours per day the lights are expected to operate.")
+
+        elif mode == "24/7":
+            st.session_state.required_hours = 24.0
+            st.info("Applied operating profile: 24.0 hrs/day")
+
+        elif mode == "Dusk to dawn":
+            applied = round(longest_night_hours(st.session_state.lat), 1)
+            st.session_state.required_hours = applied
+            st.info(
+                f"Applied operating profile: {applied:.1f} hrs/day "
+                f"(based on the longest night at the selected study point)"
+            )
+
         with st.expander("Advanced coordinates", expanded=False):
-            st.session_state.lat = st.number_input(
+            new_lat = st.number_input(
                 "Latitude",
                 min_value=-90.0,
                 max_value=90.0,
                 value=float(st.session_state.lat),
                 format="%.6f",
             )
-            st.session_state.lon = st.number_input(
+            new_lon = st.number_input(
                 "Longitude",
                 min_value=-180.0,
                 max_value=180.0,
@@ -176,8 +297,23 @@ def render_setup():
                 format="%.6f",
             )
 
+            coords_changed = (
+                abs(new_lat - st.session_state.lat) > 1e-9
+                or abs(new_lon - st.session_state.lon) > 1e-9
+            )
+
+            st.session_state.lat = new_lat
+            st.session_state.lon = new_lon
+
+            if coords_changed:
+                st.session_state.study_point_confirmed = True
+                if st.session_state.operating_profile_mode == "Dusk to dawn":
+                    _apply_operating_profile()
+
     # ---------------- RIGHT ----------------
     with right:
+        st.markdown("### Study point")
+
         fmap = create_map(
             st.session_state.lat,
             st.session_state.lon,
@@ -197,18 +333,27 @@ def render_setup():
             clicked_lat = float(clicked["lat"])
             clicked_lon = float(clicked["lng"])
 
-            if abs(clicked_lat - st.session_state.lat) > 1e-7 or abs(clicked_lon - st.session_state.lon) > 1e-7:
+            if (
+                abs(clicked_lat - st.session_state.lat) > 1e-7
+                or abs(clicked_lon - st.session_state.lon) > 1e-7
+            ):
                 st.session_state.lat = clicked_lat
                 st.session_state.lon = clicked_lon
+                st.session_state.study_point_confirmed = True
                 st.session_state.map_click_info = f"Point selected: {clicked_lat:.6f}, {clicked_lon:.6f}"
+                if st.session_state.operating_profile_mode == "Dusk to dawn":
+                    _apply_operating_profile()
                 st.rerun()
 
         if st.session_state.map_click_info:
             st.success(st.session_state.map_click_info)
 
-        st.caption(
-            f"Study point sent to PVGIS: {st.session_state.lat:.6f}, {st.session_state.lon:.6f}"
-        )
+        if st.session_state.study_point_confirmed:
+            st.caption(
+                f"Study point sent to PVGIS: {st.session_state.lat:.6f}, {st.session_state.lon:.6f}"
+            )
+        else:
+            st.caption("Select an airport or click on the map to define the study point.")
 
     # ---------------- DEVICES ----------------
     st.markdown("### Select devices")
@@ -218,7 +363,7 @@ def render_setup():
     selected_labels = st.multiselect(
         "Devices included in this study",
         list(device_options.keys()),
-        default=_default_multiselect_labels() or list(device_options.keys())[:2],
+        default=_default_multiselect_labels(),
         key="selected_devices_multiselect",
     )
 
@@ -233,6 +378,7 @@ def render_setup():
     if not selected_ids:
         st.info("Select at least one device to configure.")
         st.session_state.per_device_config = {}
+        st.session_state.study_ready = False
         return
 
     for did in selected_ids:
@@ -240,14 +386,12 @@ def render_setup():
         system_type = dspec["system_type"]
 
         with st.expander(_device_label(did), expanded=False):
-            # existing saved values if present
             saved_cfg = st.session_state.get("per_device_config", {}).get(did, {})
 
             default_power = float(saved_cfg.get("power", dspec["default_power"]))
             engine_key = saved_cfg.get("engine_key", dspec.get("default_engine"))
             battery_mode = saved_cfg.get("battery_mode", "Std")
 
-            # Power
             power = st.number_input(
                 "Power (W)",
                 min_value=0.01,
@@ -301,9 +445,7 @@ def render_setup():
                 st.metric("Active source", summary["source_label"])
 
             if system_type == "external_engine":
-                st.caption(
-                    f"Battery mode selected: {summary['battery_mode']}"
-                )
+                st.caption(f"Battery mode selected: {summary['battery_mode']}")
 
             per_device_config[did] = {
                 "power": float(power),
@@ -312,3 +454,12 @@ def render_setup():
             }
 
     st.session_state.per_device_config = per_device_config
+
+    # final ready flag
+    st.session_state.study_ready = bool(
+        st.session_state.get("study_point_confirmed", False)
+        and len(st.session_state.get("selected_ids", [])) > 0
+    )
+
+    if not st.session_state.study_ready:
+        st.warning("To start the study, select an airport or study point and at least one device.")

@@ -8,7 +8,7 @@ from ui.setup import render_setup
 from ui.cockpit import _run_simulation, reset_study
 from ui.result import render_result
 from ui.graph import render_graph
-from ui.battery import render_battery
+from ui.battery import render_battery_section
 from ui.weather_basis import render_weather_basis
 
 

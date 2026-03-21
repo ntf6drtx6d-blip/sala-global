@@ -15,39 +15,47 @@ def checked_devices_summary(results):
     rows = []
     for key, r in results.items():
         label = short_device_label(key)
+
         if r["status"] == "PASS":
-            comment = "Meets required operation all year"
+            comment = "Meets required daily operation all year"
         else:
-            comment = f"Fails in {', '.join(r['fail_months'])}"
+            fail_months = ", ".join(r["fail_months"]) if r["fail_months"] else "one or more months"
+            comment = f"Below requirement in {fail_months}"
+
         rows.append({
             "Device": label,
             "Result": r["status"],
             "Comment": comment,
         })
+
     return pd.DataFrame(rows)
 
 
 def recommendation_text(results, required_hrs):
-    fail_rows = []
-    for key, r in results.items():
-        if r["status"] == "FAIL":
-            fail_rows.append((short_device_label(key), r["fail_months"]))
+    failing = []
+    passing = []
 
-    if not fail_rows:
+    for key, r in results.items():
+        label = short_device_label(key)
+        if r["status"] == "PASS":
+            passing.append(label)
+        else:
+            failing.append((label, r["fail_months"]))
+
+    if not failing:
         return (
-            f"All selected configurations meet the required operating profile of "
-            f"{required_hrs:.1f} hrs/day across the full annual cycle."
+            f"All selected devices meet the planned daily operating requirement "
+            f"of {required_hrs:.1f} hrs/day across the full annual cycle."
         )
 
     parts = []
-    for device, fail_months in fail_rows:
-        months = ", ".join(fail_months) if fail_months else "one or more months"
-        parts.append(f"{device} fails in {months}")
+    for label, months in failing:
+        month_text = ", ".join(months) if months else "one or more months"
+        parts.append(f"{label} is below target in {month_text}")
 
     return (
-        "Some selected configurations do not meet the required daily operating profile. "
-        + "; ".join(parts)
-        + "."
+        f"Some selected devices do not meet the planned daily operating requirement "
+        f"of {required_hrs:.1f} hrs/day. " + "; ".join(parts) + "."
     )
 
 
@@ -56,29 +64,22 @@ def render_result():
 
     results = st.session_state.results
     overall = st.session_state.overall
+    required_hours = float(st.session_state.required_hours)
 
-    # Compact result banner
-    c1, c2, c3 = st.columns([1, 2.2, 1.2])
+    summary_df = checked_devices_summary(results)
 
-    with c1:
+    # Top compact banner
+    left, right = st.columns([2.5, 1])
+
+    with left:
         if overall == "PASS":
-            st.success("PASS")
+            st.success("Annual feasibility result: PASS")
         else:
-            st.error("FAIL")
+            st.error("Annual feasibility result: FAIL")
 
-    with c2:
-        st.markdown("### Checked devices")
-        summary_df = checked_devices_summary(results)
+        st.write(recommendation_text(results, required_hours))
 
-        for _, row in summary_df.iterrows():
-            icon = "🟢" if row["Result"] == "PASS" else "🔴"
-            st.write(f"{icon} **{row['Device']}** — {row['Result']}")
-            st.caption(row["Comment"])
-
-        st.markdown("### Conclusion")
-        st.write(recommendation_text(results, st.session_state.required_hours))
-
-    with c3:
+    with right:
         st.markdown("### Report")
         if st.session_state.pdf_bytes is not None:
             st.download_button(
@@ -88,3 +89,21 @@ def render_result():
                 mime="application/pdf",
                 use_container_width=True,
             )
+
+    st.markdown("### Results by device")
+
+    # Show one clean row per device
+    for _, row in summary_df.iterrows():
+        c1, c2, c3 = st.columns([1.2, 1, 3])
+
+        with c1:
+            st.markdown(f"**{row['Device']}**")
+
+        with c2:
+            if row["Result"] == "PASS":
+                st.success("PASS")
+            else:
+                st.error("FAIL")
+
+        with c3:
+            st.write(row["Comment"])

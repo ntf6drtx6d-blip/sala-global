@@ -50,6 +50,25 @@ def init_state():
             st.session_state[k] = v
 
 
+def refresh_study_ready_from_state():
+    selected_ids = st.session_state.get("selected_ids", [])
+    study_point_confirmed = bool(st.session_state.get("study_point_confirmed", False))
+    mode = st.session_state.get("operating_profile_mode")
+    required_hours = st.session_state.get("required_hours")
+
+    mode_ready = False
+    if mode == "24/7":
+        mode_ready = True
+    elif mode == "Dusk to dawn":
+        mode_ready = required_hours is not None
+    elif mode == "Custom hours per day":
+        mode_ready = required_hours is not None and float(required_hours) > 0
+
+    st.session_state.study_ready = bool(
+        len(selected_ids) > 0 and study_point_confirmed and mode_ready
+    )
+
+
 def apply_global_styles():
     st.markdown(
         """
@@ -59,9 +78,11 @@ def apply_global_styles():
             padding-bottom: 2rem;
             max-width: 1500px;
         }
+
         header[data-testid="stHeader"] {
             background: rgba(255,255,255,0);
         }
+
         .main-title {
             font-size: 2.1rem;
             font-weight: 800;
@@ -69,6 +90,7 @@ def apply_global_styles():
             margin-bottom: 0.2rem;
             color: #1f2937;
         }
+
         .top-action-wrap {
             border: 1px solid #e8edf4;
             border-radius: 16px;
@@ -77,11 +99,34 @@ def apply_global_styles():
             box-shadow: 0 4px 18px rgba(17, 24, 39, 0.05);
             margin-bottom: 16px;
         }
+
         .top-action-title {
             font-size: 0.92rem;
             font-weight: 700;
             color: #344054;
             margin-bottom: 8px;
+        }
+
+        div[data-testid="stDownloadButton"] > button.top-download-btn {
+            background: #1f4fbf !important;
+            color: white !important;
+            border: 1px solid #1f4fbf !important;
+            border-radius: 12px !important;
+            font-weight: 700 !important;
+            min-height: 46px !important;
+        }
+
+        div[data-testid="stDownloadButton"] > button.top-download-btn:hover {
+            background: #183f98 !important;
+            border-color: #183f98 !important;
+            color: white !important;
+        }
+
+        .secondary-note {
+            color: #667085;
+            font-size: 0.95rem;
+            line-height: 1.45;
+            margin-top: 6px;
         }
         </style>
         """,
@@ -119,13 +164,19 @@ def render_top_action_bar():
 
     if is_running:
         c1, c2 = st.columns([1.5, 4])
+
         with c1:
             st.markdown("**Simulation in progress**")
+
         with c2:
-            st.caption(st.session_state.get("run_stage", "Processing"))
+            st.markdown(
+                f'<div class="secondary-note">{st.session_state.get("run_stage", "Processing")}</div>',
+                unsafe_allow_html=True,
+            )
 
     elif not has_results:
         c1, c2 = st.columns([1.4, 4])
+
         with c1:
             if st.button(
                 "Run simulation",
@@ -135,15 +186,34 @@ def render_top_action_bar():
                 key="top_run_simulation",
             ):
                 _trigger_simulation()
+
         with c2:
             if ready:
-                st.caption("Start the feasibility check using the selected study setup.")
+                st.markdown(
+                    '<div class="secondary-note">Setup is complete. You can start the feasibility check.</div>',
+                    unsafe_allow_html=True,
+                )
             else:
-                st.caption("Select an airport or study point and at least one device to enable simulation.")
+                st.markdown(
+                    '<div class="secondary-note">Select an airport or study point and at least one device to enable simulation.</div>',
+                    unsafe_allow_html=True,
+                )
 
     else:
-        c1, c2, c3 = st.columns([1.5, 1.4, 4])
+        c1, c2, c3 = st.columns([1.55, 1.55, 1.45])
+
         with c1:
+            if st.session_state.get("pdf_bytes") is not None:
+                st.download_button(
+                    "📄 Download PDF report",
+                    data=st.session_state.get("pdf_bytes"),
+                    file_name=st.session_state.get("pdf_name", "sala_standardized_feasibility_study.pdf"),
+                    mime="application/pdf",
+                    use_container_width=True,
+                    key="top_download_pdf_report",
+                )
+
+        with c2:
             if st.button(
                 "Run updated simulation",
                 type="primary",
@@ -153,12 +223,18 @@ def render_top_action_bar():
             ):
                 _trigger_simulation()
 
-        with c2:
-            if st.button("Start new study", use_container_width=True, key="top_start_new_study"):
+        with c3:
+            if st.button(
+                "Start new study",
+                use_container_width=True,
+                key="top_start_new_study",
+            ):
                 reset_study()
 
-        with c3:
-            st.caption("You can change the same location, devices or operating mode and run the study again.")
+        st.markdown(
+            '<div class="secondary-note">You can keep the same location, update devices or operating profile, and run the study again.</div>',
+            unsafe_allow_html=True,
+        )
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -166,6 +242,18 @@ def render_top_action_bar():
 init_state()
 apply_global_styles()
 render_header()
+
+# Render setup first so session state is updated before top actions are drawn
+if not st.session_state.get("results"):
+    render_setup()
+else:
+    with st.expander("Show study setup", expanded=False):
+        render_setup()
+
+# Recalculate readiness after setup fields potentially changed
+refresh_study_ready_from_state()
+
+# Now draw actions using fresh state
 render_top_action_bar()
 
 if st.session_state.get("trigger_run"):
@@ -174,14 +262,6 @@ if st.session_state.get("trigger_run"):
 
 if st.session_state.get("results") is not None:
     render_result()
-
-if not st.session_state.get("results"):
-    render_setup()
-else:
-    with st.expander("Show study setup", expanded=False):
-        render_setup()
-
-if st.session_state.get("results") is not None:
     render_graph()
     render_battery()
     render_weather_basis()

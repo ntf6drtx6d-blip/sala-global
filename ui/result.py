@@ -1,6 +1,7 @@
 # ui/result.py
 # ACTION: REPLACE ENTIRE FILE
 
+import math
 import streamlit as st
 import pandas as pd
 
@@ -16,11 +17,16 @@ def checked_devices_summary(results):
     for key, r in results.items():
         label = short_device_label(key)
 
+        fail_months = r.get("fail_months", [])
         if r["status"] == "PASS":
-            comment = "Meets required daily operation all year"
+            comment = "Meets required operation all year"
         else:
-            fail_months = ", ".join(r["fail_months"]) if r["fail_months"] else "one or more months"
-            comment = f"Below requirement in {fail_months}"
+            if len(fail_months) == 12:
+                comment = "Below requirement in all months"
+            elif fail_months:
+                comment = f"Below requirement in {', '.join(fail_months)}"
+            else:
+                comment = "Below requirement in one or more months"
 
         rows.append({
             "Device": label,
@@ -31,57 +37,86 @@ def checked_devices_summary(results):
     return pd.DataFrame(rows)
 
 
-def recommendation_text(results, required_hrs):
-    failing = []
-    passing = []
+def operating_mode_label():
+    mode = st.session_state.get("operating_profile_mode", "Custom hours per day")
+    hrs = float(st.session_state.get("required_hours", 12.0))
 
-    for key, r in results.items():
-        label = short_device_label(key)
-        if r["status"] == "PASS":
-            passing.append(label)
-        else:
-            failing.append((label, r["fail_months"]))
+    if mode == "24/7":
+        return "24/7 operation"
+    if mode == "Dusk to dawn":
+        return f"Dusk-to-Dawn operation ({hrs:.1f} hrs/day)"
+    return f"Custom operation ({hrs:.1f} hrs/day)"
 
-    if not failing:
-        return (
-            f"All selected devices meet the planned daily operating requirement "
-            f"of {required_hrs:.1f} hrs/day across the full annual cycle."
-        )
 
-    parts = []
-    for label, months in failing:
-        month_text = ", ".join(months) if months else "one or more months"
-        parts.append(f"{label} is below target in {month_text}")
+def estimate_empty_battery_days(results):
+    """
+    Conservative but simple UI-facing metric:
+    count device-month failures and convert to a percentage of device-months.
+    Also estimate equivalent days/year for communication.
+    """
+    total_devices = max(len(results), 1)
+    total_month_slots = total_devices * 12
 
-    return (
-        f"Some selected devices do not meet the planned daily operating requirement "
-        f"of {required_hrs:.1f} hrs/day. " + "; ".join(parts) + "."
-    )
+    failed_month_slots = 0
+    for _, r in results.items():
+        failed_month_slots += len(r.get("fail_months", []))
+
+    pct = (failed_month_slots / total_month_slots) * 100.0 if total_month_slots else 0.0
+
+    # Convert month-slot failure proportion into approximate days/year.
+    # UI metric only; keeps communication simple and intuitive.
+    approx_days = round((pct / 100.0) * 365)
+
+    return approx_days, pct
+
+
+def main_result_message(results):
+    mode_text = operating_mode_label()
+    all_pass = all(r["status"] == "PASS" for r in results.values())
+
+    if all_pass:
+        return f"All selected devices can operate in {mode_text} throughout the year."
+    return f"Selected devices cannot sustain {mode_text} throughout the year."
+
+
+def secondary_result_message(results):
+    approx_days, pct = estimate_empty_battery_days(results)
+
+    if approx_days == 0:
+        return "Days with empty battery: 0 days/year (0%)"
+    return f"Days with empty battery: {approx_days} days/year ({pct:.1f}%)"
+
+
+def tertiary_result_message(results):
+    all_pass = all(r["status"] == "PASS" for r in results.values())
+    if all_pass:
+        return "No seasonal blackout risk detected."
+    return "Battery depletion risk appears during low-solar periods."
 
 
 def render_result():
     st.markdown("## Decision summary")
 
     results = st.session_state.results
-    overall = st.session_state.overall
-    required_hours = float(st.session_state.required_hours)
+    if not results:
+        return
 
     summary_df = checked_devices_summary(results)
 
-    # Top compact banner
-    left, right = st.columns([2.5, 1])
+    left, right = st.columns([2.6, 1])
 
     with left:
-        if overall == "PASS":
-            st.success("Annual feasibility result: PASS")
+        if all(r["status"] == "PASS" for r in results.values()):
+            st.success(main_result_message(results))
         else:
-            st.error("Annual feasibility result: FAIL")
+            st.error(main_result_message(results))
 
-        st.write(recommendation_text(results, required_hours))
+        st.write(secondary_result_message(results))
+        st.caption(tertiary_result_message(results))
 
     with right:
         st.markdown("### Report")
-        if st.session_state.pdf_bytes is not None:
+        if st.session_state.get("pdf_bytes") is not None:
             st.download_button(
                 "Download report",
                 data=st.session_state.pdf_bytes,
@@ -92,7 +127,6 @@ def render_result():
 
     st.markdown("### Results by device")
 
-    # Show one clean row per device
     for _, row in summary_df.iterrows():
         c1, c2, c3 = st.columns([1.2, 1, 3])
 

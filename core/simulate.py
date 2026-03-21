@@ -3,7 +3,7 @@ import os
 import time
 from urllib.parse import urlencode
 
-from devices import DEVICES, SOLAR_ENGINES
+from core.devices import DEVICES, SOLAR_ENGINES
 from pvgis_client import pvcalc_monthly_wh_per_day, shs_monthly, load_cache, save_cache
 
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",

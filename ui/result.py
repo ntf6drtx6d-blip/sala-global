@@ -4,6 +4,9 @@
 import streamlit as st
 
 
+SALA_PRIMARY = "#1f4fbf"
+
+
 def short_device_label(full_name):
     if " — " in full_name:
         return full_name.split(" — ", 1)[1]
@@ -53,34 +56,6 @@ def overall_interpretation_text(results):
     if all_pass:
         return "No seasonal blackout risk detected."
     return "Battery depletion risk appears during low-solar periods."
-
-
-def worst_device_name(results):
-    worst_name = None
-    worst_gap = None
-
-    for full_name, r in results.items():
-        gap = r.get("min_margin")
-        if gap is None:
-            continue
-        if worst_gap is None or gap < worst_gap:
-            worst_gap = gap
-            worst_name = short_device_label(full_name)
-
-    return worst_name or "N/A"
-
-
-def worst_period_label(results):
-    month_counts = {}
-    for _, r in results.items():
-        for m in r.get("fail_months", []):
-            month_counts[m] = month_counts.get(m, 0) + 1
-
-    if not month_counts:
-        return "No risk period"
-
-    worst_month = max(month_counts, key=month_counts.get)
-    return worst_month
 
 
 def device_short_comment(r):
@@ -134,13 +109,16 @@ def render_kpi_card(title, value, subtitle=""):
         <div style="
             border:1px solid #e6eaf0;
             border-radius:16px;
-            padding:16px 18px;
+            padding:18px 20px;
             background:#ffffff;
-            min-height:120px;
-            box-shadow: 0 2px 10px rgba(16,24,40,0.04);">
-            <div style="font-size:0.92rem;color:#667085;font-weight:600;margin-bottom:8px;">{title}</div>
-            <div style="font-size:2rem;color:#1f2937;font-weight:800;line-height:1.1;">{value}</div>
-            <div style="font-size:0.9rem;color:#667085;margin-top:10px;">{subtitle}</div>
+            min-height:148px;
+            box-shadow: 0 2px 10px rgba(16,24,40,0.04);
+            display:flex;
+            flex-direction:column;
+            justify-content:space-between;">
+            <div style="font-size:0.95rem;color:#667085;font-weight:700;margin-bottom:10px;">{title}</div>
+            <div style="font-size:2rem;color:#1f2937;font-weight:800;line-height:1.1;word-break:break-word;">{value}</div>
+            <div style="font-size:0.93rem;color:#667085;margin-top:12px;line-height:1.4;">{subtitle}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -190,6 +168,27 @@ def render_device_card(device_name, r):
 
 
 def render_result():
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stDownloadButton"] > button {
+            background: #1f4fbf !important;
+            color: white !important;
+            border: 1px solid #1f4fbf !important;
+            border-radius: 12px !important;
+            font-weight: 700 !important;
+            min-height: 48px !important;
+        }
+        div[data-testid="stDownloadButton"] > button:hover {
+            background: #183f98 !important;
+            border-color: #183f98 !important;
+            color: white !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     st.markdown("## Decision summary")
 
     results = st.session_state.get("results", {})
@@ -198,11 +197,9 @@ def render_result():
 
     all_pass = all(r.get("status") == "PASS" for r in results.values())
     days, pct = annual_empty_battery_stats(results)
+    airport_name = st.session_state.get("airport_label", "") or "Selected study point"
     mode_text = operating_mode_label()
-    worst_dev = worst_device_name(results)
-    worst_period = worst_period_label(results)
 
-    # Overall conclusion card
     box_bg = "#ecfdf3" if all_pass else "#fef3f2"
     box_fg = "#067647" if all_pass else "#b42318"
     border = "#abefc6" if all_pass else "#fecdca"
@@ -236,20 +233,33 @@ def render_result():
         st.markdown("### Report")
         if st.session_state.get("pdf_bytes") is not None:
             st.download_button(
-                "Download report",
+                "📄 Download PDF report",
                 data=st.session_state.get("pdf_bytes"),
                 file_name=st.session_state.get("pdf_name", "sala_standardized_feasibility_study.pdf"),
                 mime="application/pdf",
                 use_container_width=True,
+                key="summary_download_pdf_report",
             )
-        else:
-            st.button("Download report", disabled=True, use_container_width=True)
 
     st.markdown("### Key takeaways")
 
     c1, c2, c3 = st.columns(3)
 
     with c1:
+        render_kpi_card(
+            "Airport",
+            airport_name,
+            "Study location used for the feasibility assessment"
+        )
+
+    with c2:
+        render_kpi_card(
+            "Required operating mode",
+            mode_text,
+            "Applied requirement used for the study"
+        )
+
+    with c3:
         if days is None or pct is None:
             render_kpi_card(
                 "Days with empty battery",
@@ -262,20 +272,6 @@ def render_result():
                 f"{days}",
                 f"{pct:.1f}% of days per year"
             )
-
-    with c2:
-        render_kpi_card(
-            "Operating mode",
-            mode_text,
-            "Applied requirement used for the study"
-        )
-
-    with c3:
-        render_kpi_card(
-            "Main concern",
-            worst_period,
-            f"Most limiting device: {worst_dev}"
-        )
 
     st.markdown("### Results by device")
 

@@ -9,6 +9,7 @@ from ui.cockpit import render_cockpit, _run_simulation, reset_study
 from ui.result import render_result
 from ui.graph import render_graph
 from ui.battery import render_battery
+from ui.weather_basis import render_weather_basis
 
 
 # ---------------- CONFIG ----------------

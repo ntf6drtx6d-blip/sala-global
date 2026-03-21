@@ -10,17 +10,31 @@ MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 
-def short_device_label(full_name):
+def short_device_label(full_name: str) -> str:
     if " — " in full_name:
         return full_name.split(" — ", 1)[1]
     return full_name
 
 
-def build_monthly_df(results, required_hrs):
+def calc_battery_reserve_hours(result_row: dict):
+    """
+    Battery-only reserve estimate.
+    Assumes usable battery energy = 70% of nominal battery capacity.
+    """
+    try:
+        batt = float(result_row["batt"])
+        power = max(float(result_row["power"]), 0.01)
+        return batt * 0.70 / power
+    except Exception:
+        return None
+
+
+def build_monthly_df(results: dict, required_hrs: float) -> pd.DataFrame:
     rows = []
 
     for device_name, r in results.items():
         label = short_device_label(device_name)
+        reserve = calc_battery_reserve_hours(r)
 
         for i, month in enumerate(MONTHS):
             hours = float(r["hours"][i])
@@ -31,6 +45,20 @@ def build_monthly_df(results, required_hrs):
             if gap < 0:
                 status_band = "near-threshold" if abs(gap) < 0.5 else "below"
 
+            if reserve is not None:
+                meaning = (
+                    f"Required: {required:.1f} hrs/day. "
+                    f"Achieved in {month}: {hours:.1f} hrs/day. "
+                    f"Gap: {gap:+.1f} hrs/day. "
+                    f"Battery reserve: {reserve:.1f} hrs."
+                )
+            else:
+                meaning = (
+                    f"Required: {required:.1f} hrs/day. "
+                    f"Achieved in {month}: {hours:.1f} hrs/day. "
+                    f"Gap: {gap:+.1f} hrs/day."
+                )
+
             rows.append({
                 "Month": month,
                 "MonthIndex": i + 1,
@@ -40,11 +68,9 @@ def build_monthly_df(results, required_hrs):
                 "Hours": hours,
                 "RequiredHours": required,
                 "Gap": gap,
+                "BatteryReserve": reserve,
                 "StatusBand": status_band,
-                "Meaning": (
-                    f"{label}: {hours:.2f} hrs/day in {month}. "
-                    f"Required daily operation: {required:.2f} hrs/day."
-                )
+                "Meaning": meaning,
             })
 
     return pd.DataFrame(rows)
@@ -52,11 +78,13 @@ def build_monthly_df(results, required_hrs):
 
 def render_graph():
     st.markdown("## Annual operating profile")
-    st.caption("12-month solar performance from January to December")
+    st.caption("12-month solar performance from January to December.")
 
-    results = st.session_state.results
-    required_hours = float(st.session_state.required_hours)
+    results = st.session_state.get("results", {})
+    if not results:
+        return
 
+    required_hours = float(st.session_state.get("required_hours", 0))
     chart_df = build_monthly_df(results, required_hours)
     device_labels = list(chart_df["Device"].unique())
 
@@ -65,24 +93,45 @@ def render_graph():
         device_labels,
         default=device_labels,
         help="Untick devices to hide them from the graph.",
+        key="graph_devices_filter",
     )
 
     plot_df = chart_df[chart_df["Device"].isin(visible_devices)].copy()
+
+    if plot_df.empty:
+        st.info("No devices selected for display.")
+        return
 
     green_df = plot_df[plot_df["StatusBand"] == "met"].copy()
     yellow_df = plot_df[plot_df["StatusBand"] == "near-threshold"].copy()
     red_df = plot_df[plot_df["StatusBand"] == "below"].copy()
 
-    # Green month-by-month bands
+    x_axis = alt.X(
+        "MonthIndex:Q",
+        scale=alt.Scale(domain=[0.5, 12.5]),
+        axis=alt.Axis(
+            title="Month",
+            values=list(range(1, 13)),
+            labelExpr="['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][datum.value-1]"
+        )
+    )
+
+    y_axis = alt.Y(
+        "Hours:Q",
+        scale=alt.Scale(domain=[0, 24]),
+        title="Achieved operating hours per day"
+    )
+
+    # Green monthly band = requirement met
     green_rect = alt.Chart(green_df).mark_rect(
         color="#16a34a",
-        opacity=0.18
+        opacity=0.15
     ).encode(
         x=alt.X(
             "MonthStart:Q",
             scale=alt.Scale(domain=[0.5, 12.5]),
             axis=alt.Axis(
-                title="Annual cycle (Jan–Dec)",
+                title="Month",
                 values=list(range(1, 13)),
                 labelExpr="['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][datum.value-1]"
             )
@@ -91,43 +140,15 @@ def render_graph():
         y=alt.Y(
             "RequiredHours:Q",
             scale=alt.Scale(domain=[0, 24]),
-            title="Guaranteed operating hours per day"
+            title="Achieved operating hours per day"
         ),
         y2="Hours:Q",
         detail="Device:N",
-        tooltip=[
-            alt.Tooltip("Device:N", title="Device"),
-            alt.Tooltip("Month:N", title="Month"),
-            alt.Tooltip("Hours:Q", title="Guaranteed hrs/day", format=".2f"),
-            alt.Tooltip("RequiredHours:Q", title="Required hrs/day", format=".2f"),
-            alt.Tooltip("Gap:Q", title="Gap vs requirement", format=".2f"),
-            alt.Tooltip("Meaning:N", title="Meaning"),
-        ],
     )
 
-    # Yellow month-by-month bands for small shortfall
+    # Yellow monthly band = small shortfall
     yellow_rect = alt.Chart(yellow_df).mark_rect(
         color="#f59e0b",
-        opacity=0.22
-    ).encode(
-        x=alt.X("MonthStart:Q", scale=alt.Scale(domain=[0.5, 12.5])),
-        x2="MonthEnd:Q",
-        y=alt.Y("Hours:Q", scale=alt.Scale(domain=[0, 24])),
-        y2="RequiredHours:Q",
-        detail="Device:N",
-        tooltip=[
-            alt.Tooltip("Device:N", title="Device"),
-            alt.Tooltip("Month:N", title="Month"),
-            alt.Tooltip("Hours:Q", title="Guaranteed hrs/day", format=".2f"),
-            alt.Tooltip("RequiredHours:Q", title="Required hrs/day", format=".2f"),
-            alt.Tooltip("Gap:Q", title="Gap vs requirement", format=".2f"),
-            alt.Tooltip("Meaning:N", title="Meaning"),
-        ],
-    )
-
-    # Red month-by-month bands
-    red_rect = alt.Chart(red_df).mark_rect(
-        color="#dc2626",
         opacity=0.18
     ).encode(
         x=alt.X("MonthStart:Q", scale=alt.Scale(domain=[0.5, 12.5])),
@@ -135,14 +156,18 @@ def render_graph():
         y=alt.Y("Hours:Q", scale=alt.Scale(domain=[0, 24])),
         y2="RequiredHours:Q",
         detail="Device:N",
-        tooltip=[
-            alt.Tooltip("Device:N", title="Device"),
-            alt.Tooltip("Month:N", title="Month"),
-            alt.Tooltip("Hours:Q", title="Guaranteed hrs/day", format=".2f"),
-            alt.Tooltip("RequiredHours:Q", title="Required hrs/day", format=".2f"),
-            alt.Tooltip("Gap:Q", title="Gap vs requirement", format=".2f"),
-            alt.Tooltip("Meaning:N", title="Meaning"),
-        ],
+    )
+
+    # Red monthly band = below requirement
+    red_rect = alt.Chart(red_df).mark_rect(
+        color="#dc2626",
+        opacity=0.15
+    ).encode(
+        x=alt.X("MonthStart:Q", scale=alt.Scale(domain=[0.5, 12.5])),
+        x2="MonthEnd:Q",
+        y=alt.Y("Hours:Q", scale=alt.Scale(domain=[0, 24])),
+        y2="RequiredHours:Q",
+        detail="Device:N",
     )
 
     # Device line
@@ -150,16 +175,8 @@ def render_graph():
         point=True,
         strokeWidth=2.8
     ).encode(
-        x=alt.X(
-            "MonthIndex:Q",
-            scale=alt.Scale(domain=[0.5, 12.5]),
-            axis=alt.Axis(
-                title="Annual cycle (Jan–Dec)",
-                values=list(range(1, 13)),
-                labelExpr="['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][datum.value-1]"
-            )
-        ),
-        y=alt.Y("Hours:Q", scale=alt.Scale(domain=[0, 24])),
+        x=x_axis,
+        y=y_axis,
         color=alt.Color(
             "Device:N",
             title="Selected devices",
@@ -169,10 +186,11 @@ def render_graph():
         tooltip=[
             alt.Tooltip("Device:N", title="Device"),
             alt.Tooltip("Month:N", title="Month"),
-            alt.Tooltip("Hours:Q", title="Guaranteed hrs/day", format=".2f"),
-            alt.Tooltip("RequiredHours:Q", title="Required hrs/day", format=".2f"),
-            alt.Tooltip("Gap:Q", title="Gap vs requirement", format=".2f"),
-            alt.Tooltip("Meaning:N", title="Meaning"),
+            alt.Tooltip("RequiredHours:Q", title="Required hours", format=".1f"),
+            alt.Tooltip("Hours:Q", title="Achieved hours", format=".1f"),
+            alt.Tooltip("Gap:Q", title="Gap vs requirement", format="+.1f"),
+            alt.Tooltip("BatteryReserve:Q", title="Battery reserve", format=".1f"),
+            alt.Tooltip("Meaning:N", title="Interpretation"),
         ],
     )
 
@@ -185,20 +203,23 @@ def render_graph():
     req_line = alt.Chart(req_df).mark_line(
         color="#111827",
         strokeDash=[10, 5],
-        strokeWidth=3.2
+        strokeWidth=3.0
     ).encode(
         x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0.5, 12.5])),
         y=alt.Y("Required:Q", scale=alt.Scale(domain=[0, 24])),
-        tooltip=[alt.Tooltip("Required:Q", title="Required hrs/day", format=".1f")],
+        tooltip=[
+            alt.Tooltip("Required:Q", title="Required hours", format=".1f")
+        ],
     )
 
-    line_label_df = pd.DataFrame({
+    # Required line label
+    label_df = pd.DataFrame({
         "MonthIndex": [12],
         "Required": [required_hours],
         "Text": [f"Required daily operation = {required_hours:.1f} hrs/day"],
     })
 
-    line_label = alt.Chart(line_label_df).mark_text(
+    label_chart = alt.Chart(label_df).mark_text(
         align="right",
         dx=-8,
         dy=-10,
@@ -211,7 +232,14 @@ def render_graph():
         text="Text:N",
     )
 
-    chart = (red_rect + yellow_rect + green_rect + line_chart + req_line + line_label).properties(
+    chart = (
+        red_rect
+        + yellow_rect
+        + green_rect
+        + line_chart
+        + req_line
+        + label_chart
+    ).properties(
         height=500
     ).interactive()
 
@@ -229,6 +257,6 @@ def render_graph():
     )
 
     st.caption(
-        "Blue line = guaranteed operating hours per day by month. "
-        "Black dashed line = required daily operation."
+        "Hover any point to compare required hours, achieved hours, gap versus requirement, and battery reserve. "
+        "Battery reserve means battery-only fallback capability without solar input."
     )

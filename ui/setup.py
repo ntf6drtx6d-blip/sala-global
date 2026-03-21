@@ -95,7 +95,7 @@ def geocode_airport(query):
 def create_map(lat, lon, label):
     fmap = folium.Map(
         location=[lat, lon],
-        zoom_start=14,
+        zoom_start=13,
         control_scale=True,
         tiles="CartoDB positron",
     )
@@ -211,17 +211,17 @@ def render_setup():
 
     st.markdown("## Study setup")
 
-    # =========================================================
-    # 1. LOCATION
-    # =========================================================
-    st.markdown("### Location")
+    left, right = st.columns([1.05, 0.95], gap="large")
 
-    left, right = st.columns([1, 1])
-
+    # =========================================================
+    # LEFT: INPUT FLOW
+    # =========================================================
     with left:
-        airport_col, button_col = st.columns([3, 1])
+        st.markdown("### 1. Location")
 
-        with airport_col:
+        airport_row_1, airport_row_2 = st.columns([3.2, 1.1])
+
+        with airport_row_1:
             airport_query = st.text_input(
                 "Airport name",
                 value=st.session_state.get("airport_query", ""),
@@ -229,7 +229,7 @@ def render_setup():
                 key="airport_query_input"
             )
 
-        with button_col:
+        with airport_row_2:
             st.write("")
             st.write("")
             if st.button("Find airport", use_container_width=True):
@@ -260,20 +260,25 @@ def render_setup():
                 st.warning(st.session_state.search_message)
 
         with st.expander("Advanced coordinates", expanded=False):
-            new_lat = st.number_input(
-                "Latitude",
-                min_value=-90.0,
-                max_value=90.0,
-                value=float(st.session_state.lat),
-                format="%.6f",
-            )
-            new_lon = st.number_input(
-                "Longitude",
-                min_value=-180.0,
-                max_value=180.0,
-                value=float(st.session_state.lon),
-                format="%.6f",
-            )
+            c1, c2 = st.columns(2)
+
+            with c1:
+                new_lat = st.number_input(
+                    "Latitude",
+                    min_value=-90.0,
+                    max_value=90.0,
+                    value=float(st.session_state.lat),
+                    format="%.6f",
+                )
+
+            with c2:
+                new_lon = st.number_input(
+                    "Longitude",
+                    min_value=-180.0,
+                    max_value=180.0,
+                    value=float(st.session_state.lon),
+                    format="%.6f",
+                )
 
             coords_changed = (
                 abs(new_lat - st.session_state.lat) > 1e-9
@@ -290,7 +295,81 @@ def render_setup():
                     _apply_operating_profile()
                 _refresh_study_ready()
 
+        st.markdown("### 2. Operating profile")
+        st.caption("Define how long the system must operate every day.")
+
+        mode_options = ["Custom hours per day", "24/7", "Dusk to dawn"]
+        current_mode = st.session_state.get("operating_profile_mode", "Custom hours per day")
+        if current_mode not in mode_options:
+            current_mode = "Custom hours per day"
+
+        mode = st.radio(
+            "Operating profile",
+            mode_options,
+            horizontal=True,
+            index=mode_options.index(current_mode),
+            key="operating_profile_mode_radio",
+        )
+
+        if st.session_state.get("operating_profile_mode") != mode:
+            st.session_state.operating_profile_mode = mode
+            _apply_operating_profile()
+
+        if mode == "Custom hours per day":
+            current_custom = st.session_state.get("required_hours")
+            if current_custom is None:
+                current_custom = 12.0
+
+            required_custom = st.number_input(
+                "Planned daily operating hours",
+                min_value=0.1,
+                max_value=24.0,
+                value=float(current_custom),
+                step=0.5,
+                help="Total hours per day the lights are expected to operate.",
+                key="required_custom_hours_input",
+            )
+            st.session_state.required_hours = required_custom
+            st.caption("Total hours per day the lights are expected to operate.")
+
+        elif mode == "24/7":
+            st.session_state.required_hours = 24.0
+            st.info("Applied operating profile: 24.0 hrs/day")
+
+        elif mode == "Dusk to dawn":
+            if st.session_state.get("study_point_confirmed", False):
+                applied = round(longest_night_hours(st.session_state.lat), 1)
+                st.session_state.required_hours = applied
+                st.info(
+                    f"Applied operating profile: {applied:.1f} hrs/day "
+                    f"(based on the longest night at the selected study point)"
+                )
+            else:
+                st.session_state.required_hours = None
+                st.warning("Select the study location first to calculate Dusk-to-Dawn operating time.")
+
+        _refresh_study_ready()
+
+        st.markdown("### 3. Select devices")
+
+        device_options = {_device_label(k): k for k in DEVICES.keys()}
+
+        selected_labels = st.multiselect(
+            "Devices included in this study",
+            list(device_options.keys()),
+            default=_default_multiselect_labels(),
+            key="selected_devices_multiselect",
+        )
+
+        selected_ids = [device_options[label] for label in selected_labels]
+        st.session_state.selected_ids = selected_ids
+
+    # =========================================================
+    # RIGHT: MAP
+    # =========================================================
     with right:
+        st.markdown("### Study point")
+
         fmap = create_map(
             st.session_state.lat,
             st.session_state.lon,
@@ -300,7 +379,7 @@ def render_setup():
         map_data = st_folium(
             fmap,
             width=None,
-            height=420,
+            height=360,
             returned_objects=["last_clicked"],
             key="study_map_modular",
         )
@@ -334,88 +413,14 @@ def render_setup():
             st.caption("Select an airport or click on the map to define the study point.")
 
     # =========================================================
-    # 2. OPERATING PROFILE
+    # DEVICE CONFIGURATION BELOW
     # =========================================================
-    st.markdown("### Operating profile")
-
-    mode_options = ["Custom hours per day", "24/7", "Dusk to dawn"]
-    current_mode = st.session_state.get("operating_profile_mode", "Custom hours per day")
-    if current_mode not in mode_options:
-        current_mode = "Custom hours per day"
-
-    mode = st.radio(
-        "Operating profile",
-        mode_options,
-        horizontal=True,
-        index=mode_options.index(current_mode),
-        key="operating_profile_mode_radio",
-    )
-
-    if st.session_state.get("operating_profile_mode") != mode:
-        st.session_state.operating_profile_mode = mode
-        _apply_operating_profile()
-
-    if mode == "Custom hours per day":
-        current_custom = st.session_state.get("required_hours")
-        if current_custom is None:
-            current_custom = 12.0
-
-        required_custom = st.number_input(
-            "Planned daily operating hours",
-            min_value=0.1,
-            max_value=24.0,
-            value=float(current_custom),
-            step=0.5,
-            help="Total hours per day the lights are expected to operate.",
-            key="required_custom_hours_input",
-        )
-        st.session_state.required_hours = required_custom
-        st.caption("Total hours per day the lights are expected to operate.")
-
-    elif mode == "24/7":
-        st.session_state.required_hours = 24.0
-        st.info("Applied operating profile: 24.0 hrs/day")
-
-    elif mode == "Dusk to dawn":
-        if st.session_state.get("study_point_confirmed", False):
-            applied = round(longest_night_hours(st.session_state.lat), 1)
-            st.session_state.required_hours = applied
-            st.info(
-                f"Applied operating profile: {applied:.1f} hrs/day "
-                f"(based on the longest night at the selected study point)"
-            )
-        else:
-            st.session_state.required_hours = None
-            st.warning("Select the study location first to calculate Dusk-to-Dawn operating time.")
-
-    _refresh_study_ready()
-
-    # =========================================================
-    # 3. SELECT DEVICES
-    # =========================================================
-    st.markdown("### Select devices")
-
-    device_options = {_device_label(k): k for k in DEVICES.keys()}
-
-    selected_labels = st.multiselect(
-        "Devices included in this study",
-        list(device_options.keys()),
-        default=_default_multiselect_labels(),
-        key="selected_devices_multiselect",
-    )
-
-    selected_ids = [device_options[label] for label in selected_labels]
-    st.session_state.selected_ids = selected_ids
-
-    # =========================================================
-    # 4. CONFIGURE DEVICES
-    # =========================================================
-    st.markdown("### Configure selected devices")
+    st.markdown("### 4. Configure selected devices")
 
     per_device_config = {}
 
     if not selected_ids:
-        st.info("Select at least one device to configure.")
+        st.caption("Select at least one device to configure.")
         st.session_state.per_device_config = {}
         _refresh_study_ready()
     else:

@@ -25,6 +25,11 @@ def build_monthly_df(results, required_hrs):
         for i, month in enumerate(MONTHS):
             hours = float(r["hours"][i])
             required = float(required_hrs)
+            gap = hours - required
+
+            status_band = "met"
+            if gap < 0:
+                status_band = "near-threshold" if abs(gap) < 0.5 else "below"
 
             rows.append({
                 "Month": month,
@@ -34,8 +39,8 @@ def build_monthly_df(results, required_hrs):
                 "Device": label,
                 "Hours": hours,
                 "RequiredHours": required,
-                "AboveRequirement": hours >= required,
-                "BelowRequirement": hours < required,
+                "Gap": gap,
+                "StatusBand": status_band,
                 "Meaning": (
                     f"{label}: {hours:.2f} hrs/day in {month}. "
                     f"Required daily operation: {required:.2f} hrs/day."
@@ -63,8 +68,10 @@ def render_graph():
     )
 
     plot_df = chart_df[chart_df["Device"].isin(visible_devices)].copy()
-    green_df = plot_df[plot_df["AboveRequirement"]].copy()
-    red_df = plot_df[plot_df["BelowRequirement"]].copy()
+
+    green_df = plot_df[plot_df["StatusBand"] == "met"].copy()
+    yellow_df = plot_df[plot_df["StatusBand"] == "near-threshold"].copy()
+    red_df = plot_df[plot_df["StatusBand"] == "below"].copy()
 
     # Green month-by-month bands
     green_rect = alt.Chart(green_df).mark_rect(
@@ -84,7 +91,7 @@ def render_graph():
         y=alt.Y(
             "RequiredHours:Q",
             scale=alt.Scale(domain=[0, 24]),
-            title="Operating hours per day"
+            title="Guaranteed operating hours per day"
         ),
         y2="Hours:Q",
         detail="Device:N",
@@ -93,6 +100,27 @@ def render_graph():
             alt.Tooltip("Month:N", title="Month"),
             alt.Tooltip("Hours:Q", title="Guaranteed hrs/day", format=".2f"),
             alt.Tooltip("RequiredHours:Q", title="Required hrs/day", format=".2f"),
+            alt.Tooltip("Gap:Q", title="Gap vs requirement", format=".2f"),
+            alt.Tooltip("Meaning:N", title="Meaning"),
+        ],
+    )
+
+    # Yellow month-by-month bands for small shortfall
+    yellow_rect = alt.Chart(yellow_df).mark_rect(
+        color="#f59e0b",
+        opacity=0.22
+    ).encode(
+        x=alt.X("MonthStart:Q", scale=alt.Scale(domain=[0.5, 12.5])),
+        x2="MonthEnd:Q",
+        y=alt.Y("Hours:Q", scale=alt.Scale(domain=[0, 24])),
+        y2="RequiredHours:Q",
+        detail="Device:N",
+        tooltip=[
+            alt.Tooltip("Device:N", title="Device"),
+            alt.Tooltip("Month:N", title="Month"),
+            alt.Tooltip("Hours:Q", title="Guaranteed hrs/day", format=".2f"),
+            alt.Tooltip("RequiredHours:Q", title="Required hrs/day", format=".2f"),
+            alt.Tooltip("Gap:Q", title="Gap vs requirement", format=".2f"),
             alt.Tooltip("Meaning:N", title="Meaning"),
         ],
     )
@@ -112,6 +140,7 @@ def render_graph():
             alt.Tooltip("Month:N", title="Month"),
             alt.Tooltip("Hours:Q", title="Guaranteed hrs/day", format=".2f"),
             alt.Tooltip("RequiredHours:Q", title="Required hrs/day", format=".2f"),
+            alt.Tooltip("Gap:Q", title="Gap vs requirement", format=".2f"),
             alt.Tooltip("Meaning:N", title="Meaning"),
         ],
     )
@@ -142,6 +171,7 @@ def render_graph():
             alt.Tooltip("Month:N", title="Month"),
             alt.Tooltip("Hours:Q", title="Guaranteed hrs/day", format=".2f"),
             alt.Tooltip("RequiredHours:Q", title="Required hrs/day", format=".2f"),
+            alt.Tooltip("Gap:Q", title="Gap vs requirement", format=".2f"),
             alt.Tooltip("Meaning:N", title="Meaning"),
         ],
     )
@@ -181,14 +211,24 @@ def render_graph():
         text="Text:N",
     )
 
-    chart = (red_rect + green_rect + line_chart + req_line + line_label).properties(
+    chart = (red_rect + yellow_rect + green_rect + line_chart + req_line + line_label).properties(
         height=500
     ).interactive()
 
     st.altair_chart(chart, use_container_width=True)
 
+    st.markdown(
+        """
+        <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:8px;font-size:0.95rem;color:#475467;">
+            <div><span style="display:inline-block;width:14px;height:14px;background:#16a34a;opacity:0.7;border-radius:3px;margin-right:6px;"></span>Requirement met</div>
+            <div><span style="display:inline-block;width:14px;height:14px;background:#f59e0b;opacity:0.7;border-radius:3px;margin-right:6px;"></span>Near threshold (&lt; 0.5 hrs/day shortfall)</div>
+            <div><span style="display:inline-block;width:14px;height:14px;background:#dc2626;opacity:0.7;border-radius:3px;margin-right:6px;"></span>Below requirement</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     st.caption(
         "Blue line = guaranteed operating hours per day by month. "
-        "Black dashed line = required daily operation. "
-        "Green rectangles = above requirement. Red rectangles = below requirement."
+        "Black dashed line = required daily operation."
     )

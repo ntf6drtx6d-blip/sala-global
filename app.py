@@ -42,6 +42,7 @@ def init_state():
         "run_progress": 0,
         "run_stage": "Ready",
         "run_log": [],
+        "trigger_run": False,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -124,7 +125,11 @@ def render_top_action_bar():
 
         with c1:
             if st.button("Run simulation", type="primary", use_container_width=True, key="top_run_simulation"):
-                _run_simulation()
+                st.session_state.running = True
+                st.session_state.run_progress = 0
+                st.session_state.run_stage = "Preparing simulation"
+                st.session_state.trigger_run = True
+                st.rerun()
 
         with c2:
             st.caption("Start the feasibility check using the selected study setup.")
@@ -173,11 +178,16 @@ init_state()
 apply_global_styles()
 render_header()
 
-# top bar first
+# Top action bar first
 render_top_action_bar()
 
-# desktop dashboard in sidebar
+# Desktop sidebar dashboard
 render_cockpit()
+
+# Trigger actual simulation AFTER rerender so top bar shows running-state
+if st.session_state.get("trigger_run"):
+    st.session_state.trigger_run = False
+    _run_simulation()
 
 # Main flow
 if st.session_state.get("results") is not None:

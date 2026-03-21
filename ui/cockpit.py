@@ -15,8 +15,6 @@ from report.report import make_pdf
 EU_LOGO_PATH = "logo_en.gif"
 
 
-# ---------------- HELPERS ----------------
-
 def format_seconds(seconds):
     seconds = max(0, int(seconds))
     mins, secs = divmod(seconds, 60)
@@ -102,131 +100,97 @@ def reset_study():
 
 def _run_simulation():
     st.session_state.running = True
-    st.session_state.run_progress = 0
-    st.session_state.run_stage = "Starting simulation"
+    st.session_state.run_stage = "Preparing simulation"
     st.session_state.run_log = []
 
-    progress_host = st.container()
+    def add_log(message):
+        logs = st.session_state.get("run_log", [])
+        logs.append(f"**{now_ts()}** — {message}")
+        st.session_state.run_log = logs[-5:]
 
-    with progress_host:
-        st.markdown("## Simulation in progress")
-        st.write(
-            "The study is validating inputs, requesting solar/off-grid data from PVGIS, "
-            "checking monthly performance and building the annual feasibility result."
+    def render_stage(percent):
+        if percent < 12:
+            return "Validating study inputs"
+        elif percent < 30:
+            return "Requesting PVGIS data"
+        elif percent < 60:
+            return "Processing monthly off-grid results"
+        elif percent < 85:
+            return "Checking annual requirement month by month"
+        return "Building final conclusion and report"
+
+    add_log("Checking selected airport inputs.")
+    add_log("Preparing PVGIS request parameters.")
+
+    loc = {
+        "lat": st.session_state.lat,
+        "lon": st.session_state.lon,
+        "label": st.session_state.airport_label or f"{st.session_state.lat:.4f}, {st.session_state.lon:.4f}",
+        "country": "",
+    }
+
+    started = time.time()
+
+    def progress_callback(done, total, pct, elapsed, eta, device_name, month_name):
+        percent = int(pct * 100)
+        st.session_state.run_progress = percent
+        st.session_state.run_stage = render_stage(percent)
+
+        if done == 1:
+            add_log("Connecting to PVGIS — Photovoltaic Geographical Information System.")
+            add_log("Using the Joint Research Centre, European Commission engine.")
+        if month_name == "Jan":
+            add_log(f"Starting annual assessment for {device_name}.")
+        if month_name == "Jun":
+            add_log(f"Reviewing mid-year off-grid performance for {device_name}.")
+        if month_name == "Dec":
+            add_log(f"Checking winter performance for {device_name}.")
+
+    results, overall, worst_name, worst_gap, slope = simulate_for_devices(
+        loc=loc,
+        required_hrs=st.session_state.required_hours,
+        selected_ids=st.session_state.selected_ids,
+        per_device_config=st.session_state.per_device_config,
+        az_override=None,
+        progress_callback=progress_callback,
+    )
+
+    elapsed = time.time() - started
+
+    st.session_state.results = results
+    st.session_state.overall = overall
+    st.session_state.elapsed = elapsed
+    st.session_state.running = False
+    st.session_state.run_progress = 100
+    st.session_state.run_stage = "Completed"
+
+    add_log("PVGIS responses received for all selected configurations.")
+    add_log("Preparing annual feasibility conclusion.")
+    add_log("Generating consultant-style PDF report.")
+
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+        make_pdf(
+            tmp.name,
+            loc,
+            st.session_state.required_hours,
+            results,
+            overall,
+            "",
+            0,
+            "",
+            st.session_state.airport_label,
+            datetime.now().strftime("%Y-%m-%d %H:%M"),
+            None,
         )
+        with open(tmp.name, "rb") as f:
+            st.session_state.pdf_bytes = f.read()
 
-        progress_bar = st.progress(0)
-        progress_text = st.empty()
-        stage_text = st.empty()
-        log_box = st.empty()
+    st.rerun()
 
-        def add_log(message):
-            logs = st.session_state.get("run_log", [])
-            logs.append(f"**{now_ts()}** — {message}")
-            st.session_state.run_log = logs[-5:]
-            log_box.markdown(
-                '<div style="border:1px solid #e5eaf1;border-radius:12px;padding:10px 12px;background:#fbfcfe;">'
-                + "<br/>".join(st.session_state.run_log)
-                + "</div>",
-                unsafe_allow_html=True,
-            )
-
-        def render_stage(percent):
-            if percent < 12:
-                return "Step 1 — Validating study inputs"
-            elif percent < 30:
-                return "Step 2 — Requesting PVGIS data"
-            elif percent < 60:
-                return "Step 3 — Processing monthly off-grid results"
-            elif percent < 85:
-                return "Step 4 — Checking annual requirement month by month"
-            return "Step 5 — Building final conclusion and report"
-
-        add_log("Checking selected airport inputs.")
-        add_log("Preparing PVGIS request parameters.")
-
-        loc = {
-            "lat": st.session_state.lat,
-            "lon": st.session_state.lon,
-            "label": st.session_state.airport_label or f"{st.session_state.lat:.4f}, {st.session_state.lon:.4f}",
-            "country": "",
-        }
-
-        started = time.time()
-
-        def progress_callback(done, total, pct, elapsed, eta, device_name, month_name):
-            percent = int(pct * 100)
-            st.session_state.run_progress = percent
-            st.session_state.run_stage = render_stage(percent)
-
-            progress_bar.progress(min(percent, 100))
-            progress_text.markdown(
-                f"**Running:** {percent}%  \n"
-                f"**Elapsed:** {format_seconds(elapsed)}  \n"
-                f"**Estimated time left:** {format_seconds(eta)}"
-            )
-            stage_text.info(st.session_state.run_stage)
-
-            if done == 1:
-                add_log("Connecting to PVGIS — Photovoltaic Geographical Information System.")
-                add_log("Using the Joint Research Centre, European Commission engine.")
-            if month_name == "Jan":
-                add_log(f"Starting annual assessment for {device_name}.")
-            if month_name == "Jun":
-                add_log(f"Reviewing mid-year off-grid performance for {device_name}.")
-            if month_name == "Dec":
-                add_log(f"Checking winter performance for {device_name}.")
-
-        results, overall, worst_name, worst_gap, slope = simulate_for_devices(
-            loc=loc,
-            required_hrs=st.session_state.required_hours,
-            selected_ids=st.session_state.selected_ids,
-            per_device_config=st.session_state.per_device_config,
-            az_override=None,
-            progress_callback=progress_callback,
-        )
-
-        elapsed = time.time() - started
-
-        st.session_state.results = results
-        st.session_state.overall = overall
-        st.session_state.elapsed = elapsed
-        st.session_state.running = False
-        st.session_state.run_progress = 100
-        st.session_state.run_stage = "Completed"
-
-        add_log("PVGIS responses received for all selected configurations.")
-        add_log("Preparing annual feasibility conclusion.")
-        add_log("Generating consultant-style PDF report.")
-
-        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-            make_pdf(
-                tmp.name,
-                loc,
-                st.session_state.required_hours,
-                results,
-                overall,
-                "",
-                0,
-                "",
-                st.session_state.airport_label,
-                datetime.now().strftime("%Y-%m-%d %H:%M"),
-                None,
-            )
-            with open(tmp.name, "rb") as f:
-                st.session_state.pdf_bytes = f.read()
-
-        st.success("Simulation completed successfully.")
-        st.rerun()
-
-
-# ---------------- MAIN DASHBOARD ----------------
 
 def render_cockpit():
     if "running" not in st.session_state:
         st.session_state.running = False
-    if "run_progress" not in st.session_state:
-        st.session_state.run_progress = 0
     if "run_stage" not in st.session_state:
         st.session_state.run_stage = "Ready"
     if "run_log" not in st.session_state:
@@ -257,13 +221,10 @@ def render_cockpit():
         st.markdown("---")
         st.markdown("### Simulation")
 
-        # RUNNING STATE
         if st.session_state.running:
-            st.progress(st.session_state.run_progress / 100.0)
-            st.markdown(f"**Running… {st.session_state.run_progress}%**")
+            st.markdown("**Simulation in progress**")
             st.caption(st.session_state.run_stage)
 
-        # NOT RUN YET
         elif st.session_state.get("results") is None:
             ready = bool(st.session_state.get("study_ready", False))
 
@@ -274,7 +235,6 @@ def render_cockpit():
                 disabled=not ready
             ):
                 st.session_state.running = True
-                st.session_state.run_progress = 0
                 st.session_state.run_stage = "Preparing simulation"
                 st.session_state.trigger_run = True
                 st.rerun()
@@ -282,7 +242,6 @@ def render_cockpit():
             if not ready:
                 st.caption("To start the study, select an airport or study point and at least one device.")
 
-        # COMPLETED
         else:
             st.success("Simulation completed")
             if st.session_state.overall == "PASS":
@@ -293,30 +252,15 @@ def render_cockpit():
             if st.session_state.elapsed is not None:
                 st.write(f"Run time: {format_seconds(st.session_state.elapsed)}")
 
-            if st.button("Start new study", use_container_width=True):
-                reset_study()
-
-        if st.session_state.get("pdf_bytes") is not None:
-            st.download_button(
-                "Download report",
-                data=st.session_state.pdf_bytes,
-                file_name=st.session_state.get("pdf_name", "sala_standardized_feasibility_study.pdf"),
-                mime="application/pdf",
-                use_container_width=True,
-            )
-        else:
-            st.button("Download report", disabled=True, use_container_width=True)
-
-        if st.session_state.running:
+        if st.session_state.running and st.session_state.run_log:
             st.markdown("---")
             st.markdown("### Live status")
-            if st.session_state.run_log:
-                st.markdown(
-                    '<div style="border:1px solid #e5eaf1;border-radius:12px;padding:10px 12px;background:#fbfcfe;">'
-                    + "<br/>".join(st.session_state.run_log[-5:])
-                    + "</div>",
-                    unsafe_allow_html=True,
-                )
+            st.markdown(
+                '<div style="border:1px solid #e5eaf1;border-radius:12px;padding:10px 12px;background:#fbfcfe;">'
+                + "<br/>".join(st.session_state.run_log[-5:])
+                + "</div>",
+                unsafe_allow_html=True,
+            )
 
         st.markdown("---")
 

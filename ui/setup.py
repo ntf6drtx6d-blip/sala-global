@@ -16,13 +16,19 @@ def _init_setup_defaults():
     if "setup_initialized" not in st.session_state:
         st.session_state.setup_initialized = True
 
-        st.session_state.airport_label = ""
-        st.session_state.airport_query = ""
-        st.session_state.selected_ids = []
-        st.session_state.per_device_config = {}
+        if "airport_label" not in st.session_state:
+            st.session_state.airport_label = ""
+        if "airport_query" not in st.session_state:
+            st.session_state.airport_query = ""
+        if "selected_ids" not in st.session_state:
+            st.session_state.selected_ids = []
+        if "per_device_config" not in st.session_state:
+            st.session_state.per_device_config = {}
 
-        st.session_state.required_hours = None
-        st.session_state.operating_profile_mode = None
+        if "required_hours" not in st.session_state:
+            st.session_state.required_hours = 12.0
+        if "operating_profile_mode" not in st.session_state:
+            st.session_state.operating_profile_mode = "Custom hours per day"
 
         if "study_point_confirmed" not in st.session_state:
             st.session_state.study_point_confirmed = False
@@ -187,13 +193,13 @@ def _apply_operating_profile():
     if mode == "24/7":
         st.session_state.required_hours = 24.0
     elif mode == "Dusk to dawn":
-        st.session_state.required_hours = round(longest_night_hours(st.session_state.lat), 1)
-    elif mode == "Custom hours per day":
-        # keep existing value only if already user-set
-        if st.session_state.get("required_hours") is None:
+        if st.session_state.get("study_point_confirmed", False):
+            st.session_state.required_hours = round(longest_night_hours(st.session_state.lat), 1)
+        else:
             st.session_state.required_hours = None
-    else:
-        st.session_state.required_hours = None
+    elif mode == "Custom hours per day":
+        if st.session_state.get("required_hours") is None:
+            st.session_state.required_hours = 12.0
 
     _refresh_study_ready()
 
@@ -206,179 +212,7 @@ def render_setup():
     st.markdown("## Study setup")
 
     # =========================================================
-    # 1. DEVICES FIRST
-    # =========================================================
-    st.markdown("### Select devices")
-
-    device_options = {_device_label(k): k for k in DEVICES.keys()}
-
-    selected_labels = st.multiselect(
-        "Devices included in this study",
-        list(device_options.keys()),
-        default=_default_multiselect_labels(),
-        key="selected_devices_multiselect",
-    )
-
-    selected_ids = [device_options[label] for label in selected_labels]
-    st.session_state.selected_ids = selected_ids
-
-    st.markdown("### Configure selected devices")
-
-    per_device_config = {}
-
-    if not selected_ids:
-        st.info("Select at least one device to configure.")
-        st.session_state.per_device_config = {}
-        _refresh_study_ready()
-    else:
-        for did in selected_ids:
-            dspec = DEVICES[did]
-            system_type = dspec["system_type"]
-
-            with st.expander(_device_label(did), expanded=False):
-                saved_cfg = st.session_state.get("per_device_config", {}).get(did, {})
-
-                default_power = float(saved_cfg.get("power", dspec["default_power"]))
-                engine_key = saved_cfg.get("engine_key", dspec.get("default_engine"))
-                battery_mode = saved_cfg.get("battery_mode", "Std")
-
-                power = st.number_input(
-                    "Power (W)",
-                    min_value=0.01,
-                    value=float(default_power),
-                    step=0.01,
-                    key=f"power_{did}",
-                )
-
-                if system_type == "external_engine":
-                    compatible = dspec["compatible_engines"]
-                    if engine_key not in compatible:
-                        engine_key = dspec["default_engine"]
-
-                    engine_key = st.selectbox(
-                        "Solar Engine",
-                        compatible,
-                        index=compatible.index(engine_key),
-                        key=f"engine_{did}",
-                        format_func=lambda x: f"{SOLAR_ENGINES[x]['short_name']} — {SOLAR_ENGINES[x]['name']}",
-                    )
-
-                    eng = SOLAR_ENGINES[engine_key]
-
-                    if eng.get("batt_ext"):
-                        battery_mode = st.radio(
-                            "Battery mode",
-                            ["Std", "Ext"],
-                            horizontal=True,
-                            index=0 if battery_mode == "Std" else 1,
-                            key=f"battery_mode_{did}",
-                        )
-                    else:
-                        battery_mode = "Std"
-                        st.caption("Battery mode: Std only for this Solar Engine.")
-                else:
-                    engine_key = None
-                    battery_mode = "Built-in"
-                    st.caption("This device uses built-in solar panel and battery.")
-
-                summary = _engine_summary(did, engine_key, battery_mode)
-
-                m1, m2, m3, m4 = st.columns(4)
-
-                with m1:
-                    st.metric("Power", f"{float(power):.2f} W")
-                with m2:
-                    st.metric("Solar panel", f"{summary['pv']} W")
-                with m3:
-                    st.metric("Battery", f"{summary['batt']} Wh")
-                with m4:
-                    st.metric("Active source", summary["source_label"])
-
-                if system_type == "external_engine":
-                    st.caption(f"Battery mode selected: {summary['battery_mode']}")
-
-                per_device_config[did] = {
-                    "power": float(power),
-                    "engine_key": engine_key,
-                    "battery_mode": battery_mode if battery_mode in ["Std", "Ext"] else "Std",
-                }
-
-        st.session_state.per_device_config = per_device_config
-        _refresh_study_ready()
-
-    # =========================================================
-    # 2. OPERATING PROFILE SECOND
-    # =========================================================
-    st.markdown("### Operating profile")
-
-    mode_options = [
-        "Select operating profile",
-        "Custom hours per day",
-        "24/7",
-        "Dusk to dawn",
-    ]
-
-    current_mode = st.session_state.get("operating_profile_mode")
-    if current_mode not in ["Custom hours per day", "24/7", "Dusk to dawn"]:
-        current_mode_ui = "Select operating profile"
-    else:
-        current_mode_ui = current_mode
-
-    mode = st.radio(
-        "Operating profile",
-        mode_options,
-        horizontal=True,
-        index=mode_options.index(current_mode_ui),
-        key="operating_profile_mode_radio",
-    )
-
-    if mode == "Select operating profile":
-        st.session_state.operating_profile_mode = None
-        st.session_state.required_hours = None
-        _refresh_study_ready()
-        st.caption("Select the required operating profile before running the study.")
-    else:
-        if st.session_state.get("operating_profile_mode") != mode:
-            st.session_state.operating_profile_mode = mode
-            _apply_operating_profile()
-
-        if mode == "Custom hours per day":
-            custom_default = st.session_state.get("required_hours")
-            if custom_default is None:
-                custom_default = 1.0
-
-            required_custom = st.number_input(
-                "Planned daily operating hours",
-                min_value=0.1,
-                max_value=24.0,
-                value=float(custom_default),
-                step=0.5,
-                help="Total hours per day the lights are expected to operate.",
-                key="required_custom_hours_input",
-            )
-            st.session_state.required_hours = required_custom
-            st.caption("Total hours per day the lights are expected to operate.")
-
-        elif mode == "24/7":
-            st.session_state.required_hours = 24.0
-            st.info("Applied operating profile: 24.0 hrs/day")
-
-        elif mode == "Dusk to dawn":
-            if st.session_state.get("study_point_confirmed", False):
-                applied = round(longest_night_hours(st.session_state.lat), 1)
-                st.session_state.required_hours = applied
-                st.info(
-                    f"Applied operating profile: {applied:.1f} hrs/day "
-                    f"(based on the longest night at the selected study point)"
-                )
-            else:
-                st.session_state.required_hours = None
-                st.warning("Select the study location first to calculate Dusk-to-Dawn operating time.")
-
-        _refresh_study_ready()
-
-    # =========================================================
-    # 3. LOCATION THIRD
+    # 1. LOCATION
     # =========================================================
     st.markdown("### Location")
 
@@ -498,5 +332,166 @@ def render_setup():
             )
         else:
             st.caption("Select an airport or click on the map to define the study point.")
+
+    # =========================================================
+    # 2. OPERATING PROFILE
+    # =========================================================
+    st.markdown("### Operating profile")
+
+    mode_options = ["Custom hours per day", "24/7", "Dusk to dawn"]
+    current_mode = st.session_state.get("operating_profile_mode", "Custom hours per day")
+    if current_mode not in mode_options:
+        current_mode = "Custom hours per day"
+
+    mode = st.radio(
+        "Operating profile",
+        mode_options,
+        horizontal=True,
+        index=mode_options.index(current_mode),
+        key="operating_profile_mode_radio",
+    )
+
+    if st.session_state.get("operating_profile_mode") != mode:
+        st.session_state.operating_profile_mode = mode
+        _apply_operating_profile()
+
+    if mode == "Custom hours per day":
+        current_custom = st.session_state.get("required_hours")
+        if current_custom is None:
+            current_custom = 12.0
+
+        required_custom = st.number_input(
+            "Planned daily operating hours",
+            min_value=0.1,
+            max_value=24.0,
+            value=float(current_custom),
+            step=0.5,
+            help="Total hours per day the lights are expected to operate.",
+            key="required_custom_hours_input",
+        )
+        st.session_state.required_hours = required_custom
+        st.caption("Total hours per day the lights are expected to operate.")
+
+    elif mode == "24/7":
+        st.session_state.required_hours = 24.0
+        st.info("Applied operating profile: 24.0 hrs/day")
+
+    elif mode == "Dusk to dawn":
+        if st.session_state.get("study_point_confirmed", False):
+            applied = round(longest_night_hours(st.session_state.lat), 1)
+            st.session_state.required_hours = applied
+            st.info(
+                f"Applied operating profile: {applied:.1f} hrs/day "
+                f"(based on the longest night at the selected study point)"
+            )
+        else:
+            st.session_state.required_hours = None
+            st.warning("Select the study location first to calculate Dusk-to-Dawn operating time.")
+
+    _refresh_study_ready()
+
+    # =========================================================
+    # 3. SELECT DEVICES
+    # =========================================================
+    st.markdown("### Select devices")
+
+    device_options = {_device_label(k): k for k in DEVICES.keys()}
+
+    selected_labels = st.multiselect(
+        "Devices included in this study",
+        list(device_options.keys()),
+        default=_default_multiselect_labels(),
+        key="selected_devices_multiselect",
+    )
+
+    selected_ids = [device_options[label] for label in selected_labels]
+    st.session_state.selected_ids = selected_ids
+
+    # =========================================================
+    # 4. CONFIGURE DEVICES
+    # =========================================================
+    st.markdown("### Configure selected devices")
+
+    per_device_config = {}
+
+    if not selected_ids:
+        st.info("Select at least one device to configure.")
+        st.session_state.per_device_config = {}
+        _refresh_study_ready()
+    else:
+        for did in selected_ids:
+            dspec = DEVICES[did]
+            system_type = dspec["system_type"]
+
+            with st.expander(_device_label(did), expanded=False):
+                saved_cfg = st.session_state.get("per_device_config", {}).get(did, {})
+
+                default_power = float(saved_cfg.get("power", dspec["default_power"]))
+                engine_key = saved_cfg.get("engine_key", dspec.get("default_engine"))
+                battery_mode = saved_cfg.get("battery_mode", "Std")
+
+                power = st.number_input(
+                    "Power (W)",
+                    min_value=0.01,
+                    value=float(default_power),
+                    step=0.01,
+                    key=f"power_{did}",
+                )
+
+                if system_type == "external_engine":
+                    compatible = dspec["compatible_engines"]
+                    if engine_key not in compatible:
+                        engine_key = dspec["default_engine"]
+
+                    engine_key = st.selectbox(
+                        "Solar Engine",
+                        compatible,
+                        index=compatible.index(engine_key),
+                        key=f"engine_{did}",
+                        format_func=lambda x: f"{SOLAR_ENGINES[x]['short_name']} — {SOLAR_ENGINES[x]['name']}",
+                    )
+
+                    eng = SOLAR_ENGINES[engine_key]
+
+                    if eng.get("batt_ext"):
+                        battery_mode = st.radio(
+                            "Battery mode",
+                            ["Std", "Ext"],
+                            horizontal=True,
+                            index=0 if battery_mode == "Std" else 1,
+                            key=f"battery_mode_{did}",
+                        )
+                    else:
+                        battery_mode = "Std"
+                        st.caption("Battery mode: Std only for this Solar Engine.")
+                else:
+                    engine_key = None
+                    battery_mode = "Built-in"
+                    st.caption("This device uses built-in solar panel and battery.")
+
+                summary = _engine_summary(did, engine_key, battery_mode)
+
+                m1, m2, m3, m4 = st.columns(4)
+
+                with m1:
+                    st.metric("Power", f"{float(power):.2f} W")
+                with m2:
+                    st.metric("Solar panel", f"{summary['pv']} W")
+                with m3:
+                    st.metric("Battery", f"{summary['batt']} Wh")
+                with m4:
+                    st.metric("Active source", summary["source_label"])
+
+                if system_type == "external_engine":
+                    st.caption(f"Battery mode selected: {summary['battery_mode']}")
+
+                per_device_config[did] = {
+                    "power": float(power),
+                    "engine_key": engine_key,
+                    "battery_mode": battery_mode if battery_mode in ["Std", "Ext"] else "Std",
+                }
+
+        st.session_state.per_device_config = per_device_config
+        _refresh_study_ready()
 
     _refresh_study_ready()

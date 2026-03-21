@@ -203,3 +203,4 @@ else:
 if st.session_state.get("results") is not None:
     render_graph()
     render_battery()
+    render_weather_basis()

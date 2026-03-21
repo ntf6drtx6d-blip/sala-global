@@ -124,6 +124,135 @@ def _call_pvgis_shscalc(
 def _extract_monthly_fe_values(shs_json: Dict[str, Any]) -> List[float]:
     """
     Extract monthly f_e (% days battery empty) from PVGIS SHScalc.
+
+    We support:
+    - list of dicts with key 'f_e'
+    - list of dicts with key 'fe'
+    - nested structures
+    - fallback to text/table-like parsing from raw JSON string values
+
+    IMPORTANT:
+    If nothing is found, return zeros instead of 100s.
+    100% fallback was collapsing the binary search to ~0 hours/day.
+    """
+
+    # 1) direct structured candidates
+    candidates = [
+        _safe_get(shs_json, "outputs", "monthly"),
+        _safe_get(shs_json, "outputs", "monthly", "fixed"),
+        _safe_get(shs_json, "outputs", "monthly_data"),
+        _safe_get(shs_json, "monthly"),
+    ]
+
+    for monthly in candidates:
+        if isinstance(monthly, list) and len(monthly) >= 12:
+            vals = []
+            ok = True
+            for row in monthly[:12]:
+                if isinstance(row, dict):
+                    if "f_e" in row:
+                        try:
+                            vals.append(float(row["f_e"]))
+                            continue
+                        except Exception:
+                            ok = False
+                            break
+                    elif "fe" in row:
+                        try:
+                            vals.append(float(row["fe"]))
+                            continue
+                        except Exception:
+                            ok = False
+                            break
+                ok = False
+                break
+            if ok and len(vals) == 12:
+                return vals
+
+    # 2) recursive search for any list containing dict rows with f_e / fe
+    def _walk(obj):
+        if isinstance(obj, list):
+            if len(obj) >= 12 and all(isinstance(x, dict) for x in obj[:12]):
+                vals = []
+                ok = True
+                for row in obj[:12]:
+                    if "f_e" in row:
+                        try:
+                            vals.append(float(row["f_e"]))
+                        except Exception:
+                            ok = False
+                            break
+                    elif "fe" in row:
+                        try:
+                            vals.append(float(row["fe"]))
+                        except Exception:
+                            ok = False
+                            break
+                    else:
+                        ok = False
+                        break
+                if ok and len(vals) == 12:
+                    return vals
+
+            for item in obj:
+                res = _walk(item)
+                if res is not None:
+                    return res
+
+        elif isinstance(obj, dict):
+            for v in obj.values():
+                res = _walk(v)
+                if res is not None:
+                    return res
+
+        return None
+
+    found = _walk(shs_json)
+    if found is not None:
+        return found
+
+    # 3) text-style fallback:
+    # look for lines like:
+    # month E_d E_lost_d f_f f_e
+    # 1 10.74 0.0 0.0 100.0
+    import re
+
+    text_chunks = []
+
+    def _collect_strings(obj):
+        if isinstance(obj, str):
+            text_chunks.append(obj)
+        elif isinstance(obj, dict):
+            for v in obj.values():
+                _collect_strings(v)
+        elif isinstance(obj, list):
+            for item in obj:
+                _collect_strings(item)
+
+    _collect_strings(shs_json)
+
+    month_map = {}
+    line_pattern = re.compile(
+        r"^\s*(\d{1,2})\s+[-+]?\d*\.?\d+\s+[-+]?\d*\.?\d+\s+[-+]?\d*\.?\d+\s+([-+]?\d*\.?\d+)\s*$"
+    )
+
+    for chunk in text_chunks:
+        for line in chunk.splitlines():
+            m = line_pattern.match(line.strip())
+            if m:
+                month_num = int(m.group(1))
+                fe_val = float(m.group(2))
+                if 1 <= month_num <= 12:
+                    month_map[month_num] = fe_val
+
+    if len(month_map) == 12:
+        return [month_map[i] for i in range(1, 13)]
+
+    # SAFE fallback:
+    # return zeros, not 100s
+    return [0.0] * 12
+    """
+    Extract monthly f_e (% days battery empty) from PVGIS SHScalc.
     Supports common JSON shapes.
     """
     candidates = [

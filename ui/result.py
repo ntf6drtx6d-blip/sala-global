@@ -78,7 +78,20 @@ def annual_empty_battery_stats(results: dict):
     worst_pct = max(pcts)
     worst_days = round(365 * worst_pct / 100.0)
     return worst_days, worst_pct
+def worst_sustainable_hours(results: dict):
+    mins = []
+    for _, r in results.items():
+        hours = r.get("hours", [])
+        if hours:
+            try:
+                mins.append(min(float(x) for x in hours))
+            except Exception:
+                pass
 
+    if not mins:
+        return None
+
+    return min(mins)
 
 def count_device_statuses(results: dict):
     total = len(results)

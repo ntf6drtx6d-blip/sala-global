@@ -1,15 +1,7 @@
 # ui/result.py
-# SAFE / FULL VERSION
-# No f-strings inside HTML blocks to avoid syntax/render issues.
+# FINAL FILE — SUMMARY DECISION
 
-import math
 import streamlit as st
-
-
-def short_device_label(full_name: str) -> str:
-    if " — " in full_name:
-        return full_name.split(" — ", 1)[1]
-    return full_name
 
 
 def format_hours_compact(hours: float) -> str:
@@ -22,8 +14,8 @@ def format_hours_compact(hours: float) -> str:
         minutes = 0
 
     if minutes == 0:
-        return "{} hrs/day".format(whole)
-    return "{} h {:02d} min/day".format(whole, minutes)
+        return f"{whole} hrs/day"
+    return f"{whole} h {minutes:02d} min/day"
 
 
 def operating_mode_name() -> str:
@@ -33,6 +25,26 @@ def operating_mode_name() -> str:
     if mode == "Dusk to dawn":
         return "Dusk-to-Dawn"
     return "Custom operation"
+
+
+def operating_window_example(hours_value: float) -> str:
+    h = max(0.0, min(float(hours_value), 24.0))
+
+    if h >= 24:
+        return "00:00–24:00"
+
+    end_hour = 6.0
+    start_hour = (end_hour - h) % 24
+
+    def fmt(x: float) -> str:
+        whole = int(x) % 24
+        minutes = int(round((x - int(x)) * 60))
+        if minutes == 60:
+            whole = (whole + 1) % 24
+            minutes = 0
+        return f"{whole:02d}:{minutes:02d}"
+
+    return f"{fmt(start_hour)}–{fmt(end_hour)}"
 
 
 def annual_empty_battery_stats(results: dict):
@@ -54,102 +66,22 @@ def annual_empty_battery_stats(results: dict):
 
 
 def overall_conclusion_text(results: dict) -> str:
-    mode_name = operating_mode_name()
     all_pass = all(r.get("status") == "PASS" for r in results.values())
 
     if all_pass:
-        return "Selected devices can sustain {} throughout the year.".format(mode_name)
-    return "Selected devices cannot sustain {} throughout the year.".format(mode_name)
+        return "The selected configuration meets the required operating profile throughout the year."
+    return "The selected configuration does not meet the required operating profile throughout the year."
 
 
 def overall_interpretation_text(results: dict) -> str:
-    all_pass = all(r.get("status") == "PASS" for r in results.values())
-    required_hours = float(st.session_state.get("required_hours", 0))
+    days, pct = annual_empty_battery_stats(results)
 
-    if all_pass:
-        return (
-            "The selected configuration meets the required operating window "
-            "of {:.1f} hrs/day in all months."
-        ).format(required_hours)
+    if days is None or pct is None:
+        return "The annual blackout risk could not be calculated."
 
-    return (
-        "At least one selected configuration falls below the required operating window "
-        "of {:.1f} hrs/day in part of the year."
-    ).format(required_hours)
-
-
-def _recommended_hours_floor(result_row: dict):
-    hours = result_row.get("hours", [])
-    if not hours:
-        return None
-    return math.floor(min(hours) * 10) / 10
-
-
-def _is_external_engine_device(result_row: dict) -> bool:
-    return result_row.get("system_type") == "external_engine"
-
-
-def recommendation_text(device_name: str, result_row: dict) -> str:
-    status = result_row.get("status", "FAIL")
-
-    if status == "PASS":
-        return "No configuration change is required for year-round feasibility."
-
-    recommended_hours = _recommended_hours_floor(result_row)
-    if recommended_hours is None:
-        return "Review the selected configuration and operating requirement."
-
-    if _is_external_engine_device(result_row):
-        return (
-            "To achieve year-round feasibility, reduce required daily operation to "
-            "{:.1f} hrs/day, or select a stronger Solar Engine / larger battery configuration."
-        ).format(recommended_hours)
-
-    return (
-        "To achieve year-round feasibility, reduce required daily operation to "
-        "{:.1f} hrs/day for this device."
-    ).format(recommended_hours)
-
-
-def graph_meaning_text(result_row: dict) -> str:
-    status = result_row.get("status", "FAIL")
-    fail_months = result_row.get("fail_months", [])
-
-    if status == "PASS":
-        return "The achieved operating time stays at or above the required threshold in all months."
-
-    if not fail_months:
-        return "The selected configuration does not fully meet the required operating threshold."
-
-    if len(fail_months) == 12:
-        return "The achieved operating time stays below the required threshold in all months."
-
-    return "The achieved operating time falls below the required threshold in {} of 12 months.".format(
-        len(fail_months)
-    )
-
-
-def battery_difference_text(result_row: dict) -> str:
-    reserve = None
-    try:
-        batt = float(result_row.get("batt", 0))
-        power = max(float(result_row.get("power", 0.01)), 0.01)
-        reserve = batt * 0.70 / power
-    except Exception:
-        pass
-
-    if reserve is None:
-        return (
-            "Required hours show what the airport needs. "
-            "Achieved hours show what the system delivers month by month. "
-            "Battery reserve shows how long the light can operate from battery only, without solar input."
-        )
-
-    return (
-        "Required hours show what the airport needs. "
-        "Achieved hours show what the system delivers month by month. "
-        "Battery reserve for this configuration is approximately {:.1f} hrs from battery only, without solar input."
-    ).format(reserve)
+    if days == 0:
+        return "No blackout days are expected at the selected operating profile."
+    return f"Blackout risk is expected on {days} days/year ({pct:.1f}%) at the selected operating profile."
 
 
 def render_text_kpi_card(title: str, value: str, subtitle: str = ""):
@@ -160,7 +92,7 @@ def render_text_kpi_card(title: str, value: str, subtitle: str = ""):
         padding:18px 20px;
         background:#ffffff;
         min-height:170px;
-        box-shadow: 0 2px 10px rgba(16,24,40,0.04);
+        box-shadow:0 2px 10px rgba(16,24,40,0.04);
         display:flex;
         flex-direction:column;
         justify-content:space-between;">
@@ -173,8 +105,10 @@ def render_text_kpi_card(title: str, value: str, subtitle: str = ""):
     st.markdown(html, unsafe_allow_html=True)
 
 
-def render_time_kpi_card(title: str, hours_value: float, mode_text: str, subtitle: str = ""):
+def render_required_time_kpi_card(hours_value: float, mode_text: str, subtitle: str = ""):
     big_value = format_hours_compact(hours_value)
+    window_text = operating_window_example(hours_value)
+    pct = max(0, min(100, (float(hours_value) / 24.0) * 100))
 
     html = """
     <div style="
@@ -182,44 +116,103 @@ def render_time_kpi_card(title: str, hours_value: float, mode_text: str, subtitl
         border-radius:16px;
         padding:18px 20px;
         background:#ffffff;
-        min-height:170px;
-        box-shadow: 0 2px 10px rgba(16,24,40,0.04);
+        min-height:220px;
+        box-shadow:0 2px 10px rgba(16,24,40,0.04);
         display:flex;
         flex-direction:column;
         justify-content:space-between;">
-        <div style="font-size:0.95rem;color:#667085;font-weight:700;margin-bottom:10px;">{title}</div>
+
+        <div style="font-size:0.95rem;color:#667085;font-weight:700;margin-bottom:10px;">
+            Airport lighting requirement
+        </div>
+
         <div>
             <div style="
-                font-size:2.5rem;
+                font-size:2.35rem;
                 color:#1f2937;
                 font-weight:900;
                 line-height:1.05;">
                 {big_value}
             </div>
+
             <div style="
                 font-size:1rem;
                 color:#667085;
-                margin-top:10px;">
+                margin-top:8px;">
                 {mode_text}
             </div>
         </div>
-        <div style="font-size:0.93rem;color:#667085;margin-top:12px;line-height:1.4;">{subtitle}</div>
+
+        <div style="margin-top:14px;">
+            <div style="
+                display:flex;
+                justify-content:space-between;
+                font-size:0.82rem;
+                color:#667085;
+                margin-bottom:6px;">
+                <span>00:00</span>
+                <span>24:00</span>
+            </div>
+
+            <div style="
+                width:100%;
+                height:10px;
+                background:#eef2f6;
+                border-radius:999px;
+                overflow:hidden;">
+                <div style="
+                    width:{pct}%;
+                    height:100%;
+                    background:#1f4fbf;
+                    border-radius:999px;">
+                </div>
+            </div>
+
+            <div style="
+                font-size:0.88rem;
+                color:#475467;
+                margin-top:8px;
+                font-weight:600;">
+                Daily lighting need
+            </div>
+
+            <div style="
+                font-size:0.88rem;
+                color:#667085;
+                margin-top:4px;">
+                Example operating window: {window_text}
+            </div>
+        </div>
+
+        <div style="
+            font-size:0.9rem;
+            color:#667085;
+            margin-top:14px;
+            line-height:1.4;">
+            {subtitle}
+        </div>
     </div>
-    """.format(title=title, big_value=big_value, mode_text=mode_text, subtitle=subtitle)
+    """.format(
+        big_value=big_value,
+        mode_text=mode_text,
+        pct=f"{pct:.1f}",
+        window_text=window_text,
+        subtitle=subtitle,
+    )
 
     st.markdown(html, unsafe_allow_html=True)
 
 
-def render_days_kpi_card(title: str, days_value, pct_value, subtitle: str = ""):
+def render_blackout_days_kpi_card(title: str, days_value, pct_value, subtitle: str = ""):
     if days_value is None or pct_value is None:
         main = "N/A"
-        secondary = "PVGIS annual depletion metric not available"
+        secondary = "Annual blackout risk not available"
         bg = "#ffffff"
         border = "#e6eaf0"
         color = "#1f2937"
     else:
-        main = "{} days/year".format(days_value)
-        secondary = "{:.1f}%".format(pct_value)
+        main = f"{days_value} days/year"
+        secondary = f"{pct_value:.1f}%"
 
         if int(days_value) == 0:
             bg = "#ecfdf3"
@@ -236,20 +229,25 @@ def render_days_kpi_card(title: str, days_value, pct_value, subtitle: str = ""):
         border-radius:16px;
         padding:18px 20px;
         background:{bg};
-        min-height:170px;
-        box-shadow: 0 2px 10px rgba(16,24,40,0.04);
+        min-height:220px;
+        box-shadow:0 2px 10px rgba(16,24,40,0.04);
         display:flex;
         flex-direction:column;
         justify-content:space-between;">
-        <div style="font-size:0.95rem;color:#667085;font-weight:700;margin-bottom:10px;">{title}</div>
+
+        <div style="font-size:0.95rem;color:#667085;font-weight:700;margin-bottom:10px;">
+            {title}
+        </div>
+
         <div>
             <div style="
-                font-size:2.5rem;
+                font-size:2.35rem;
                 color:{color};
                 font-weight:900;
                 line-height:1.05;">
                 {main}
             </div>
+
             <div style="
                 font-size:1rem;
                 color:#667085;
@@ -257,7 +255,14 @@ def render_days_kpi_card(title: str, days_value, pct_value, subtitle: str = ""):
                 {secondary}
             </div>
         </div>
-        <div style="font-size:0.93rem;color:#667085;margin-top:12px;line-height:1.4;">{subtitle}</div>
+
+        <div style="
+            font-size:0.9rem;
+            color:#667085;
+            margin-top:14px;
+            line-height:1.4;">
+            {subtitle}
+        </div>
     </div>
     """.format(
         border=border,
@@ -272,33 +277,43 @@ def render_days_kpi_card(title: str, days_value, pct_value, subtitle: str = ""):
     st.markdown(html, unsafe_allow_html=True)
 
 
-def render_explanation_block(device_name: str, r: dict):
-    label = short_device_label(device_name)
+def render_explanation_block(results: dict):
+    days, pct = annual_empty_battery_stats(results)
+    required_hours = float(st.session_state.get("required_hours", 0))
 
-    html = """
-    <div style="
-        border:1px solid #e6eaf0;
-        border-radius:16px;
-        padding:18px 20px;
-        background:#ffffff;
-        box-shadow:0 2px 10px rgba(16,24,40,0.04);
-        margin-bottom:14px;">
-        <div style="font-size:1.05rem;font-weight:800;color:#1f2937;">
-            Interpretation for {label}
-        </div>
-    </div>
-    """.format(label=label)
+    if days is None or pct is None:
+        blackout_line = "The annual blackout risk could not be calculated for the selected operating profile."
+    elif days == 0:
+        blackout_line = (
+            "At the selected operating profile, no blackout days are expected. "
+            "This means the system is expected to keep enough stored energy throughout the year."
+        )
+    else:
+        blackout_line = (
+            f"At the selected operating profile, blackout risk is expected on {days} days/year ({pct:.1f}%). "
+            "This means the system does not recover enough solar energy during certain periods of the year."
+        )
 
-    st.markdown(html, unsafe_allow_html=True)
+    st.markdown("### What this means")
+    st.write(
+        "This study checks whether the selected light can deliver the required daily operating time "
+        "throughout the year at the chosen usage profile."
+    )
 
-    st.markdown("**What the graph shows**")
-    st.write(graph_meaning_text(r))
+    st.markdown("**Selected operating profile**")
+    st.write(
+        f"The airport requires {format_hours_compact(required_hours)} of lighting per day."
+    )
 
-    st.markdown("**Required hours, achieved hours, and battery reserve**")
-    st.write(battery_difference_text(r))
+    st.markdown("**Annual blackout risk**")
+    st.write(blackout_line)
 
-    st.markdown("**Recommended next step**")
-    st.write(recommendation_text(device_name, r))
+    st.markdown("**How to interpret battery reserve**")
+    st.write(
+        "Battery reserve is additional stored energy that can be used occasionally to extend operation. "
+        "It is not meant to be used every day as the normal operating mode. "
+        "Repeated overuse reduces solar energy recovery and eventually creates blackout days."
+    )
 
 
 def render_result():
@@ -324,7 +339,7 @@ def render_result():
         border-radius:18px;
         padding:22px 24px;
         background:{box_bg};
-        box-shadow: 0 2px 10px rgba(16,24,40,0.04);
+        box-shadow:0 2px 10px rgba(16,24,40,0.04);
         margin-bottom:22px;">
         <div style="font-size:0.92rem;color:#667085;font-weight:700;margin-bottom:10px;">
             Overall conclusion
@@ -358,35 +373,18 @@ def render_result():
         )
 
     with c2:
-        render_time_kpi_card(
-            "Required operating time",
+        render_required_time_kpi_card(
             required_hours,
             mode_name,
-            "Applied requirement used for the study",
+            "Daily lighting time required by the airport.",
         )
 
     with c3:
-        render_days_kpi_card(
-            "Days with empty battery",
+        render_blackout_days_kpi_card(
+            "Blackout days",
             days,
             pct,
-            "Estimated annual battery depletion risk",
+            "Days per year when the selected operating profile is not expected to be supported.",
         )
 
-    primary_device_name = None
-
-    if len(results) == 1:
-        primary_device_name = next(iter(results.keys()))
-    else:
-        failing = [(name, r) for name, r in results.items() if r.get("status") != "PASS"]
-        if failing:
-            primary_device_name = min(
-                failing,
-                key=lambda item: min(item[1].get("hours", [999]))
-            )[0]
-        elif results:
-            primary_device_name = next(iter(results.keys()))
-
-    if primary_device_name:
-        st.markdown("### What this means")
-        render_explanation_block(primary_device_name, results[primary_device_name])
+    render_explanation_block(results)

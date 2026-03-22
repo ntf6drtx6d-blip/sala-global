@@ -1,5 +1,5 @@
 # ui/result.py
-# SAFE VERSION
+# ACTION: REPLACE ENTIRE FILE
 
 import math
 import streamlit as st
@@ -65,8 +65,14 @@ def overall_interpretation_text(results: dict) -> str:
     all_pass = all(r.get("status") == "PASS" for r in results.values())
     required_hours = float(st.session_state.get("required_hours", 0))
     if all_pass:
-        return f"The selected configuration meets the required operating window of {required_hours:.1f} hrs/day in all months."
-    return f"At least one selected configuration falls below the required operating window of {required_hours:.1f} hrs/day in part of the year."
+        return (
+            f"The selected configuration meets the required operating window "
+            f"of {required_hours:.1f} hrs/day in all months."
+        )
+    return (
+        f"At least one selected configuration falls below the required operating window "
+        f"of {required_hours:.1f} hrs/day in part of the year."
+    )
 
 
 def _recommended_hours_floor(result_row: dict):
@@ -135,7 +141,8 @@ def battery_difference_text(result_row: dict) -> str:
         )
 
     return (
-        f"Required hours show what the airport needs. Achieved hours show what the system delivers month by month. "
+        f"Required hours show what the airport needs. "
+        f"Achieved hours show what the system delivers month by month. "
         f"Battery reserve for this configuration is approximately {reserve:.1f} hrs from battery only, without solar input."
     )
 
@@ -243,6 +250,8 @@ def render_days_kpi_card(title: str, days_value, pct_value, subtitle: str = ""):
 
 
 def render_explanation_block(device_name: str, r: dict):
+    label = short_device_label(device_name)
+
     st.markdown(
         f"""
         <div style="
@@ -251,34 +260,23 @@ def render_explanation_block(device_name: str, r: dict):
             padding:18px 20px;
             background:#ffffff;
             box-shadow:0 2px 10px rgba(16,24,40,0.04);">
-            <div style="font-size:1.05rem;font-weight:800;color:#1f2937;margin-bottom:12px;">
-                Interpretation for {short_device_label(device_name)}
-            </div>
-
-            <div style="font-size:0.92rem;font-weight:800;color:#344054;margin-bottom:6px;">
-                What the graph shows
-            </div>
-            <div style="font-size:0.95rem;color:#475467;line-height:1.55;margin-bottom:12px;">
-                {graph_meaning_text(r)}
-            </div>
-
-            <div style="font-size:0.92rem;font-weight:800;color:#344054;margin-bottom:6px;">
-                Required hours, achieved hours, and battery reserve
-            </div>
-            <div style="font-size:0.95rem;color:#475467;line-height:1.55;margin-bottom:12px;">
-                {battery_difference_text(r)}
-            </div>
-
-            <div style="font-size:0.92rem;font-weight:800;color:#344054;margin-bottom:6px;">
-                Recommended next step
-            </div>
-            <div style="font-size:0.95rem;color:#475467;line-height:1.55;">
-                {recommendation_text(device_name, r)}
+            <div style="font-size:1.05rem;font-weight:800;color:#1f2937;margin-bottom:14px;">
+                Interpretation for {label}
             </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
+
+    # Put the actual text outside the card as normal Streamlit text to avoid HTML/rendering issues
+    st.markdown("**What the graph shows**")
+    st.write(graph_meaning_text(r))
+
+    st.markdown("**Required hours, achieved hours, and battery reserve**")
+    st.write(battery_difference_text(r))
+
+    st.markdown("**Recommended next step**")
+    st.write(recommendation_text(device_name, r))
 
 
 def render_result():
@@ -355,7 +353,10 @@ def render_result():
     else:
         failing = [(name, r) for name, r in results.items() if r.get("status") != "PASS"]
         if failing:
-            primary_device_name = min(failing, key=lambda item: min(item[1].get("hours", [999])))[0]
+            primary_device_name = min(
+                failing,
+                key=lambda item: min(item[1].get("hours", [999]))
+            )[0]
         elif results:
             primary_device_name = next(iter(results.keys()))
 

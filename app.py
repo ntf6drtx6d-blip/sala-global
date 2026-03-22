@@ -140,7 +140,22 @@ def apply_global_styles():
         """,
         unsafe_allow_html=True,
     )
+        div[data-testid="stHorizontalBlock"] {
+    align-items: stretch !important;
+}
 
+        div[data-testid="stButton"],
+        div[data-testid="stDownloadButton"] {
+            display: flex !important;
+        }
+        
+        div[data-testid="stButton"] > button,
+        div[data-testid="stDownloadButton"] > button {
+            height: 48px !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+        }
 
 def render_header():
     st.write("")

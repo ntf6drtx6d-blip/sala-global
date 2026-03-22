@@ -298,7 +298,6 @@ def render_explanation_blocks(results: dict):
 
 
 def render_result():
-    st.error("RESULT FILE ACTIVE — NEW VERSION")
     st.markdown("## Decision summary")
 
     results = st.session_state.get("results", {})

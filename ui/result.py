@@ -173,13 +173,16 @@ def render_location_map(lat: float, lon: float, airport_name: str):
         tooltip=airport_name or "Selected study point",
     ).add_to(fmap)
 
+    results = st.session_state.get("results", {})
+    map_height = 460 if len(results) > 1 else 400
+
     st_folium(
-    fmap,
-    width=None,
-    height=460,
-    returned_objects=[],
-    key="result_location_map",
-)
+        fmap,
+        width=None,
+        height=map_height,
+        returned_objects=[],
+        key="result_location_map",
+    )
 
 
 def render_result():

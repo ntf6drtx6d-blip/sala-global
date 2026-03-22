@@ -19,133 +19,113 @@ box-shadow:0 2px 10px rgba(16,24,40,0.04);">
 
 
 def render_weather_variability_block():
-    heights = [72, 78, 74, 83, 76, 61, 66, 88, 93, 75, 79, 73, 86, 63, 81]
-    years = list(range(2010, 2025))
-    weak_years = {61, 63, 66}
+    # stronger, realistic variability across years (not random)
+    base = [72, 78, 74, 83, 76, 61, 66, 88, 93, 75, 79, 73, 86, 63, 81]
+    heights = [int(h * 1.4) for h in base]  # SCALE UP → bigger visual
 
+    # build bars
     bars_html = ""
-    for year, h in zip(years, heights):
-        color = "#9fb6e9" if h in weak_years else "#bcd3ff"
-        bars_html += f"""<div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
-<div style="width:18px;height:{h}px;background:{color};border-radius:7px 7px 0 0;"></div>
-<div style="font-size:0.74rem;color:#667085;line-height:1;">{str(year)[-2:]}</div>
-</div>"""
+    for h in heights:
+        bars_html += (
+            f'<div style="width:22px;'
+            f'height:{h}px;'
+            f'background:#bcd3ff;'
+            f'border-radius:6px 6px 0 0;"></div>'
+        )
 
-    weather_grid_html = """<div style="min-width:340px;flex:1;">
-<div style="font-size:0.92rem;color:#667085;font-weight:700;margin-bottom:8px;">
-Weather exposure types included
-</div>
+    # labels (years)
+    labels_html = ""
+    for y in range(10, 25):
+        labels_html += f'<div style="width:22px;text-align:center;">{y}</div>'
 
-<div style="
-display:grid;
-grid-template-columns:repeat(3, minmax(92px, 1fr));
-gap:10px;
-margin-bottom:14px;">
+    html = textwrap.dedent(
+        f"""
+        <div style="
+            border:1px solid #e6eaf0;
+            border-radius:18px;
+            padding:22px;
+            background:#ffffff;
+            box-shadow:0 2px 10px rgba(16,24,40,0.04);
+            margin-bottom:18px;">
 
-<div style="border:1px solid #e6eaf0;border-radius:12px;padding:12px 8px;background:#f8fafc;text-align:center;">
-<div style="font-size:1.3rem;margin-bottom:6px;">☁️</div>
-<div style="font-size:0.8rem;color:#475467;font-weight:700;">Cloud cover</div>
-</div>
+            <div style="display:flex;gap:28px;align-items:flex-start;">
 
-<div style="border:1px solid #e6eaf0;border-radius:12px;padding:12px 8px;background:#f8fafc;text-align:center;">
-<div style="font-size:1.3rem;margin-bottom:6px;">🌧️</div>
-<div style="font-size:0.8rem;color:#475467;font-weight:700;">Rain</div>
-</div>
+                <!-- LEFT: BIG GRAPH -->
+                <div style="flex:1.4;">
 
-<div style="border:1px solid #e6eaf0;border-radius:12px;padding:12px 8px;background:#f8fafc;text-align:center;">
-<div style="font-size:1.3rem;margin-bottom:6px;">🌫️</div>
-<div style="font-size:0.8rem;color:#475467;font-weight:700;">Haze / fog</div>
-</div>
+                    <div style="font-size:0.92rem;color:#667085;font-weight:700;margin-bottom:10px;">
+                        Weather conditions used in simulation
+                    </div>
 
-<div style="border:1px solid #e6eaf0;border-radius:12px;padding:12px 8px;background:#f8fafc;text-align:center;">
-<div style="font-size:1.3rem;margin-bottom:6px;">🌥️</div>
-<div style="font-size:0.8rem;color:#475467;font-weight:700;">Low solar</div>
-</div>
+                    <div style="
+                        display:flex;
+                        align-items:flex-end;
+                        gap:10px;
+                        height:320px;
+                        padding:18px 16px 10px 16px;
+                        background:#f8fafc;
+                        border-radius:14px;
+                        border:1px solid #e6eaf0;
+                        border-bottom:2px solid #d0d5dd;
+                        margin-bottom:10px;">
+                        {bars_html}
+                    </div>
 
-<div style="border:1px solid #e6eaf0;border-radius:12px;padding:12px 8px;background:#f8fafc;text-align:center;">
-<div style="font-size:1.3rem;margin-bottom:6px;">⛅</div>
-<div style="font-size:0.8rem;color:#475467;font-weight:700;">Partial cloud</div>
-</div>
+                    <div style="
+                        display:flex;
+                        gap:10px;
+                        font-size:0.8rem;
+                        color:#667085;
+                        margin-bottom:12px;">
+                        {labels_html}
+                    </div>
 
-<div style="border:1px solid #e6eaf0;border-radius:12px;padding:12px 8px;background:#f8fafc;text-align:center;">
-<div style="font-size:1.3rem;margin-bottom:6px;">☀️</div>
-<div style="font-size:0.8rem;color:#475467;font-weight:700;">Clear sky</div>
-</div>
-</div>
+                    <div style="font-size:0.95rem;color:#344054;font-weight:800;">
+                        15 years of real weather data
+                    </div>
 
-<div style="font-size:0.92rem;color:#667085;line-height:1.55;">
-These conditions are derived from historical weather observations — not simulated assumptions or idealized weather cases.
-</div>
+                    <div style="font-size:0.92rem;color:#667085;margin-top:6px;line-height:1.55;">
+                        Relative solar variability across years. Includes weaker and stronger solar years used to stress-test system performance.
+                    </div>
 
-<div style="font-size:0.85rem;color:#667085;line-height:1.5;margin-top:10px;">
-Weather model used by PVGIS: TMY built from long-term historical data
-</div>
-</div>"""
+                    <div style="font-size:0.88rem;color:#667085;margin-top:6px;">
+                        Weak-solar years define worst-case feasibility and blackout exposure.
+                    </div>
 
-    html = f"""<div style="
-border:1px solid #e6eaf0;
-border-radius:18px;
-padding:20px 22px;
-background:#ffffff;
-box-shadow:0 2px 10px rgba(16,24,40,0.04);
-margin-bottom:18px;">
+                </div>
 
-<div style="display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;margin-bottom:10px;">
+                <!-- RIGHT: WEATHER TYPES GRID -->
+                <div style="flex:1;">
 
-<div style="min-width:360px;flex:1;">
-<div style="font-size:0.92rem;color:#667085;font-weight:700;margin-bottom:8px;">
-Weather conditions used in simulation
-</div>
-</div>
+                    <div style="font-size:0.95rem;color:#667085;font-weight:700;margin-bottom:12px;">
+                        Weather exposure types included
+                    </div>
 
-<div style="min-width:340px;flex:1;">
-</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
 
-</div>
+                        {render_weather_tile("☁️", "Cloud cover")}
+                        {render_weather_tile("🌧️", "Rain")}
+                        {render_weather_tile("🌫️", "Haze / fog")}
+                        {render_weather_tile("🌥️", "Low solar")}
+                        {render_weather_tile("⛅", "Partial cloud")}
+                        {render_weather_tile("☀️", "Clear sky")}
 
-<div style="display:flex;gap:24px;align-items:stretch;flex-wrap:wrap;">
+                    </div>
 
-<div style="
-min-width:360px;
-flex:1;
-display:flex;
-flex-direction:column;
-justify-content:space-between;
-height:100%;
-">
+                    <div style="margin-top:14px;font-size:0.92rem;color:#667085;line-height:1.6;">
+                        These conditions are derived from historical weather observations — not simulated assumptions or idealized weather cases.
+                    </div>
 
-<div style="
-display:flex;
-align-items:flex-end;
-gap:8px;
-flex:1;
-min-height:260px;
-margin-bottom:12px;
-padding:12px 10px 6px 10px;
-background:#f8fafc;
-border-radius:12px;
-border:1px solid #e6eaf0;
-">
-{bars_html}
-</div>
+                    <div style="font-size:0.88rem;color:#667085;margin-top:8px;">
+                        Weather model used by PVGIS: TMY built from long-term historical data
+                    </div>
 
-<div style="font-size:0.94rem;color:#475467;font-weight:700;">
-15 years of real weather data
-</div>
+                </div>
 
-<div style="font-size:0.84rem;color:#667085;line-height:1.45;margin-top:6px;">
-Relative solar variability across years. Includes weaker and stronger solar years used to stress-test system performance.
-</div>
-
-<div style="font-size:0.84rem;color:#667085;line-height:1.45;margin-top:6px;">
-Weak-solar years are included because they define worst-case feasibility and blackout exposure.
-</div>
-</div>
-
-{weather_grid_html}
-
-</div>
-</div>"""
+            </div>
+        </div>
+        """
+    )
 
     st.markdown(html, unsafe_allow_html=True)
 

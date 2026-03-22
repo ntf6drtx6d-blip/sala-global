@@ -206,7 +206,7 @@ def _apply_operating_profile():
 
 # ---------------- MAIN UI ----------------
 
-def render_setup():
+def render_setup(disabled=False):
     _init_setup_defaults()
 
     st.markdown("## Study setup")

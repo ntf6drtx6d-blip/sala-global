@@ -78,20 +78,7 @@ def annual_empty_battery_stats(results: dict):
     worst_pct = max(pcts)
     worst_days = round(365 * worst_pct / 100.0)
     return worst_days, worst_pct
-def worst_sustainable_hours(results: dict):
-    mins = []
-    for _, r in results.items():
-        hours = r.get("hours", [])
-        if hours:
-            try:
-                mins.append(min(float(x) for x in hours))
-            except Exception:
-                pass
 
-    if not mins:
-        return None
-
-    return min(mins)
 
 def count_device_statuses(results: dict):
     total = len(results)
@@ -444,7 +431,7 @@ def device_status_chip(status: str):
 
 
 def render_device_capability_cards(results: dict):
-    st.markdown("## Operating requirement vs energy capability")
+    st.markdown("## Device performance breakdown")
 
     required = float(st.session_state.get("required_hours", 0))
 
@@ -454,18 +441,34 @@ def render_device_capability_cards(results: dict):
         achievable = min(hours) if hours else None
         reserve = battery_reserve_hours(r)
 
-        req_text = format_required_hours(required)
+        blackout_pct = r.get("overall_empty_battery_pct")
+        blackout_days = None
+        if blackout_pct is not None:
+            try:
+                blackout_days = round(365 * float(blackout_pct) / 100.0)
+            except Exception:
+                blackout_days = None
+
         ach_text = format_achievable_hours(achievable) if achievable is not None else "N/A"
         reserve_text = format_battery_hours(reserve) if reserve is not None else "N/A"
+        blackout_text = f"{blackout_days} days/year" if blackout_days is not None else "N/A"
 
         status_html = device_status_chip(r.get("status", "FAIL"))
 
         st.markdown(
             f"""
-            <div style="margin-top:18px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">
-                <div style="font-size:1.05rem;font-weight:900;color:#1f2937;">{label}</div>
-                <div>{status_html}</div>
-            </div>
+            <div style="
+                border:1px solid #e6eaf0;
+                border-radius:16px;
+                background:#ffffff;
+                box-shadow:0 2px 10px rgba(16,24,40,0.04);
+                padding:18px 20px;
+                margin-top:18px;
+                margin-bottom:14px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+                    <div style="font-size:1.05rem;font-weight:900;color:#1f2937;">{label}</div>
+                    <div>{status_html}</div>
+                </div>
             """,
             unsafe_allow_html=True,
         )
@@ -474,26 +477,26 @@ def render_device_capability_cards(results: dict):
 
         with c1:
             render_kpi_card(
-                "Required operation",
-                req_text,
-                "What the airport needs",
-                min_height=155,
+                "Achievable (worst month)",
+                ach_text,
+                "Lowest sustainable daily operation",
+                min_height=150,
             )
 
         with c2:
             render_kpi_card(
-                "Achievable (worst month)",
-                ach_text,
-                "Lowest guaranteed month",
-                min_height=155,
+                "Battery-only reserve",
+                reserve_text,
+                "Fallback without solar input",
+                min_height=150,
             )
 
         with c3:
             render_kpi_card(
-                "Battery-only reserve",
-                reserve_text,
-                "No-sun fallback capability",
-                min_height=155,
+                "Blackout days",
+                blackout_text,
+                "Days per year when this device is expected to fall below requirement",
+                min_height=150,
             )
 
         if achievable is not None and reserve is not None:
@@ -502,10 +505,13 @@ def render_device_capability_cards(results: dict):
                 f"For {label}, the lowest sustainable result during the year is {achievable:.1f} hrs/day. "
                 f"Battery-only reserve is approximately {reserve:.1f} hrs. "
             )
+            if blackout_days is not None:
+                note += f"Blackout risk for this device is {blackout_days} days/year. "
+
             if r.get("status") == "PASS":
                 note += "This device remains above the required operating profile throughout the full annual cycle."
             else:
-                note += "This device falls below the required operating profile during part of the year."
+                note += "The limitation is driven by insufficient solar energy recovery, not battery size alone."
         else:
             note = "Device-level operating capability could not be fully calculated."
 
@@ -516,8 +522,7 @@ def render_device_capability_cards(results: dict):
                 background:#f8fafc;
                 padding:14px 16px;
                 border-radius:10px;
-                margin-top:10px;
-                margin-bottom:8px;
+                margin-top:12px;
                 color:#344054;
                 line-height:1.6;">
                 {note}
@@ -525,6 +530,8 @@ def render_device_capability_cards(results: dict):
             """,
             unsafe_allow_html=True,
         )
+
+        st.markdown("</div>", unsafe_allow_html=True)
 
 
 def render_result():
@@ -601,13 +608,15 @@ def render_result():
         with c2:
             render_blackout_card(days, pct)
 
-        c3, c4 = st.columns(2)
-        with c3:
-            render_meeting_devices_card(results)
-        with c4:
-            render_below_requirement_devices_card(results)
+        if len(results) > 1:
+            c3, c4 = st.columns(2)
+            with c3:
+                render_meeting_devices_card(results)
+            with c4:
+                render_below_requirement_devices_card(results)
 
     st.markdown("### What this means")
     render_explanation_blocks(results)
 
     render_device_capability_cards(results)
+Maybe this code? +#+#+#+#+#+analysis to=python.exec code="""print('no')"""

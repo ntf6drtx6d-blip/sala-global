@@ -26,7 +26,7 @@ def render_kpi_card(
     bg: str = "#ffffff",
     border: str = "#e6eaf0",
     color: str = "#1f2937",
-    min_height: int = 170,
+    min_height: int = 220,
 ):
     html = textwrap.dedent(
         """
@@ -41,8 +41,8 @@ def render_kpi_card(
             flex-direction:column;
             justify-content:space-between;">
             <div style="font-size:0.95rem;color:#667085;font-weight:700;margin-bottom:10px;">{title}</div>
-            <div style="font-size:2.1rem;color:{color};font-weight:900;line-height:1.1;word-break:break-word;">{value}</div>
-            <div style="font-size:0.93rem;color:#667085;margin-top:12px;line-height:1.45;">{subtitle}</div>
+            <div style="font-size:2.2rem;color:{color};font-weight:900;line-height:1.08;word-break:break-word;">{value}</div>
+            <div style="font-size:0.95rem;color:#667085;margin-top:12px;line-height:1.5;">{subtitle}</div>
         </div>
         """
     ).format(
@@ -79,47 +79,27 @@ def render_required_time_card(hours_value: float, mode_text: str):
     rounded_hours = math.ceil(float(hours_value))
     window_text = operating_window_example(hours_value)
 
-    html = f"""
-    <div style="
-        border:1px solid #e6eaf0;
-        border-radius:16px;
-        padding:18px 20px;
-        background:#ffffff;
-        min-height:220px;
-        box-shadow:0 2px 10px rgba(16,24,40,0.04);">
-
-        <div style="font-size:0.95rem;color:#667085;font-weight:700;margin-bottom:10px;">
-            Airport lighting requirement
-        </div>
-
-        <div style="font-size:2.2rem;color:#1f2937;font-weight:900;line-height:1.05;">
-            {rounded_hours} hrs/day
-        </div>
-
-        <div style="font-size:0.95rem;color:#667085;margin-top:10px;">
-            {mode_text}
-        </div>
-
-        <div style="font-size:0.95rem;color:#344054;margin-top:14px;font-weight:700;">
-            {window_text}
-        </div>
-
-    </div>
-    """
-
-    st.markdown(html, unsafe_allow_html=True)
+    render_kpi_card(
+        "Airport lighting requirement",
+        f"{rounded_hours} hrs/day",
+        f"{mode_text}<br><span style='color:#344054;font-weight:700;'>{window_text}</span>",
+        min_height=220,
+    )
 
 
 def render_blackout_card(days_value, pct_value):
     if days_value is None or pct_value is None:
         main = "N/A"
-        secondary = "Worst-device blackout risk not available"
+        subtitle = "Worst-device blackout risk not available."
         bg = "#ffffff"
         border = "#e6eaf0"
         color = "#1f2937"
     else:
         main = f"{days_value} days/year"
-        secondary = f"{pct_value:.1f}% of the year"
+        subtitle = (
+            f"{pct_value:.1f}% of the year<br>"
+            f"Highest blackout exposure found within the selected device set."
+        )
         if int(days_value) == 0:
             bg = "#ecfdf3"
             border = "#abefc6"
@@ -129,21 +109,15 @@ def render_blackout_card(days_value, pct_value):
             border = "#fecdca"
             color = "#b42318"
 
-    html = (
-        f'<div style="border:1px solid {border};border-radius:16px;padding:18px 20px;'
-        f'background:{bg};min-height:220px;box-shadow:0 2px 10px rgba(16,24,40,0.04);">'
-        f'<div style="font-size:0.95rem;color:#667085;font-weight:700;margin-bottom:10px;">'
-        f'Worst device blackout risk</div>'
-        f'<div style="font-size:2.2rem;color:{color};font-weight:900;line-height:1.05;">'
-        f'{main}</div>'
-        f'<div style="font-size:1rem;color:#667085;margin-top:10px;">{secondary}</div>'
-        f'<div style="font-size:0.9rem;color:#475467;margin-top:12px;line-height:1.45;">'
-        f'Highest blackout exposure found within the selected device set.'
-        f'</div>'
-        f'</div>'
+    render_kpi_card(
+        "Worst device blackout risk",
+        main,
+        subtitle,
+        bg=bg,
+        border=border,
+        color=color,
+        min_height=220,
     )
-
-    st.markdown(html, unsafe_allow_html=True)
 
 
 def render_device_summary_line(results: dict):
@@ -210,6 +184,7 @@ def render_location_map(lat: float, lon: float, airport_name: str):
 
 def render_result():
     st.markdown("## Feasibility result")
+
     results = st.session_state.get("results", {})
     if not results:
         return
@@ -259,7 +234,7 @@ def render_result():
                 <div style="font-size:2rem;line-height:1.2;font-weight:800;color:{box_fg};margin-bottom:12px;">
                     {headline}
                 </div>
-                <div style="font-size:1rem;color:#475467;">
+                <div style="font-size:1rem;color:#475467;line-height:1.5;">
                     {subtext}
                 </div>
             </div>
@@ -280,8 +255,7 @@ def render_result():
         with c2:
             render_blackout_card(days, pct)
 
-        if len(results) > 1:
-            render_device_summary_line(results)
+        render_device_summary_line(results)
 
 
 __all__ = ["render_result", "render_device_capability_cards"]

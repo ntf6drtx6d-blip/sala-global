@@ -6,7 +6,7 @@ import streamlit as st
 
 from ui.setup import render_setup
 from ui.cockpit import _run_simulation, reset_study
-from ui.result import render_result
+from ui.result import render_result, render_device_capability_cards
 from ui.graph import render_graph
 from ui.battery import render_battery_section
 from ui.weather_basis import render_weather_basis
@@ -131,7 +131,6 @@ def apply_global_styles():
             color: white !important;
         }
 
-        /* make all normal buttons rounded and aligned */
         div[data-testid="stButton"] > button {
             border-radius: 12px !important;
             min-height: 46px !important;
@@ -165,6 +164,7 @@ def _trigger_simulation():
     st.session_state.trigger_run = True
     st.rerun()
 
+
 def render_top_action_bar():
     st.markdown('<div class="top-action-wrap">', unsafe_allow_html=True)
     st.markdown('<div class="top-action-title">Actions</div>', unsafe_allow_html=True)
@@ -190,7 +190,6 @@ def render_top_action_bar():
 
         action_state["stage_text"] = st.empty()
 
-        # initial values
         pct = int(st.session_state.get("run_progress", 0))
         stage = st.session_state.get("run_stage", "Preparing simulation")
 
@@ -288,7 +287,6 @@ init_state()
 apply_global_styles()
 render_header()
 
-# Setup block
 if st.session_state.get("running", False):
     with st.expander("Show study setup", expanded=False):
         st.caption("Inputs are temporarily locked while the simulation is running.")
@@ -299,10 +297,8 @@ else:
     with st.expander("Show study setup", expanded=False):
         render_setup(disabled=False)
 
-# Refresh readiness AFTER setup fields may have changed
 refresh_study_ready_from_state()
 
-# Actions block
 action_state = render_top_action_bar()
 
 if st.session_state.get("trigger_run"):
@@ -330,10 +326,9 @@ if st.session_state.get("trigger_run"):
 
     _run_simulation(progress_callback=progress_callback)
 
-# Results
 if st.session_state.get("results") is not None:
     results = st.session_state.get("results")
     render_result()
     render_graph()
-    render_battery_section(results)
+    render_device_capability_cards(results)
     render_weather_basis()

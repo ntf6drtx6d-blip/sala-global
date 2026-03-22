@@ -165,7 +165,6 @@ def _trigger_simulation():
     st.session_state.trigger_run = True
     st.rerun()
 
-
 def render_top_action_bar():
     st.markdown('<div class="top-action-wrap">', unsafe_allow_html=True)
     st.markdown('<div class="top-action-title">Actions</div>', unsafe_allow_html=True)
@@ -174,14 +173,34 @@ def render_top_action_bar():
     has_results = st.session_state.get("results") is not None
     is_running = bool(st.session_state.get("running", False))
 
+    action_state = {
+        "progress_bar": None,
+        "progress_text": None,
+        "stage_text": None,
+    }
+
     if is_running:
-        progress_pct = float(st.session_state.get("run_progress", 0.0))
+        st.markdown("**Simulation in progress**")
+
+        progress_cols = st.columns([6, 1])
+        with progress_cols[0]:
+            action_state["progress_bar"] = st.progress(0)
+        with progress_cols[1]:
+            action_state["progress_text"] = st.empty()
+
+        action_state["stage_text"] = st.empty()
+
+        # initial values
+        pct = int(st.session_state.get("run_progress", 0))
         stage = st.session_state.get("run_stage", "Preparing simulation")
 
-        st.markdown("**Simulation in progress**")
-        st.progress(progress_pct)
-        st.markdown(
-            f'<div class="secondary-note">{stage}</div>',
+        action_state["progress_bar"].progress(pct)
+        action_state["progress_text"].markdown(
+            f"<div style='text-align:right;font-weight:700;color:#667085;'>{pct}%</div>",
+            unsafe_allow_html=True,
+        )
+        action_state["stage_text"].markdown(
+            f"<div class='secondary-note'>{stage}</div>",
             unsafe_allow_html=True,
         )
 
@@ -235,7 +254,6 @@ def render_top_action_bar():
                 _trigger_simulation()
 
         with c3:
-            # yellow button styling only for this button slot
             st.markdown(
                 """
                 <style>
@@ -261,6 +279,7 @@ def render_top_action_bar():
         )
 
     st.markdown('</div>', unsafe_allow_html=True)
+    return action_state
 
 
 # ---------------- APP FLOW ----------------
@@ -284,12 +303,32 @@ else:
 refresh_study_ready_from_state()
 
 # Actions block
-render_top_action_bar()
+action_state = render_top_action_bar()
 
-# Trigger actual simulation
 if st.session_state.get("trigger_run"):
     st.session_state.trigger_run = False
-    _run_simulation()
+
+    def progress_callback(percent: int, stage: str):
+        percent = max(0, min(100, int(percent)))
+        st.session_state.run_progress = percent
+        st.session_state.run_stage = stage
+
+        if action_state["progress_bar"] is not None:
+            action_state["progress_bar"].progress(percent)
+
+        if action_state["progress_text"] is not None:
+            action_state["progress_text"].markdown(
+                f"<div style='text-align:right;font-weight:700;color:#667085;'>{percent}%</div>",
+                unsafe_allow_html=True,
+            )
+
+        if action_state["stage_text"] is not None:
+            action_state["stage_text"].markdown(
+                f"<div class='secondary-note'>{stage}</div>",
+                unsafe_allow_html=True,
+            )
+
+    _run_simulation(progress_callback=progress_callback)
 
 # Results
 if st.session_state.get("results") is not None:

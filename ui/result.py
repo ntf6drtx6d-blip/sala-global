@@ -115,87 +115,29 @@ def render_required_time_card(hours_value: float, mode_text: str):
     window_text = operating_window_example(hours_value)
     pct = max(0, min(100, (float(hours_value) / 24.0) * 100))
 
-    html = textwrap.dedent(
-        """
-        <div style="
-            border:1px solid #e6eaf0;
-            border-radius:16px;
-            padding:18px 20px;
-            background:#ffffff;
-            min-height:220px;
-            box-shadow:0 2px 10px rgba(16,24,40,0.04);">
-
-            <div style="font-size:0.95rem;color:#667085;font-weight:700;margin-bottom:10px;">
-                Airport lighting requirement
-            </div>
-
-            <div style="font-size:2.2rem;color:#1f2937;font-weight:900;line-height:1.05;">
-                {rounded_hours} hrs/day
-            </div>
-
-            <div style="font-size:1rem;color:#667085;margin-top:8px;">
-                {mode_text}
-            </div>
-
-            <div style="margin-top:16px;">
-                <div style="
-                    display:flex;
-                    justify-content:space-between;
-                    font-size:0.82rem;
-                    color:#667085;
-                    margin-bottom:6px;">
-                    <span>00:00</span>
-                    <span>24:00</span>
-                </div>
-
-                <div style="
-                    position:relative;
-                    width:100%;
-                    height:12px;
-                    background:#eef2f6;
-                    border-radius:999px;
-                    overflow:hidden;">
-                    <div style="
-                        width:{pct:.1f}%;
-                        height:100%;
-                        background:#1f4fbf;
-                        border-radius:999px;">
-                    </div>
-                </div>
-
-                <div style="
-                    display:flex;
-                    justify-content:space-between;
-                    align-items:center;
-                    margin-top:8px;">
-                    <div style="
-                        font-size:0.88rem;
-                        color:#475467;
-                        font-weight:700;">
-                        Required daily lighting window
-                    </div>
-                    <div style="
-                        font-size:0.88rem;
-                        color:#1f4fbf;
-                        font-weight:800;">
-                        {rounded_hours} hrs/day
-                    </div>
-                </div>
-
-                <div style="
-                    font-size:0.88rem;
-                    color:#667085;
-                    margin-top:6px;">
-                    Example operating window: {window_text}
-                </div>
-            </div>
-        </div>
-        """
-    ).format(
-        rounded_hours=rounded_hours,
-        mode_text=mode_text,
-        pct=pct,
-        window_text=window_text,
+    html = (
+        f'<div style="border:1px solid #e6eaf0;border-radius:16px;padding:18px 20px;'
+        f'background:#ffffff;min-height:220px;box-shadow:0 2px 10px rgba(16,24,40,0.04);">'
+        f'<div style="font-size:0.95rem;color:#667085;font-weight:700;margin-bottom:10px;">'
+        f'Airport lighting requirement</div>'
+        f'<div style="font-size:2.2rem;color:#1f2937;font-weight:900;line-height:1.05;">'
+        f'{rounded_hours} hrs/day</div>'
+        f'<div style="font-size:1rem;color:#667085;margin-top:8px;">{mode_text}</div>'
+        f'<div style="margin-top:16px;">'
+        f'<div style="display:flex;justify-content:space-between;font-size:0.82rem;'
+        f'color:#667085;margin-bottom:6px;"><span>00:00</span><span>24:00</span></div>'
+        f'<div style="position:relative;width:100%;height:12px;background:#eef2f6;'
+        f'border-radius:999px;overflow:hidden;">'
+        f'<div style="width:{pct:.1f}%;height:100%;background:#1f4fbf;border-radius:999px;"></div>'
+        f'</div>'
+        f'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">'
+        f'<div style="font-size:0.88rem;color:#475467;font-weight:700;">Required daily lighting window</div>'
+        f'<div style="font-size:0.88rem;color:#1f4fbf;font-weight:800;">{rounded_hours} hrs/day</div>'
+        f'</div>'
+        f'<div style="font-size:0.88rem;color:#667085;margin-top:6px;">'
+        f'Example operating window: {window_text}</div>'
+        f'</div>'
+        f'</div>'
     )
 
     st.markdown(html, unsafe_allow_html=True)
@@ -220,39 +162,18 @@ def render_blackout_card(days_value, pct_value):
             border = "#fecdca"
             color = "#b42318"
 
-    html = textwrap.dedent(
-        """
-        <div style="
-            border:1px solid {border};
-            border-radius:16px;
-            padding:18px 20px;
-            background:{bg};
-            min-height:220px;
-            box-shadow:0 2px 10px rgba(16,24,40,0.04);">
-
-            <div style="font-size:0.95rem;color:#667085;font-weight:700;margin-bottom:10px;">
-                Blackout days
-            </div>
-
-            <div style="font-size:2.2rem;color:{color};font-weight:900;line-height:1.05;">
-                {main}
-            </div>
-
-            <div style="font-size:1rem;color:#667085;margin-top:10px;">
-                {secondary}
-            </div>
-
-            <div style="font-size:0.9rem;color:#475467;margin-top:12px;line-height:1.45;">
-                Days per year when the selected operating profile is not expected to be supported.
-            </div>
-        </div>
-        """
-    ).format(
-        border=border,
-        bg=bg,
-        color=color,
-        main=main,
-        secondary=secondary,
+    html = (
+        f'<div style="border:1px solid {border};border-radius:16px;padding:18px 20px;'
+        f'background:{bg};min-height:220px;box-shadow:0 2px 10px rgba(16,24,40,0.04);">'
+        f'<div style="font-size:0.95rem;color:#667085;font-weight:700;margin-bottom:10px;">'
+        f'Blackout days</div>'
+        f'<div style="font-size:2.2rem;color:{color};font-weight:900;line-height:1.05;">'
+        f'{main}</div>'
+        f'<div style="font-size:1rem;color:#667085;margin-top:10px;">{secondary}</div>'
+        f'<div style="font-size:0.9rem;color:#475467;margin-top:12px;line-height:1.45;">'
+        f'Days per year when the selected operating profile is not expected to be supported.'
+        f'</div>'
+        f'</div>'
     )
 
     st.markdown(html, unsafe_allow_html=True)

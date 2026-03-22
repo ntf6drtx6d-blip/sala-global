@@ -275,5 +275,5 @@ if st.session_state.get("trigger_run"):
 if st.session_state.get("results") is not None:
     render_result()
     render_graph()
-    render_battery()
+    render_battery_section(results)
     render_weather_basis()

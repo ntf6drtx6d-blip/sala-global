@@ -116,47 +116,67 @@ def apply_global_styles():
             margin-top: 8px;
         }
 
-        div[data-testid="stDownloadButton"] > button {
-            background: #1f4fbf !important;
-            color: white !important;
-            border: 1px solid #1f4fbf !important;
-            border-radius: 12px !important;
-            font-weight: 700 !important;
-            min-height: 46px !important;
-        }
+        /* =========================
+           BUTTON BASE STYLE
+        ========================= */
 
-        div[data-testid="stDownloadButton"] > button:hover {
-            background: #183f98 !important;
-            border-color: #183f98 !important;
-            color: white !important;
-        }
-
-        div[data-testid="stButton"] > button {
-            border-radius: 12px !important;
-            min-height: 46px !important;
-            font-weight: 700 !important;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-        div[data-testid="stHorizontalBlock"] {
-    align-items: stretch !important;
-}
-
-        div[data-testid="stButton"],
-        div[data-testid="stDownloadButton"] {
-            display: flex !important;
-        }
-        
         div[data-testid="stButton"] > button,
         div[data-testid="stDownloadButton"] > button {
+            border-radius: 12px !important;
+            min-height: 48px !important;
             height: 48px !important;
+            font-weight: 700 !important;
+
             display: flex !important;
             align-items: center !important;
             justify-content: center !important;
         }
 
+        /* PRIMARY (blue) */
+        div[data-testid="stDownloadButton"] > button {
+            background: #1f4fbf !important;
+            color: white !important;
+            border: 1px solid #1f4fbf !important;
+        }
+
+        div[data-testid="stDownloadButton"] > button:hover {
+            background: #183f98 !important;
+            border-color: #183f98 !important;
+        }
+
+        /* SECONDARY (yellow - Start new study) */
+        div[data-testid="stButton"] button[kind="secondary"] {
+            background: #fff7db !important;
+            border: 1px solid #f5c451 !important;
+            color: #7a5a00 !important;
+        }
+
+        /* =========================
+           FIX ALIGNMENT (KEY PART)
+        ========================= */
+
+        /* force columns to align */
+        div[data-testid="stHorizontalBlock"] {
+            align-items: stretch !important;
+        }
+
+        /* make button containers flex */
+        div[data-testid="stButton"],
+        div[data-testid="stDownloadButton"] {
+            display: flex !important;
+            height: 100% !important;
+        }
+
+        /* stretch buttons inside column */
+        div[data-testid="stButton"] > button,
+        div[data-testid="stDownloadButton"] > button {
+            width: 100% !important;
+        }
+
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 def render_header():
     st.write("")
     c1, c2 = st.columns([1, 8])

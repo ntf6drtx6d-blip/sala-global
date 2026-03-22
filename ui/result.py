@@ -7,183 +7,17 @@ import folium
 import streamlit as st
 from streamlit_folium import st_folium
 
+from ui.result_helpers import (
+    annual_empty_battery_stats,
+    count_device_statuses,
+    operating_mode_name,
+    operating_window_example,
+    overall_conclusion_text,
+    overall_interpretation_text,
+    overall_state,
+)
+from ui.result_devices import render_device_capability_cards
 
-# =========================
-# FORMATTERS
-# =========================
-
-def format_required_hours(hours: float) -> str:
-    return f"{math.ceil(float(hours))} hrs/day"
-
-
-def format_achievable_hours(hours: float) -> str:
-    return f"{math.floor(float(hours))} hrs/day"
-
-
-def format_battery_hours(hours: float) -> str:
-    h = float(hours)
-    whole = int(h)
-    minutes = int(round((h - whole) * 60))
-    if minutes == 60:
-        whole += 1
-        minutes = 0
-    if minutes == 0:
-        return f"{whole}h"
-    return f"{whole}h {minutes:02d}m"
-
-
-# =========================
-# DATA HELPERS
-# =========================
-
-def operating_mode_name() -> str:
-    mode = st.session_state.get("operating_profile_mode", "Custom hours per day")
-    if mode == "24/7":
-        return "24/7 operation"
-    if mode == "Dusk to dawn":
-        return "Dusk-to-Dawn"
-    return "Custom operation"
-
-
-def operating_window_example(hours_value: float) -> str:
-    h = max(0.0, min(float(hours_value), 24.0))
-    if h >= 24:
-        return "00:00–24:00"
-
-    end_hour = 6.0
-    start_hour = (end_hour - h) % 24
-
-    def fmt(x: float) -> str:
-        whole = int(x) % 24
-        minutes = int(round((x - int(x)) * 60))
-        if minutes == 60:
-            whole = (whole + 1) % 24
-            minutes = 0
-        return f"{whole:02d}:{minutes:02d}"
-
-    return f"{fmt(start_hour)}–{fmt(end_hour)}"
-
-
-def short_device_label(full_name: str) -> str:
-    if " — " in full_name:
-        return full_name.split(" — ", 1)[1]
-    return full_name
-
-
-def annual_empty_battery_stats(results: dict):
-    pcts = []
-    for _, r in results.items():
-        pct = r.get("overall_empty_battery_pct")
-        if pct is not None:
-            try:
-                pcts.append(float(pct))
-            except Exception:
-                pass
-
-    if not pcts:
-        return None, None
-
-    worst_pct = max(pcts)
-    worst_days = round(365 * worst_pct / 100.0)
-    return worst_days, worst_pct
-
-
-def count_device_statuses(results: dict):
-    total = len(results)
-    passed = 0
-
-    for _, r in results.items():
-        if r.get("status") == "PASS":
-            passed += 1
-
-    failed = total - passed
-    return total, passed, failed
-
-
-def overall_state(results: dict):
-    total, passed, failed = count_device_statuses(results)
-
-    if total == 0:
-        return "unknown"
-    if passed == total:
-        return "all_pass"
-    if failed == total:
-        return "none_pass"
-    return "mixed"
-
-
-def battery_reserve_hours(result_row: dict):
-    try:
-        batt = float(result_row.get("batt", 0))
-        power = max(float(result_row.get("power", 0.01)), 0.01)
-        return batt * 0.70 / power
-    except Exception:
-        return None
-
-
-def device_blackout_days(result_row: dict):
-    try:
-        pct = result_row.get("overall_empty_battery_pct")
-        if pct is None:
-            return None
-        return round(365 * float(pct) / 100.0)
-    except Exception:
-        return None
-
-
-# =========================
-# OVERALL TEXT
-# =========================
-
-def overall_conclusion_text(results: dict) -> str:
-    state = overall_state(results)
-    total, passed, failed = count_device_statuses(results)
-
-    if total == 1:
-        if state == "all_pass":
-            return "The selected device meets the required operating profile."
-        if state == "none_pass":
-            return "The selected device does not meet the required operating profile."
-        return "The selected device could not be fully assessed."
-
-    if state == "all_pass":
-        return "All selected devices meet the required operating profile."
-    if state == "none_pass":
-        return "None of the selected devices meet the required operating profile."
-    if state == "mixed":
-        return "Some selected devices meet the required operating profile."
-    return "The selected device set could not be fully assessed."
-
-
-def overall_interpretation_text(results: dict) -> str:
-    total, passed, failed = count_device_statuses(results)
-    state = overall_state(results)
-
-    if total == 1:
-        if state == "all_pass":
-            return "The selected operating profile is supported year-round."
-        if state == "none_pass":
-            return "The selected device does not support the selected operating profile year-round."
-        return "The selected device could not be fully assessed."
-
-    if state == "all_pass":
-        return "The selected operating profile is supported year-round by all selected devices."
-
-    if state == "none_pass":
-        return "No selected device supports the selected operating profile year-round."
-
-    if state == "mixed":
-        return (
-            f"{passed} of {total} selected devices support the operating profile. "
-            "The system is not fully compliant because at least one device remains below requirement."
-        )
-
-    return "The selected device set could not be fully assessed."
-
-
-# =========================
-# UI CARDS
-# =========================
 
 def render_kpi_card(
     title: str,
@@ -373,108 +207,6 @@ def render_location_map(lat: float, lon: float, airport_name: str):
     )
 
 
-# =========================
-# DEVICE BREAKDOWN
-# =========================
-
-def device_status_chip(status: str):
-    if status == "PASS":
-        return '<span style="background:#ecfdf3;color:#067647;border:1px solid #abefc6;padding:4px 10px;border-radius:999px;font-size:0.82rem;font-weight:800;">Meets requirement</span>'
-    return '<span style="background:#fef3f2;color:#b42318;border:1px solid #fecdca;padding:4px 10px;border-radius:999px;font-size:0.82rem;font-weight:800;">Below requirement</span>'
-
-
-def render_device_capability_cards(results: dict):
-    st.markdown("## Device-level performance breakdown")
-
-    required = float(st.session_state.get("required_hours", 0))
-
-    for device_name, r in results.items():
-        label = short_device_label(device_name)
-        hours = r.get("hours", [])
-        achievable = min(hours) if hours else None
-        reserve = battery_reserve_hours(r)
-        blackout_days = device_blackout_days(r)
-
-        ach_text = format_achievable_hours(achievable) if achievable is not None else "N/A"
-        reserve_text = format_battery_hours(reserve) if reserve is not None else "N/A"
-        blackout_text = f"{blackout_days} days/year" if blackout_days is not None else "N/A"
-
-        status_html = device_status_chip(r.get("status", "FAIL"))
-
-        with st.expander(f"{label}", expanded=(len(results) == 1)):
-            st.markdown(
-                f"""
-                <div style="display:flex;justify-content:flex-end;align-items:center;margin-bottom:10px;">
-                    <div>{status_html}</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-            c1, c2, c3 = st.columns(3)
-
-            with c1:
-                render_kpi_card(
-                    "Blackout days",
-                    blackout_text,
-                    "Days per year when this device is expected to fall below requirement",
-                    min_height=150,
-                )
-
-            with c2:
-                render_kpi_card(
-                    "Achievable (worst month)",
-                    ach_text,
-                    "Lowest sustainable daily operation",
-                    min_height=150,
-                )
-
-            with c3:
-                render_kpi_card(
-                    "Battery-only reserve",
-                    reserve_text,
-                    "Fallback without solar input",
-                    min_height=150,
-                )
-
-            if achievable is not None and reserve is not None:
-                note = (
-                    f"The airport requires {required:.1f} hrs/day. "
-                    f"For {label}, the lowest sustainable result during the year is {achievable:.1f} hrs/day. "
-                    f"Battery-only reserve is approximately {reserve:.1f} hrs. "
-                )
-
-                if blackout_days is not None:
-                    note += f"Blackout risk for this device is {blackout_days} days/year. "
-
-                if r.get("status") == "PASS":
-                    note += "This device remains above the required operating profile throughout the full annual cycle."
-                else:
-                    note += "The limitation is driven by insufficient solar energy recovery, not battery size alone."
-            else:
-                note = "Device-level operating capability could not be fully calculated."
-
-            st.markdown(
-                f"""
-                <div style="
-                    border-left:4px solid #3b5ccc;
-                    background:#f8fafc;
-                    padding:14px 16px;
-                    border-radius:10px;
-                    margin-top:12px;
-                    color:#344054;
-                    line-height:1.6;">
-                    {note}
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-
-# =========================
-# MAIN RENDER
-# =========================
-
 def render_result():
     st.markdown("## Feasibility result")
 
@@ -550,3 +282,6 @@ def render_result():
 
         if len(results) > 1:
             render_device_summary_line(results)
+
+
+__all__ = ["render_result", "render_device_capability_cards"]

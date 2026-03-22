@@ -273,6 +273,7 @@ if st.session_state.get("trigger_run"):
     _run_simulation()
 
 if st.session_state.get("results") is not None:
+    results = st.session_state.get("results")
     render_result()
     render_graph()
     render_battery_section(results)

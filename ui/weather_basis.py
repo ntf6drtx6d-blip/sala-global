@@ -99,9 +99,6 @@ Weather conditions used in simulation
 </div>
 
 <div style="min-width:340px;flex:1;">
-<div style="font-size:0.92rem;color:#667085;font-weight:700;margin-bottom:8px;">
-Weather exposure types included
-</div>
 </div>
 
 </div>

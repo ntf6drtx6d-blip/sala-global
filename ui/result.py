@@ -5,16 +5,12 @@ import folium
 from streamlit_folium import st_folium
 
 
+import math
+
 def format_hours_compact(hours: float) -> str:
     h = float(hours)
-    whole = int(h)
-    minutes = int(round((h - whole) * 60))
-    if minutes == 60:
-        whole += 1
-        minutes = 0
-    if minutes == 0:
-        return f"{whole} hrs/day"
-    return f"{whole} h {minutes:02d} min/day"
+    rounded_up = math.ceil(h)
+    return f"{rounded_up} hrs/day"
 
 
 def operating_mode_name() -> str:

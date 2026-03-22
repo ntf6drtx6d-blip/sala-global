@@ -209,6 +209,7 @@ def render_location_map(lat: float, lon: float, airport_name: str):
 
 def render_result():
     st.markdown("## Feasibility result")
+    st.caption("RESULT FILE ACTIVE — NEW VERSION")
 
     results = st.session_state.get("results", {})
     if not results:

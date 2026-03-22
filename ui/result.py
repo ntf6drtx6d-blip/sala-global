@@ -1,3 +1,6 @@
+# ui/result.py
+# FINAL CLEAN VERSION
+
 import math
 import textwrap
 
@@ -6,8 +9,12 @@ import streamlit as st
 from streamlit_folium import st_folium
 
 
-def format_hours_compact(hours: float) -> str:
+def format_required_hours(hours: float) -> str:
     return f"{math.ceil(float(hours))} hrs/day"
+
+
+def format_achievable_hours(hours: float) -> str:
+    return f"{math.floor(float(hours))} hrs/day"
 
 
 def operating_mode_name() -> str:
@@ -56,17 +63,34 @@ def annual_empty_battery_stats(results: dict):
     return worst_days, worst_pct
 
 
+def worst_sustainable_hours(results: dict):
+    mins = []
+    for _, r in results.items():
+        hours = r.get("hours", [])
+        if hours:
+            try:
+                mins.append(min(float(x) for x in hours))
+            except Exception:
+                pass
+    if not mins:
+        return None
+    return min(mins)
+
+
 def overall_conclusion_text(results: dict) -> str:
-    all_pass = all(r.get("status") == "PASS" for r in results.values())
-    if all_pass:
-        return "The selected configuration meets the required operating profile throughout the year."
-    return "The selected configuration does not meet the required operating profile throughout the year."
+    days, _ = annual_empty_battery_stats(results)
+    if days is None:
+        return "The selected configuration could not be fully assessed."
+    if days == 0:
+        return "The selected configuration supports the required operating profile throughout the year."
+    return "The selected configuration does not support the required operating profile throughout the year."
 
 
 def overall_interpretation_text(results: dict) -> str:
     days, pct = annual_empty_battery_stats(results)
     if days is None or pct is None:
         return "The annual blackout risk could not be calculated."
+
     if days == 0:
         return "No blackout days are expected at the selected operating profile."
     return f"Blackout risk is expected on {days} days/year ({pct:.1f}%) at the selected operating profile."
@@ -94,7 +118,7 @@ def render_kpi_card(
             flex-direction:column;
             justify-content:space-between;">
             <div style="font-size:0.95rem;color:#667085;font-weight:700;margin-bottom:10px;">{title}</div>
-            <div style="font-size:2.15rem;color:{color};font-weight:900;line-height:1.1;word-break:break-word;">{value}</div>
+            <div style="font-size:2.1rem;color:{color};font-weight:900;line-height:1.1;word-break:break-word;">{value}</div>
             <div style="font-size:0.93rem;color:#667085;margin-top:12px;line-height:1.45;">{subtitle}</div>
         </div>
         """
@@ -124,17 +148,18 @@ def render_required_time_card(hours_value: float, mode_text: str):
         f'{rounded_hours} hrs/day</div>'
         f'<div style="font-size:1rem;color:#667085;margin-top:8px;">{mode_text}</div>'
         f'<div style="margin-top:16px;">'
-        f'<div style="display:flex;justify-content:space-between;font-size:0.82rem;'
-        f'color:#667085;margin-bottom:6px;"><span>00:00</span><span>24:00</span></div>'
-        f'<div style="position:relative;width:100%;height:12px;background:#eef2f6;'
-        f'border-radius:999px;overflow:hidden;">'
+        f'<div style="font-size:0.88rem;color:#475467;font-weight:700;margin-bottom:8px;">'
+        f'Required daily lighting window</div>'
+        f'<div style="display:flex;justify-content:space-between;font-size:0.82rem;color:#667085;margin-bottom:6px;">'
+        f'<span>00:00</span><span>24:00</span></div>'
+        f'<div style="position:relative;width:100%;height:12px;background:#eef2f6;border-radius:999px;overflow:hidden;">'
         f'<div style="width:{pct:.1f}%;height:100%;background:#1f4fbf;border-radius:999px;"></div>'
         f'</div>'
-        f'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">'
-        f'<div style="font-size:0.88rem;color:#475467;font-weight:700;">Required daily lighting window</div>'
-        f'<div style="font-size:0.88rem;color:#1f4fbf;font-weight:800;">{rounded_hours} hrs/day</div>'
+        f'<div style="display:flex;justify-content:flex-end;margin-top:8px;">'
+        f'<span style="font-size:0.88rem;color:#1f4fbf;font-weight:800;background:#eef4ff;'
+        f'padding:4px 10px;border-radius:999px;">{rounded_hours} h</span>'
         f'</div>'
-        f'<div style="font-size:0.88rem;color:#667085;margin-top:6px;">'
+        f'<div style="font-size:0.88rem;color:#667085;margin-top:8px;">'
         f'Example operating window: {window_text}</div>'
         f'</div>'
         f'</div>'
@@ -209,46 +234,65 @@ def render_location_map(lat: float, lon: float, airport_name: str):
 
 def render_explanation_blocks(results: dict):
     days, pct = annual_empty_battery_stats(results)
-    airport_name = st.session_state.get("airport_label", "") or "Selected study point"
+    sustainable = worst_sustainable_hours(results)
 
     if days is None or pct is None:
         result_text = "The annual blackout risk could not be calculated for the selected operating profile."
+        confidence_text = "Simulation result is incomplete."
+        action_text = "Review the selected inputs and rerun the study."
+        result_value = "Review needed"
+        result_bg = "#fff7db"
+        result_border = "#f5c451"
+        result_color = "#7a5a00"
     elif days == 0:
-        result_text = (
-            "No blackout days are expected at the selected operating profile. "
-            "The system is expected to maintain sufficient stored energy throughout the year."
-        )
+        result_text = "Required daily operation is supported throughout the full annual cycle."
+        confidence_text = "No blackout days are expected at the selected operating profile."
+        action_text = "Configuration can be used as selected."
+        result_value = "Supported"
+        result_bg = "#ecfdf3"
+        result_border = "#abefc6"
+        result_color = "#067647"
     else:
-        result_text = (
-            f"Blackout risk is expected on {days} days/year ({pct:.1f}%). "
-            "This indicates that solar energy recovery becomes insufficient during part of the year."
-        )
+        result_text = f"Blackout risk is expected on {days} days/year ({pct:.1f}%)."
+        confidence_text = "This means the selected daily operating profile is not sustained year-round."
+        action_text = "Reduce daily operating hours or strengthen the system configuration."
+        result_value = "Not supported"
+        result_bg = "#fef3f2"
+        result_border = "#fecdca"
+        result_color = "#b42318"
 
     c1, c2, c3 = st.columns(3)
 
     with c1:
         render_kpi_card(
-            "Airport / study point",
-            airport_name,
-            "Location used for this feasibility assessment.",
+            "What this result means",
+            result_value,
+            result_text,
+            bg=result_bg,
+            border=result_border,
+            color=result_color,
+            min_height=200,
         )
 
     with c2:
+        value = format_achievable_hours(sustainable) if sustainable is not None else "N/A"
+        subtitle = (
+            "Lowest daily operating time the system can sustain continuously during the weakest solar period."
+            if sustainable is not None
+            else "Could not be calculated."
+        )
         render_kpi_card(
-            "System result",
-            "Sufficient" if days == 0 else "Insufficient",
-            result_text,
-            bg="#ecfdf3" if days == 0 else "#fef3f2",
-            border="#abefc6" if days == 0 else "#fecdca",
-            color="#067647" if days == 0 else "#b42318",
+            "Operational confidence",
+            value,
+            subtitle,
             min_height=200,
         )
 
     with c3:
         render_kpi_card(
-            "Recommended next step",
-            "Keep setup" if days == 0 else "Adjust setup",
-            "If blackout days are above zero, reduce operating hours or strengthen the system configuration.",
+            "Recommended action",
+            "No change required" if days == 0 else "Adjust setup",
+            action_text,
             min_height=200,
         )
 
@@ -276,8 +320,8 @@ def render_result():
 
     with left:
         st.markdown("### Location")
+        st.markdown(f"**{airport_name}**")
         render_location_map(lat, lon, airport_name)
-        st.caption(airport_name)
         st.caption(f"{lat:.6f}, {lon:.6f}")
 
     with right:

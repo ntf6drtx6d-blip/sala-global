@@ -205,32 +205,49 @@ def render_time_kpi_card(title: str, hours_value: float, mode_text: str, subtitl
         unsafe_allow_html=True,
     )
 
-
 def render_days_kpi_card(title: str, days_value, pct_value, subtitle: str = ""):
     if days_value is None or pct_value is None:
         main = "N/A"
         secondary = "PVGIS annual depletion metric not available"
+        bg = "#ffffff"
+        border = "#e6eaf0"
+        color = "#1f2937"
     else:
         main = f"{days_value} days/year"
         secondary = f"{pct_value:.1f}%"
 
+        if days_value == 0:
+            # ✅ GREEN (PASS)
+            bg = "#ecfdf3"
+            border = "#abefc6"
+            color = "#067647"
+        else:
+            # ❌ RED (FAIL)
+            bg = "#fef3f2"
+            border = "#fecdca"
+            color = "#b42318"
+
     st.markdown(
         f"""
         <div style="
-            border:1px solid #e6eaf0;
+            border:1px solid {border};
             border-radius:16px;
             padding:18px 20px;
-            background:#ffffff;
+            background:{bg};
             min-height:170px;
             box-shadow: 0 2px 10px rgba(16,24,40,0.04);
             display:flex;
             flex-direction:column;
             justify-content:space-between;">
-            <div style="font-size:0.95rem;color:#667085;font-weight:700;margin-bottom:10px;">{title}</div>
+            
+            <div style="font-size:0.95rem;color:#667085;font-weight:700;margin-bottom:10px;">
+                {title}
+            </div>
+
             <div>
                 <div style="
                     font-size:2.5rem;
-                    color:#1f2937;
+                    color:{color};
                     font-weight:900;
                     line-height:1.05;">
                     {main}
@@ -242,12 +259,14 @@ def render_days_kpi_card(title: str, days_value, pct_value, subtitle: str = ""):
                     {secondary}
                 </div>
             </div>
-            <div style="font-size:0.93rem;color:#667085;margin-top:12px;line-height:1.4;">{subtitle}</div>
+
+            <div style="font-size:0.93rem;color:#667085;margin-top:12px;line-height:1.4;">
+                {subtitle}
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
-
 
 def render_explanation_block(device_name: str, r: dict):
     label = short_device_label(device_name)

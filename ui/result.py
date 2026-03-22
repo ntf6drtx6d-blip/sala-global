@@ -94,75 +94,72 @@ def render_kpi_card(title: str, value: str, subtitle: str = "", bg="#ffffff", bo
     </div>
     """.format(title=title, value=value, subtitle=subtitle, bg=bg, border=border, color=color)
     st.markdown(html, unsafe_allow_html=True)
-
 def render_required_time_card(hours_value: float, mode_text: str):
     big_value = format_hours_compact(hours_value)
     window_text = operating_window_example(hours_value)
     pct = max(0, min(100, (float(hours_value) / 24.0) * 100))
 
-    html = """
-    <div style="
-        border:1px solid #e6eaf0;
-        border-radius:16px;
-        padding:18px 20px;
-        background:#ffffff;
-        min-height:220px;
-        box-shadow:0 2px 10px rgba(16,24,40,0.04);">
+    html = """<div style="
+border:1px solid #e6eaf0;
+border-radius:16px;
+padding:18px 20px;
+background:#ffffff;
+min-height:220px;
+box-shadow:0 2px 10px rgba(16,24,40,0.04);">
 
-        <div style="font-size:0.95rem;color:#667085;font-weight:700;margin-bottom:10px;">
-            Airport lighting requirement
-        </div>
+<div style="font-size:0.95rem;color:#667085;font-weight:700;margin-bottom:10px;">
+Airport lighting requirement
+</div>
 
-        <div style="font-size:2.2rem;color:#1f2937;font-weight:900;line-height:1.05;">
-            {big_value}
-        </div>
+<div style="font-size:2.2rem;color:#1f2937;font-weight:900;line-height:1.05;">
+{big_value}
+</div>
 
-        <div style="font-size:1rem;color:#667085;margin-top:8px;">
-            {mode_text}
-        </div>
+<div style="font-size:1rem;color:#667085;margin-top:8px;">
+{mode_text}
+</div>
 
-        <div style="margin-top:14px;">
-            <div style="
-                display:flex;
-                justify-content:space-between;
-                font-size:0.82rem;
-                color:#667085;
-                margin-bottom:6px;">
-                <span>00:00</span>
-                <span>24:00</span>
-            </div>
+<div style="margin-top:14px;">
+<div style="
+display:flex;
+justify-content:space-between;
+font-size:0.82rem;
+color:#667085;
+margin-bottom:6px;">
+<span>00:00</span>
+<span>24:00</span>
+</div>
 
-            <div style="
-                width:100%;
-                height:10px;
-                background:#eef2f6;
-                border-radius:999px;
-                overflow:hidden;">
-                <div style="
-                    width:{pct}%;
-                    height:100%;
-                    background:#1f4fbf;
-                    border-radius:999px;">
-                </div>
-            </div>
+<div style="
+width:100%;
+height:10px;
+background:#eef2f6;
+border-radius:999px;
+overflow:hidden;">
+<div style="
+width:{pct}%;
+height:100%;
+background:#1f4fbf;
+border-radius:999px;">
+</div>
+</div>
 
-            <div style="
-                font-size:0.88rem;
-                color:#475467;
-                margin-top:8px;
-                font-weight:600;">
-                Daily lighting need
-            </div>
+<div style="
+font-size:0.88rem;
+color:#475467;
+margin-top:8px;
+font-weight:600;">
+Daily lighting need
+</div>
 
-            <div style="
-                font-size:0.88rem;
-                color:#667085;
-                margin-top:4px;">
-                Example operating window: {window_text}
-            </div>
-        </div>
-    </div>
-    """.format(
+<div style="
+font-size:0.88rem;
+color:#667085;
+margin-top:4px;">
+Example operating window: {window_text}
+</div>
+</div>
+</div>""".format(
         big_value=big_value,
         mode_text=mode_text,
         pct="{:.1f}".format(pct),

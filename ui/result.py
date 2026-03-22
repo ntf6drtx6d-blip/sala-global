@@ -652,7 +652,3 @@ def render_result():
 
     st.markdown("### What this means")
     render_explanation_blocks(results)
-
-    # IMPORTANT:
-    # Annual operating profile graph should stay ABOVE this section in app flow.
-    render_device_capability_cards(results)

@@ -19,7 +19,7 @@ box-shadow:0 2px 10px rgba(16,24,40,0.04);">
 
 
 def render_weather_variability_block():
-    heights = [38, 64, 50, 80, 58, 92, 54, 102, 72, 44, 86, 52, 76, 98, 46]
+    heights = [72, 78, 74, 83, 76, 61, 66, 88, 93, 75, 79, 73, 86, 63, 81]
     years = list(range(2010, 2025))
 
     bars_html = ""
@@ -92,14 +92,33 @@ margin-bottom:18px;">
 Weather conditions used in simulation
 </div>
 
-<div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap;">
+<div style="display:flex;gap:24px;align-items:stretch;flex-wrap:wrap;">
 
-<div style="min-width:320px;flex:1;">
-<div style="display:flex;align-items:flex-end;gap:6px;height:132px;margin-bottom:8px;">
+<div style="
+min-width:320px;
+flex:1;
+display:flex;
+flex-direction:column;
+justify-content:space-between;
+height:100%;
+">
+<div style="
+display:flex;
+align-items:flex-end;
+gap:6px;
+flex:1;
+min-height:180px;
+margin-bottom:10px;
+">
 {bars_html}
 </div>
+
 <div style="font-size:0.92rem;color:#475467;font-weight:700;">
 15 years of real weather data
+</div>
+
+<div style="font-size:0.82rem;color:#667085;line-height:1.45;margin-top:6px;">
+Includes weaker and stronger solar years used to stress-test system performance.
 </div>
 </div>
 

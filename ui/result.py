@@ -95,7 +95,6 @@ def render_kpi_card(title: str, value: str, subtitle: str = "", bg="#ffffff", bo
     """.format(title=title, value=value, subtitle=subtitle, bg=bg, border=border, color=color)
     st.markdown(html, unsafe_allow_html=True)
 
-
 def render_required_time_card(hours_value: float, mode_text: str):
     big_value = format_hours_compact(hours_value)
     window_text = operating_window_example(hours_value)
@@ -123,24 +122,52 @@ def render_required_time_card(hours_value: float, mode_text: str):
         </div>
 
         <div style="margin-top:14px;">
-            <div style="display:flex;justify-content:space-between;font-size:0.82rem;color:#667085;margin-bottom:6px;">
-                <span>00:00</span><span>24:00</span>
+            <div style="
+                display:flex;
+                justify-content:space-between;
+                font-size:0.82rem;
+                color:#667085;
+                margin-bottom:6px;">
+                <span>00:00</span>
+                <span>24:00</span>
             </div>
 
-            <div style="width:100%;height:10px;background:#eef2f6;border-radius:999px;overflow:hidden;">
-                <div style="width:{pct}%;height:100%;background:#1f4fbf;border-radius:999px;"></div>
+            <div style="
+                width:100%;
+                height:10px;
+                background:#eef2f6;
+                border-radius:999px;
+                overflow:hidden;">
+                <div style="
+                    width:{pct}%;
+                    height:100%;
+                    background:#1f4fbf;
+                    border-radius:999px;">
+                </div>
             </div>
 
-            <div style="font-size:0.88rem;color:#475467;margin-top:8px;font-weight:600;">
+            <div style="
+                font-size:0.88rem;
+                color:#475467;
+                margin-top:8px;
+                font-weight:600;">
                 Daily lighting need
             </div>
 
-            <div style="font-size:0.88rem;color:#667085;margin-top:4px;">
+            <div style="
+                font-size:0.88rem;
+                color:#667085;
+                margin-top:4px;">
                 Example operating window: {window_text}
             </div>
         </div>
     </div>
-    """.format(big_value=big_value, mode_text=mode_text, pct=f"{pct:.1f}", window_text=window_text)
+    """.format(
+        big_value=big_value,
+        mode_text=mode_text,
+        pct="{:.1f}".format(pct),
+        window_text=window_text,
+    )
 
     st.markdown(html, unsafe_allow_html=True)
 

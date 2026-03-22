@@ -1,163 +1,3 @@
-# app.py
-# ACTION: REPLACE ENTIRE FILE
-
-import os
-import streamlit as st
-
-from ui.setup import render_setup
-from ui.cockpit import _run_simulation, reset_study
-from ui.result import render_result
-from ui.graph import render_graph
-from ui.battery import render_battery_section
-from ui.weather_basis import render_weather_basis
-
-
-st.set_page_config(
-    page_title="SALA Standardized Feasibility Study for Solar AGL",
-    layout="wide"
-)
-
-LOGO_PATH = "sala_logo.png"
-
-
-def init_state():
-    defaults = {
-        "airport_label": "",
-        "airport_query": "",
-        "lat": 40.416775,
-        "lon": -3.703790,
-        "required_hours": 12.0,
-        "operating_profile_mode": "Custom hours per day",
-        "selected_ids": [],
-        "per_device_config": {},
-        "results": None,
-        "overall": None,
-        "pdf_bytes": None,
-        "pdf_name": "sala_standardized_feasibility_study.pdf",
-        "elapsed": None,
-        "search_message": "",
-        "map_click_info": "",
-        "running": False,
-        "run_progress": 0,
-        "run_stage": "Ready",
-        "run_log": [],
-        "trigger_run": False,
-        "study_point_confirmed": False,
-        "study_ready": False,
-    }
-    for k, v in defaults.items():
-        if k not in st.session_state:
-            st.session_state[k] = v
-
-
-def refresh_study_ready_from_state():
-    selected_ids = st.session_state.get("selected_ids", [])
-    study_point_confirmed = bool(st.session_state.get("study_point_confirmed", False))
-    mode = st.session_state.get("operating_profile_mode")
-    required_hours = st.session_state.get("required_hours")
-
-    mode_ready = False
-    if mode == "24/7":
-        mode_ready = True
-    elif mode == "Dusk to dawn":
-        mode_ready = required_hours is not None
-    elif mode == "Custom hours per day":
-        mode_ready = required_hours is not None and float(required_hours) > 0
-
-    st.session_state.study_ready = bool(
-        len(selected_ids) > 0 and study_point_confirmed and mode_ready
-    )
-
-
-def apply_global_styles():
-    st.markdown(
-        """
-        <style>
-        .block-container {
-            padding-top: 1.4rem;
-            padding-bottom: 2rem;
-            max-width: 1500px;
-        }
-
-        header[data-testid="stHeader"] {
-            background: rgba(255,255,255,0);
-        }
-
-        .main-title {
-            font-size: 2.1rem;
-            font-weight: 800;
-            line-height: 1.05;
-            margin-bottom: 0.2rem;
-            color: #1f2937;
-        }
-
-        .top-action-wrap {
-            border: 1px solid #e8edf4;
-            border-radius: 16px;
-            padding: 12px 14px;
-            background: #ffffff;
-            box-shadow: 0 4px 18px rgba(17, 24, 39, 0.05);
-            margin-bottom: 16px;
-        }
-
-        .top-action-title {
-            font-size: 0.92rem;
-            font-weight: 700;
-            color: #344054;
-            margin-bottom: 8px;
-        }
-
-        div[data-testid="stDownloadButton"] > button {
-            background: #1f4fbf !important;
-            color: white !important;
-            border: 1px solid #1f4fbf !important;
-            border-radius: 12px !important;
-            font-weight: 700 !important;
-            min-height: 46px !important;
-        }
-
-        div[data-testid="stDownloadButton"] > button:hover {
-            background: #183f98 !important;
-            border-color: #183f98 !important;
-            color: white !important;
-        }
-
-        .secondary-note {
-            color: #667085;
-            font-size: 0.95rem;
-            line-height: 1.45;
-            margin-top: 6px;
-        }
-
-        button[kind="secondary"] {
-            border-radius: 12px !important;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def render_header():
-    st.write("")
-    c1, c2 = st.columns([1, 8])
-    with c1:
-        if os.path.exists(LOGO_PATH):
-            st.image(LOGO_PATH, width=110)
-    with c2:
-        st.markdown(
-            '<div class="main-title">SALA Standardized Feasibility Study for Solar AGL</div>',
-            unsafe_allow_html=True,
-        )
-
-
-def _trigger_simulation():
-    st.session_state.running = True
-    st.session_state.run_stage = "Preparing simulation"
-    st.session_state.trigger_run = True
-    st.rerun()
-
-
 def render_top_action_bar():
     st.markdown('<div class="top-action-wrap">', unsafe_allow_html=True)
     st.markdown('<div class="top-action-title">Actions</div>', unsafe_allow_html=True)
@@ -167,16 +7,18 @@ def render_top_action_bar():
     is_running = bool(st.session_state.get("running", False))
 
     if is_running:
-        c1, c2 = st.columns([1.5, 4])
+        progress_pct = float(st.session_state.get("run_progress", 0))
+        stage = st.session_state.get("run_stage", "Preparing simulation")
 
-        with c1:
-            st.markdown("**Simulation in progress**")
-
-        with c2:
-            st.markdown(
-                f'<div class="secondary-note">{st.session_state.get("run_stage", "Processing")}</div>',
-                unsafe_allow_html=True,
-            )
+        st.markdown(
+            '<div class="secondary-note" style="margin-bottom:10px;"><b>Simulation in progress</b></div>',
+            unsafe_allow_html=True,
+        )
+        st.progress(progress_pct)
+        st.markdown(
+            f'<div class="secondary-note" style="margin-top:10px;">{stage}</div>',
+            unsafe_allow_html=True,
+        )
 
     elif not has_results:
         c1, c2 = st.columns([1.4, 4])
@@ -204,7 +46,7 @@ def render_top_action_bar():
                 )
 
     else:
-        c1, c2, c3 = st.columns([1.55, 1.55, 1.45])
+        c1, c2, c3 = st.columns([1.2, 1.2, 1.2])
 
         with c1:
             if st.session_state.get("pdf_bytes") is not None:
@@ -231,10 +73,13 @@ def render_top_action_bar():
             st.markdown(
                 """
                 <style>
-                div[data-testid="stButton"] button[kind="secondary"]#top_start_new_study {
+                div[data-testid="stButton"] button[key="top_start_new_study"] {
                     background: #fff7db !important;
                     border: 1px solid #f5c451 !important;
                     color: #7a5a00 !important;
+                    border-radius: 12px !important;
+                    min-height: 46px !important;
+                    font-weight: 700 !important;
                 }
                 </style>
                 """,
@@ -253,28 +98,3 @@ def render_top_action_bar():
         )
 
     st.markdown('</div>', unsafe_allow_html=True)
-
-
-init_state()
-apply_global_styles()
-render_header()
-
-if not st.session_state.get("results"):
-    render_setup()
-else:
-    with st.expander("Show study setup", expanded=False):
-        render_setup()
-
-refresh_study_ready_from_state()
-render_top_action_bar()
-
-if st.session_state.get("trigger_run"):
-    st.session_state.trigger_run = False
-    _run_simulation()
-
-if st.session_state.get("results") is not None:
-    results = st.session_state.get("results")
-    render_result()
-    render_graph()
-    render_battery_section(results)
-    render_weather_basis()

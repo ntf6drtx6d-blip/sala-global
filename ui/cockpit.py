@@ -101,6 +101,7 @@ def reset_study():
 def _run_simulation(progress_callback=None):
     st.session_state.running = True
     st.session_state.run_stage = "Preparing simulation"
+    st.session_state.run_progress = 0
     st.session_state.run_log = []
 
     def add_log(message):
@@ -109,18 +110,30 @@ def _run_simulation(progress_callback=None):
         st.session_state.run_log = logs[-5:]
 
     def render_stage(percent):
-        if percent < 12:
+        if percent < 10:
             return "Validating study inputs"
-        elif percent < 30:
-            return "Requesting PVGIS data"
-        elif percent < 60:
-            return "Processing monthly off-grid results"
-        elif percent < 85:
-            return "Checking annual requirement month by month"
-        return "Building final conclusion and report"
+        elif percent < 25:
+            return "Preparing PVGIS requests"
+        elif percent < 45:
+            return "Requesting solar and off-grid data from PVGIS"
+        elif percent < 70:
+            return "Checking monthly performance"
+        elif percent < 90:
+            return "Calculating annual feasibility"
+        return "Generating results"
+
+    def push_progress(percent, stage):
+        percent = max(0, min(100, int(percent)))
+        st.session_state.run_progress = percent
+        st.session_state.run_stage = stage
+        if progress_callback:
+            progress_callback(percent, stage)
 
     add_log("Checking selected airport inputs.")
+    push_progress(5, "Validating study inputs")
+
     add_log("Preparing PVGIS request parameters.")
+    push_progress(12, "Preparing PVGIS requests")
 
     loc = {
         "lat": st.session_state.lat,
@@ -131,14 +144,16 @@ def _run_simulation(progress_callback=None):
 
     started = time.time()
 
-    def progress_callback(done, total, pct, elapsed, eta, device_name, month_name):
+    def simulation_progress(done, total, pct, elapsed, eta, device_name, month_name):
         percent = int(pct * 100)
-        st.session_state.run_progress = percent
-        st.session_state.run_stage = render_stage(percent)
+        stage = render_stage(percent)
+
+        push_progress(percent, stage)
 
         if done == 1:
             add_log("Connecting to PVGIS — Photovoltaic Geographical Information System.")
             add_log("Using the Joint Research Centre, European Commission engine.")
+
         if month_name == "Jan":
             add_log(f"Starting annual assessment for {device_name}.")
         if month_name == "Jun":
@@ -152,23 +167,19 @@ def _run_simulation(progress_callback=None):
         selected_ids=st.session_state.selected_ids,
         per_device_config=st.session_state.per_device_config,
         az_override=None,
-        progress_callback=progress_callback,
+        progress_callback=simulation_progress,
     )
 
     elapsed = time.time() - started
 
-    st.session_state.results = results
-    st.session_state.overall = overall
-    st.session_state.elapsed = elapsed
-    st.session_state.running = False
-    st.session_state.run_progress = 100
-    st.session_state.run_stage = "Completed"
-
+    push_progress(92, "Calculating annual feasibility")
     add_log("PVGIS responses received for all selected configurations.")
     add_log("Preparing annual feasibility conclusion.")
-    add_log("Generating consultant-style PDF report.")
 
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+        push_progress(97, "Generating results")
+        add_log("Generating consultant-style PDF report.")
+
         make_pdf(
             tmp.name,
             loc,
@@ -184,6 +195,16 @@ def _run_simulation(progress_callback=None):
         )
         with open(tmp.name, "rb") as f:
             st.session_state.pdf_bytes = f.read()
+
+    st.session_state.results = results
+    st.session_state.overall = overall
+    st.session_state.elapsed = elapsed
+    st.session_state.running = False
+    st.session_state.run_progress = 100
+    st.session_state.run_stage = "Completed"
+
+    if progress_callback:
+        progress_callback(100, "Completed")
 
     st.rerun()
 

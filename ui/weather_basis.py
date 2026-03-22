@@ -1,208 +1,121 @@
 # ui/weather_basis.py
 
-import textwrap
 import streamlit as st
+import matplotlib.pyplot as plt
 
 
-def render_card(title: str, value: str, subtitle: str):
-    html = f"""
-    <div style="
-        border:1px solid #e6eaf0;
-        border-radius:16px;
-        padding:18px 20px;
-        background:#ffffff;
-        min-height:150px;
-        box-shadow:0 2px 10px rgba(16,24,40,0.04);">
-
-        <div style="font-size:0.92rem;color:#667085;font-weight:700;margin-bottom:10px;">
-            {title}
-        </div>
-
-        <div style="font-size:1.65rem;font-weight:900;color:#1f2937;margin-bottom:12px;">
-            {value}
-        </div>
-
-        <div style="font-size:0.92rem;color:#667085;line-height:1.5;">
-            {subtitle}
-        </div>
-
-    </div>
-    """
-    st.markdown(html, unsafe_allow_html=True)
-
-
-def render_weather_tile(icon: str, label: str) -> str:
-    return f"""
-    <div style="
-        border:1px solid #e6eaf0;
-        border-radius:12px;
-        padding:14px 10px;
-        background:#ffffff;
-        text-align:center;
-        min-height:90px;
-        display:flex;
-        flex-direction:column;
-        justify-content:center;
-        align-items:center;">
-        <div style="font-size:1.4rem;margin-bottom:6px;">{icon}</div>
-        <div style="font-size:0.85rem;font-weight:700;color:#344054;">{label}</div>
-    </div>
-    """
+def render_simple_card(title: str, value: str, subtitle: str):
+    st.markdown(f"**{title}**")
+    st.markdown(f"### {value}")
+    st.caption(subtitle)
 
 
 def render_weather_variability_block():
+    st.markdown("### Weather conditions used in simulation")
 
-    # scaled realistic variability
-    base = [72, 78, 74, 83, 76, 61, 66, 88, 93, 75, 79, 73, 86, 63, 81]
-    heights = [int(h * 1.4) for h in base]
+    left, right = st.columns([1.25, 1], gap="large")
 
-    bars_html = ""
-    for h in heights:
-        bars_html += f'<div style="width:22px;height:{h}px;background:#bcd3ff;border-radius:6px 6px 0 0;"></div>'
+    with left:
+        years = list(range(2010, 2025))
+        values = [72, 78, 74, 83, 76, 61, 66, 88, 93, 75, 79, 73, 86, 63, 81]
 
-    labels_html = ""
-    for y in range(10, 25):
-        labels_html += f'<div style="width:22px;text-align:center;">{y}</div>'
+        fig, ax = plt.subplots(figsize=(10, 4.8))
+        ax.bar([str(y)[-2:] for y in years], values)
+        ax.set_ylim(0, 110)
+        ax.set_yticks([])
+        ax.set_xlabel("")
+        ax.set_ylabel("")
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.spines["left"].set_visible(False)
+        ax.grid(False)
 
-    # 👉 ВАЖЛИВО: генеруємо grid окремо
-    weather_grid = (
-        render_weather_tile("☁️", "Cloud cover")
-        + render_weather_tile("🌧️", "Rain")
-        + render_weather_tile("🌫️", "Haze / fog")
-        + render_weather_tile("🌥️", "Low solar")
-        + render_weather_tile("⛅", "Partial cloud")
-        + render_weather_tile("☀️", "Clear sky")
-    )
+        st.pyplot(fig, use_container_width=True)
 
-    html = f"""
-    <div style="
-        border:1px solid #e6eaf0;
-        border-radius:18px;
-        padding:22px;
-        background:#ffffff;
-        box-shadow:0 2px 10px rgba(16,24,40,0.04);
-        margin-bottom:18px;">
+        st.markdown("**15 years of real weather data**")
+        st.caption(
+            "Relative solar variability across years. Includes weaker and stronger solar years "
+            "used to stress-test system performance."
+        )
+        st.caption(
+            "Weak-solar years are included because they define worst-case feasibility "
+            "and blackout exposure."
+        )
 
-        <div style="display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap;">
+    with right:
+        st.markdown("### Weather exposure types included")
 
-            <!-- LEFT -->
-            <div style="flex:1.4;min-width:420px;">
+        r1c1, r1c2, r1c3 = st.columns(3)
+        r2c1, r2c2, r2c3 = st.columns(3)
 
-                <div style="font-size:0.95rem;color:#667085;font-weight:700;margin-bottom:10px;">
-                    Weather conditions used in simulation
-                </div>
+        with r1c1:
+            st.markdown("## ☁️")
+            st.markdown("**Cloud cover**")
+        with r1c2:
+            st.markdown("## 🌧️")
+            st.markdown("**Rain**")
+        with r1c3:
+            st.markdown("## 🌫️")
+            st.markdown("**Haze / fog**")
 
-                <div style="
-                    display:flex;
-                    align-items:flex-end;
-                    gap:10px;
-                    height:320px;
-                    padding:18px 16px 10px 16px;
-                    background:#f8fafc;
-                    border-radius:14px;
-                    border:1px solid #e6eaf0;
-                    border-bottom:2px solid #d0d5dd;
-                    margin-bottom:10px;">
-                    {bars_html}
-                </div>
+        with r2c1:
+            st.markdown("## 🌥️")
+            st.markdown("**Low solar**")
+        with r2c2:
+            st.markdown("## ⛅")
+            st.markdown("**Partial cloud**")
+        with r2c3:
+            st.markdown("## ☀️")
+            st.markdown("**Clear sky**")
 
-                <div style="
-                    display:flex;
-                    gap:10px;
-                    font-size:0.8rem;
-                    color:#667085;
-                    margin-bottom:12px;">
-                    {labels_html}
-                </div>
-
-                <div style="font-size:0.95rem;color:#344054;font-weight:800;">
-                    15 years of real weather data
-                </div>
-
-                <div style="font-size:0.92rem;color:#667085;margin-top:6px;">
-                    Includes weak and strong solar years used to stress-test system performance.
-                </div>
-
-            </div>
-
-            <!-- RIGHT -->
-            <div style="flex:1;min-width:360px;">
-
-                <div style="font-size:0.95rem;color:#667085;font-weight:700;margin-bottom:12px;">
-                    Weather exposure types included
-                </div>
-
-                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
-                    {weather_grid}
-                </div>
-
-                <div style="margin-top:14px;font-size:0.92rem;color:#667085;">
-                    Based on real historical weather observations — not ideal conditions.
-                </div>
-
-                <div style="font-size:0.88rem;color:#667085;margin-top:8px;">
-                    PVGIS TMY model based on long-term historical data
-                </div>
-
-            </div>
-
-        </div>
-    </div>
-    """
-
-    st.markdown(html, unsafe_allow_html=True)
+        st.write("")
+        st.caption(
+            "These conditions are derived from historical weather observations — not simulated "
+            "assumptions or idealized weather cases."
+        )
+        st.caption(
+            "Weather model used by PVGIS: TMY built from long-term historical data."
+        )
 
 
 def render_weather_basis():
-
     st.markdown("## Methodology")
 
-    st.markdown(
-        """
-        <div style="
-            border:1px solid #d6e0ef;
-            border-radius:18px;
-            padding:18px 20px;
-            background:#f7faff;
-            margin-bottom:18px;">
-            <div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap;">
-                <img src="https://commission.europa.eu/themes/contrib/oe_theme/dist/ec/images/logo/positive/logo-ec--en.svg"
-                     style="height:44px;">
-                <div>
-                    <div style="font-size:1.05rem;font-weight:900;color:#12355b;margin-bottom:4px;">
-                        Based on PVGIS (European Commission)
-                    </div>
-                    <div style="font-size:0.95rem;color:#344054;">
-                        PVGIS — Joint Research Centre
-                    </div>
-                </div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    top_left, top_right = st.columns([1, 6], gap="medium")
+    with top_left:
+        st.image(
+            "https://commission.europa.eu/themes/contrib/oe_theme/dist/ec/images/logo/positive/logo-ec--en.svg",
+            width=140,
+        )
+    with top_right:
+        st.markdown("### Based on PVGIS (European Commission)")
+        st.write("PVGIS — Photovoltaic Geographical Information System")
+        st.write("Joint Research Centre, European Commission")
+        st.caption("Independent public methodology used for solar feasibility assessment")
 
+    st.write("")
     render_weather_variability_block()
+    st.write("")
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3 = st.columns(3, gap="large")
 
     with c1:
-        render_card(
+        render_simple_card(
             "Meteorological database",
             "ERA5-Land & ERA5",
-            "Real weather conditions"
+            "High-resolution meteorological data used by PVGIS for temperature and weather-related calculations under real operating conditions.",
         )
 
     with c2:
-        render_card(
+        render_simple_card(
             "Solar radiation source",
             "PVGIS-SARAH3",
-            "Satellite-based solar data"
+            "Satellite-based solar radiation dataset used by PVGIS for long-term photovoltaic energy modelling.",
         )
 
     with c3:
-        render_card(
-            "Lighting input",
-            "S4GA data",
-            "Device consumption & battery"
+        render_simple_card(
+            "Lighting input source",
+            "S4GA device data",
+            "Light consumption, battery size and solar size are taken from S4GA product input data used in the feasibility calculation.",
         )

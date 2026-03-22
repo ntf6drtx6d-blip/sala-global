@@ -174,12 +174,12 @@ def render_location_map(lat: float, lon: float, airport_name: str):
     ).add_to(fmap)
 
     st_folium(
-        fmap,
-        width=None,
-        height=320,
-        returned_objects=[],
-        key="result_location_map",
-    )
+    fmap,
+    width=None,
+    height=460,
+    returned_objects=[],
+    key="result_location_map",
+)
 
 
 def render_result():

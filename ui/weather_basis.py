@@ -20,14 +20,64 @@ box-shadow:0 2px 10px rgba(16,24,40,0.04);">
 
 def render_weather_variability_block():
     heights = [38, 64, 50, 80, 58, 92, 54, 102, 72, 44, 86, 52, 76, 98, 46]
-
-    bars_html = ""
     years = list(range(2010, 2025))
 
+    bars_html = ""
     for year, h in zip(years, heights):
         bars_html += f"""<div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
 <div style="width:14px;height:{h}px;background:#bcd3ff;border-radius:6px 6px 0 0;"></div>
 <div style="font-size:0.72rem;color:#667085;line-height:1;">{str(year)[-2:]}</div>
+</div>"""
+
+    weather_grid_html = """<div style="min-width:340px;flex:1;">
+<div style="font-size:0.98rem;color:#344054;font-weight:700;line-height:1.45;margin-bottom:12px;">
+Weather exposure types included
+</div>
+
+<div style="
+display:grid;
+grid-template-columns:repeat(3, minmax(84px, 1fr));
+gap:10px;
+margin-bottom:14px;">
+
+<div style="border:1px solid #e6eaf0;border-radius:12px;padding:10px 8px;background:#f8fafc;text-align:center;">
+<div style="font-size:1.25rem;margin-bottom:4px;">☁️</div>
+<div style="font-size:0.78rem;color:#475467;font-weight:700;">Cloud cover</div>
+</div>
+
+<div style="border:1px solid #e6eaf0;border-radius:12px;padding:10px 8px;background:#f8fafc;text-align:center;">
+<div style="font-size:1.25rem;margin-bottom:4px;">🌧️</div>
+<div style="font-size:0.78rem;color:#475467;font-weight:700;">Rain</div>
+</div>
+
+<div style="border:1px solid #e6eaf0;border-radius:12px;padding:10px 8px;background:#f8fafc;text-align:center;">
+<div style="font-size:1.25rem;margin-bottom:4px;">🌫️</div>
+<div style="font-size:0.78rem;color:#475467;font-weight:700;">Haze / fog</div>
+</div>
+
+<div style="border:1px solid #e6eaf0;border-radius:12px;padding:10px 8px;background:#f8fafc;text-align:center;">
+<div style="font-size:1.25rem;margin-bottom:4px;">🌥️</div>
+<div style="font-size:0.78rem;color:#475467;font-weight:700;">Low solar</div>
+</div>
+
+<div style="border:1px solid #e6eaf0;border-radius:12px;padding:10px 8px;background:#f8fafc;text-align:center;">
+<div style="font-size:1.25rem;margin-bottom:4px;">⛅</div>
+<div style="font-size:0.78rem;color:#475467;font-weight:700;">Partial cloud</div>
+</div>
+
+<div style="border:1px solid #e6eaf0;border-radius:12px;padding:10px 8px;background:#f8fafc;text-align:center;">
+<div style="font-size:1.25rem;margin-bottom:4px;">☀️</div>
+<div style="font-size:0.78rem;color:#475467;font-weight:700;">Clear sky</div>
+</div>
+</div>
+
+<div style="font-size:0.92rem;color:#667085;line-height:1.55;">
+The feasibility check accounts for cloud cover, rain, haze and weak-solar periods observed over a long historical window — not ideal or average-only conditions.
+</div>
+
+<div style="font-size:0.85rem;color:#667085;line-height:1.5;margin-top:10px;">
+Weather model used by PVGIS: TMY built from long-term historical data
+</div>
 </div>"""
 
     html = f"""<div style="
@@ -53,23 +103,7 @@ Weather conditions used in simulation
 </div>
 </div>
 
-<div style="min-width:300px;flex:1;">
-<div style="font-size:1.45rem;line-height:1;margin-bottom:12px;">
-☀️ ⛅ ☁️ 🌧️ 🌫️ 🌬️
-</div>
-
-<div style="font-size:0.98rem;color:#344054;font-weight:700;line-height:1.45;margin-bottom:8px;">
-Real weather variability used in simulation
-</div>
-
-<div style="font-size:0.92rem;color:#667085;line-height:1.55;">
-The feasibility check includes sunny, cloudy, rainy and weak-solar periods observed over a long historical window — not ideal or average-only conditions.
-</div>
-
-<div style="font-size:0.85rem;color:#667085;line-height:1.5;margin-top:10px;">
-Weather model used by PVGIS: TMY built from long-term historical data
-</div>
-</div>
+{weather_grid_html}
 
 </div>
 </div>"""

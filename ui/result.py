@@ -235,33 +235,33 @@ def render_location_map(lat: float, lon: float, airport_name: str):
 
 def render_explanation_blocks(results: dict):
     days, pct = annual_empty_battery_stats(results)
-    required_hours = float(st.session_state.get("required_hours", 0))
+    airport_name = st.session_state.get("airport_label", "") or "Selected study point"
 
     if days is None or pct is None:
         result_text = "The annual blackout risk could not be calculated for the selected operating profile."
     elif days == 0:
         result_text = (
-            "At the selected operating profile, no blackout days are expected. "
-            "This means the system is expected to keep enough stored energy throughout the year."
+            "No blackout days are expected at the selected operating profile. "
+            "The system is expected to maintain sufficient stored energy throughout the year."
         )
     else:
         result_text = (
-            f"At the selected operating profile, blackout risk is expected on {days} days/year ({pct:.1f}%). "
-            "This means the system does not recover enough solar energy during certain periods of the year."
+            f"Blackout risk is expected on {days} days/year ({pct:.1f}%). "
+            "This indicates that solar energy recovery becomes insufficient during part of the year."
         )
 
     c1, c2, c3 = st.columns(3)
 
     with c1:
         render_kpi_card(
-            "What the airport needs",
-            format_hours_compact(required_hours),
-            "Daily lighting time required by the airport.",
+            "Airport / study point",
+            airport_name,
+            "Location used for this feasibility assessment.",
         )
 
     with c2:
         render_kpi_card(
-            "What the result means",
+            "System result",
             "PASS" if days == 0 else "FAIL",
             result_text,
             bg="#ecfdf3" if days == 0 else "#fef3f2",
@@ -271,8 +271,8 @@ def render_explanation_blocks(results: dict):
 
     with c3:
         render_kpi_card(
-            "What to do next",
-            "Keep profile" if days == 0 else "Adjust setup",
+            "Recommended next step",
+            "Keep setup" if days == 0 else "Adjust setup",
             "If blackout days are above zero, reduce operating hours or strengthen the system configuration.",
         )
 

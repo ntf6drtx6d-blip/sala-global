@@ -126,13 +126,14 @@ def apply_global_styles():
             min-height: 48px !important;
             height: 48px !important;
             font-weight: 700 !important;
-
             display: flex !important;
             align-items: center !important;
             justify-content: center !important;
+            width: 100% !important;
+            margin: 0 !important;
         }
 
-        /* PRIMARY (blue) */
+        /* PRIMARY (blue download) */
         div[data-testid="stDownloadButton"] > button {
             background: #1f4fbf !important;
             color: white !important;
@@ -142,6 +143,7 @@ def apply_global_styles():
         div[data-testid="stDownloadButton"] > button:hover {
             background: #183f98 !important;
             border-color: #183f98 !important;
+            color: white !important;
         }
 
         /* SECONDARY (yellow - Start new study) */
@@ -152,27 +154,33 @@ def apply_global_styles():
         }
 
         /* =========================
-           FIX ALIGNMENT (KEY PART)
+           FIX ALIGNMENT
         ========================= */
 
-        /* force columns to align */
-        div[data-testid="stHorizontalBlock"] {
-            align-items: stretch !important;
+        /* Make each column in horizontal rows vertically centered */
+        div[data-testid="stHorizontalBlock"] > div {
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: center !important;
         }
 
-        /* make button containers flex */
+        /* Normalize button wrappers */
         div[data-testid="stButton"],
         div[data-testid="stDownloadButton"] {
             display: flex !important;
+            flex-direction: column !important;
+            justify-content: center !important;
             height: 100% !important;
+            margin-top: 0 !important;
+            padding-top: 0 !important;
         }
 
-        /* stretch buttons inside column */
-        div[data-testid="stButton"] > button,
-        div[data-testid="stDownloadButton"] > button {
-            width: 100% !important;
+        /* Remove extra top spacing inside widgets */
+        div[data-testid="stButton"] > div,
+        div[data-testid="stDownloadButton"] > div {
+            margin-top: 0 !important;
+            padding-top: 0 !important;
         }
-
         </style>
         """,
         unsafe_allow_html=True,

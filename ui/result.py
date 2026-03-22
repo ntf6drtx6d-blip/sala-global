@@ -112,22 +112,6 @@ def overall_state(results: dict):
     return "mixed"
 
 
-def worst_sustainable_hours(results: dict):
-    mins = []
-    for _, r in results.items():
-        hours = r.get("hours", [])
-        if hours:
-            try:
-                mins.append(min(float(x) for x in hours))
-            except Exception:
-                pass
-
-    if not mins:
-        return None
-
-    return min(mins)
-
-
 def battery_reserve_hours(result_row: dict):
     try:
         batt = float(result_row.get("batt", 0))
@@ -153,39 +137,45 @@ def device_blackout_days(result_row: dict):
 
 def overall_conclusion_text(results: dict) -> str:
     state = overall_state(results)
+    total, passed, failed = count_device_statuses(results)
+
+    if total == 1:
+        if state == "all_pass":
+            return "The selected device meets the required operating profile."
+        if state == "none_pass":
+            return "The selected device does not meet the required operating profile."
+        return "The selected device could not be fully assessed."
 
     if state == "all_pass":
         return "All selected devices meet the required operating profile."
     if state == "none_pass":
         return "None of the selected devices meet the required operating profile."
     if state == "mixed":
-        return "Mixed result across selected devices."
+        return "Some selected devices meet the required operating profile."
     return "The selected device set could not be fully assessed."
 
 
 def overall_interpretation_text(results: dict) -> str:
     total, passed, failed = count_device_statuses(results)
-    days, pct = annual_empty_battery_stats(results)
     state = overall_state(results)
 
+    if total == 1:
+        if state == "all_pass":
+            return "The selected operating profile is supported year-round."
+        if state == "none_pass":
+            return "The selected device does not support the selected operating profile year-round."
+        return "The selected device could not be fully assessed."
+
     if state == "all_pass":
-        return "All selected devices support the selected operating profile year-round."
+        return "The selected operating profile is supported year-round by all selected devices."
 
     if state == "none_pass":
-        if days is None or pct is None:
-            return "No selected device supports the selected operating profile year-round."
-        return (
-            f"No selected device supports the selected operating profile year-round. "
-            f"The highest blackout risk within the selected set is {days} days/year ({pct:.1f}%)."
-        )
+        return "No selected device supports the selected operating profile year-round."
 
     if state == "mixed":
-        line_1 = f"{passed} of {total} selected devices meet the requirement. {failed} devices remain below requirement."
-        if days is None or pct is None:
-            return line_1
         return (
-            f"{line_1} The overall set is treated as not fully compliant because at least one selected device "
-            f"remains below requirement. Worst-device blackout risk is {days} days/year ({pct:.1f}%)."
+            f"{passed} of {total} selected devices support the operating profile. "
+            "The system is not fully compliant because at least one device remains below requirement."
         )
 
     return "The selected device set could not be fully assessed."
@@ -285,40 +275,6 @@ def render_required_time_card(hours_value: float, mode_text: str):
     st.markdown(html, unsafe_allow_html=True)
 
 
-def render_meeting_devices_card(results: dict):
-    total, passed, _ = count_device_statuses(results)
-    bg = "#ecfdf3" if passed == total and total > 0 else "#ffffff"
-    border = "#abefc6" if passed == total and total > 0 else "#e6eaf0"
-    color = "#067647" if passed == total and total > 0 else "#1f2937"
-
-    render_kpi_card(
-        "Devices meeting requirement",
-        f"{passed} / {total}",
-        "Selected devices that support the required operating profile year-round.",
-        bg=bg,
-        border=border,
-        color=color,
-        min_height=220,
-    )
-
-
-def render_below_requirement_devices_card(results: dict):
-    total, _, failed = count_device_statuses(results)
-    bg = "#fef3f2" if failed > 0 else "#ecfdf3"
-    border = "#fecdca" if failed > 0 else "#abefc6"
-    color = "#b42318" if failed > 0 else "#067647"
-
-    render_kpi_card(
-        "Devices below requirement",
-        f"{failed} / {total}",
-        "Selected devices that remain below the required operating profile.",
-        bg=bg,
-        border=border,
-        color=color,
-        min_height=220,
-    )
-
-
 def render_blackout_card(days_value, pct_value):
     if days_value is None or pct_value is None:
         main = "N/A"
@@ -355,6 +311,40 @@ def render_blackout_card(days_value, pct_value):
     st.markdown(html, unsafe_allow_html=True)
 
 
+def render_device_summary_line(results: dict):
+    total, passed, failed = count_device_statuses(results)
+
+    if total <= 1:
+        return
+
+    if failed == 0:
+        text = f"{passed} of {total} devices meet requirement"
+        color = "#067647"
+        bg = "#ecfdf3"
+        border = "#abefc6"
+    else:
+        text = f"{failed} of {total} devices below requirement"
+        color = "#b42318"
+        bg = "#fef3f2"
+        border = "#fecdca"
+
+    html = f"""
+    <div style="
+        border:1px solid {border};
+        background:{bg};
+        color:{color};
+        padding:16px 18px;
+        border-radius:16px;
+        font-weight:800;
+        font-size:1.02rem;
+        margin-top:18px;
+        box-shadow:0 2px 10px rgba(16,24,40,0.04);">
+        {text}
+    </div>
+    """
+    st.markdown(html, unsafe_allow_html=True)
+
+
 def render_location_map(lat: float, lon: float, airport_name: str):
     fmap = folium.Map(
         location=[lat, lon],
@@ -381,91 +371,6 @@ def render_location_map(lat: float, lon: float, airport_name: str):
         returned_objects=[],
         key="result_location_map",
     )
-
-
-# =========================
-# WHAT THIS MEANS
-# =========================
-
-def render_explanation_blocks(results: dict):
-    days, pct = annual_empty_battery_stats(results)
-    sustainable = worst_sustainable_hours(results)
-    state = overall_state(results)
-    total, passed, failed = count_device_statuses(results)
-
-    if days is None or pct is None:
-        meaning_value = "Review needed"
-        meaning_text = "The annual blackout risk could not be calculated for the selected operating profile."
-        meaning_bg = "#fff7db"
-        meaning_border = "#f5c451"
-        meaning_color = "#7a5a00"
-        action_value = "Review setup"
-        action_text = "Review the selected inputs and rerun the study."
-    elif state == "all_pass":
-        meaning_value = "All devices supported"
-        meaning_text = "All selected devices support the required operating profile throughout the year."
-        meaning_bg = "#ecfdf3"
-        meaning_border = "#abefc6"
-        meaning_color = "#067647"
-        action_value = "No change required"
-        action_text = "Configuration can be used as selected."
-    elif state == "none_pass":
-        meaning_value = "No devices supported"
-        meaning_text = (
-            f"No selected device supports the required operating profile year-round. "
-            f"Worst-device blackout risk is {days} days/year ({pct:.1f}%)."
-        )
-        meaning_bg = "#fef3f2"
-        meaning_border = "#fecdca"
-        meaning_color = "#b42318"
-        action_value = "Adjust setup"
-        action_text = "Reduce daily operating hours or strengthen the configuration."
-    else:
-        meaning_value = "Mixed result"
-        meaning_text = (
-            f"{passed} of {total} selected devices meet the requirement. "
-            f"{failed} devices remain below requirement."
-        )
-        meaning_bg = "#fff7db"
-        meaning_border = "#f5c451"
-        meaning_color = "#7a5a00"
-        action_value = "Review failing devices"
-        action_text = "Keep compliant devices as selected and review the devices that remain below requirement."
-
-    c1, c2, c3 = st.columns(3)
-
-    with c1:
-        render_kpi_card(
-            "What this result means",
-            meaning_value,
-            meaning_text,
-            bg=meaning_bg,
-            border=meaning_border,
-            color=meaning_color,
-            min_height=200,
-        )
-
-    with c2:
-        value = format_achievable_hours(sustainable) if sustainable is not None else "N/A"
-        subtitle = (
-            "Lowest daily operating time the weakest device can sustain continuously during the weakest solar period."
-            if sustainable is not None
-            else "Could not be calculated."
-        )
-        render_kpi_card(
-            "Lowest sustainable operation in set",
-            value,
-            subtitle,
-            min_height=200,
-        )
-
-    with c3:
-        render_kpi_card(
-            "Recommended action",
-            action_value,
-            action_text,
-            min_height=200,
-        )
 
 
 # =========================
@@ -571,7 +476,7 @@ def render_device_capability_cards(results: dict):
 # =========================
 
 def render_result():
-    st.markdown("## Decision summary")
+    st.markdown("## Feasibility result")
 
     results = st.session_state.get("results", {})
     if not results:
@@ -644,11 +549,4 @@ def render_result():
             render_blackout_card(days, pct)
 
         if len(results) > 1:
-            c3, c4 = st.columns(2)
-            with c3:
-                render_meeting_devices_card(results)
-            with c4:
-                render_below_requirement_devices_card(results)
-
-    st.markdown("### What this means")
-    render_explanation_blocks(results)
+            render_device_summary_line(results)

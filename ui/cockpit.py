@@ -98,7 +98,7 @@ def reset_study():
     st.rerun()
 
 
-def _run_simulation():
+def _run_simulation(progress_callback=None):
     st.session_state.running = True
     st.session_state.run_stage = "Preparing simulation"
     st.session_state.run_log = []

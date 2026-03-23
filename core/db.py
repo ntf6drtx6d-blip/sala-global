@@ -139,3 +139,144 @@ def update_last_login(user_id):
 
 def list_all_users():
     conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("SELECT * FROM users ORDER BY created_at DESC")
+    rows = cur.fetchall()
+
+    conn.close()
+    return rows
+
+
+# =========================
+# STUDIES
+# =========================
+
+def save_study(
+    user_id,
+    airport_label,
+    lat,
+    lon,
+    required_hours,
+    operating_profile_mode,
+    selected_devices,
+    per_device_config,
+    overall_result,
+    worst_blackout_days,
+    worst_blackout_pct,
+    result_summary
+):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        INSERT INTO studies (
+            user_id,
+            created_at,
+            airport_label,
+            lat,
+            lon,
+            required_hours,
+            operating_profile_mode,
+            selected_devices_json,
+            per_device_config_json,
+            overall_result,
+            worst_blackout_days,
+            worst_blackout_pct,
+            result_summary_json
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        user_id,
+        datetime.utcnow().isoformat(),
+        airport_label,
+        lat,
+        lon,
+        required_hours,
+        operating_profile_mode,
+        json.dumps(selected_devices),
+        json.dumps(per_device_config),
+        overall_result,
+        worst_blackout_days,
+        worst_blackout_pct,
+        json.dumps(result_summary)
+    ))
+
+    conn.commit()
+    conn.close()
+
+
+def list_user_studies(user_id):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT * FROM studies
+        WHERE user_id = ?
+        ORDER BY created_at DESC
+    """, (user_id,))
+
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+
+def list_all_studies():
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT s.*, u.email
+        FROM studies s
+        JOIN users u ON s.user_id = u.id
+        ORDER BY s.created_at DESC
+    """)
+
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+
+# =========================
+# ACCESS REQUESTS
+# =========================
+
+def create_access_request(full_name, email, organization=None, message=None):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        INSERT INTO access_requests (
+            created_at,
+            full_name,
+            email,
+            organization,
+            message,
+            status
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (
+        datetime.utcnow().isoformat(),
+        full_name,
+        email,
+        organization,
+        message,
+        "new"
+    ))
+
+    conn.commit()
+    conn.close()
+
+
+def list_access_requests():
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT * FROM access_requests
+        ORDER BY created_at DESC
+    """)
+
+    rows = cur.fetchall()
+    conn.close()
+    return rows

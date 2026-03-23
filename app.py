@@ -271,11 +271,12 @@ def render_top_action_bar():
                     unsafe_allow_html=True,
                 )
 
-            else:
-            c1, c2, c3 = st.columns(3, gap="large")
-        
-            with c1:
-                if st.session_state.get("pdf_bytes") is not None:
+    else:
+        c1, c2, c3 = st.columns(3, gap="large")
+
+        with c1:
+            if st.session_state.get("pdf_bytes") is not None:
+                if is_logged_in():
                     st.download_button(
                         "📄 Download PDF report",
                         data=st.session_state.get("pdf_bytes"),
@@ -284,24 +285,26 @@ def render_top_action_bar():
                         use_container_width=True,
                         key="top_download_pdf_report",
                     )
-        
-            with c2:
-                if st.button(
-                    "Run updated simulation",
-                    type="primary",
-                    use_container_width=True,
-                    disabled=not ready,
-                    key="top_run_updated_simulation",
-                ):
-                    _trigger_simulation()
-        
-            with c3:
-                if st.button(
-                    "Start new study",
-                    use_container_width=True,
-                    key="top_start_new_study",
-                ):
-                    reset_study()
+                else:
+                    render_login_inline()
+
+        with c2:
+            if st.button(
+                "Run updated simulation",
+                type="primary",
+                use_container_width=True,
+                disabled=not ready,
+                key="top_run_updated_simulation",
+            ):
+                _trigger_simulation()
+
+        with c3:
+            if st.button(
+                "Start new study",
+                use_container_width=True,
+                key="top_start_new_study",
+            ):
+                reset_study()
 
         st.markdown(
             '<div class="secondary-note">You can keep the same location, update devices or operating profile, and run the study again.</div>',

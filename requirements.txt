@@ -10,3 +10,4 @@ streamlit-folium
 altair
 streamlit
 jinja2
+plotly

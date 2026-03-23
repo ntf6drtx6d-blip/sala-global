@@ -327,3 +327,30 @@ def update_access_request_status(request_id, status):
 
     conn.commit()
     conn.close()
+
+def update_user_active(user_id, is_active):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        UPDATE users
+        SET is_active = ?
+        WHERE id = ?
+    """, (1 if is_active else 0, user_id))
+
+    conn.commit()
+    conn.close()
+
+
+def update_user_password(user_id, password_hash):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        UPDATE users
+        SET password_hash = ?
+        WHERE id = ?
+    """, (password_hash, user_id))
+
+    conn.commit()
+    conn.close()

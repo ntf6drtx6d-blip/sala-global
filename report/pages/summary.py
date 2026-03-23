@@ -11,8 +11,8 @@ from ..styles import (
 
 
 PAGE_WIDTH = 510
-LEFT_COL = 220
-GAP = 16
+LEFT_COL = 240
+GAP = 18
 RIGHT_COL = PAGE_WIDTH - LEFT_COL - GAP
 
 
@@ -22,37 +22,37 @@ def _risk_is_pass(data):
 
 
 def _map_placeholder():
-    t = Table(
+    box = Table(
         [[Paragraph("Map preview", SMALL)]],
-        colWidths=[LEFT_COL - 24],
-        rowHeights=[210],
+        colWidths=[LEFT_COL - 28],
+        rowHeights=[260],
     )
-    t.setStyle(TableStyle([
+    box.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F4F7F5")),
         ("BOX", (0, 0), (-1, -1), 1, LINE),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]))
-    return t
+    return box
 
 
 def _build_left_card(data):
     left_card = Table(
         [[
-            Paragraph("Airport / Study Point", SMALL),
+            Paragraph("Study point", SMALL),
             Paragraph(f"<b>{data['airport_name']}</b>", BODY),
             _map_placeholder(),
-            Paragraph("Study location used for solar resource assessment.", SMALL),
+            Paragraph("Map placeholder for the verified airport location.", SMALL),
         ]],
         colWidths=[LEFT_COL],
     )
     left_card.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), WHITE),
         ("BOX", (0, 0), (-1, -1), 1, LINE),
-        ("LEFTPADDING", (0, 0), (-1, -1), 12),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 12),
-        ("TOPPADDING", (0, 0), (-1, -1), 12),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+        ("LEFTPADDING", (0, 0), (-1, -1), 14),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 14),
+        ("TOPPADDING", (0, 0), (-1, -1), 14),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 14),
     ]))
     return left_card
 
@@ -73,16 +73,17 @@ def _build_conclusion(data):
     conclusion.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), conclusion_bg),
         ("BOX", (0, 0), (-1, -1), 1, conclusion_border),
-        ("LEFTPADDING", (0, 0), (-1, -1), 12),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 12),
-        ("TOPPADDING", (0, 0), (-1, -1), 12),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+        ("LEFTPADDING", (0, 0), (-1, -1), 14),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 14),
+        ("TOPPADDING", (0, 0), (-1, -1), 14),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 14),
     ]))
     return conclusion
 
 
 def _build_kpis(data):
-    kpi_col = (RIGHT_COL - 12) / 2
+    kpi_gap = 12
+    kpi_col = (RIGHT_COL - kpi_gap) / 2
 
     kpi1 = Table(
         [[
@@ -108,12 +109,14 @@ def _build_kpis(data):
     kpi2_bg = GREEN_SOFT if risk_pass else RED_SOFT
     kpi2_border = GREEN_BORDER if risk_pass else RED_BORDER
 
+    blackout_value = str(data["worst_blackout_risk"]).replace(" days/year", "<br/>days/year")
+
     kpi2 = Table(
         [[
             Paragraph("Worst blackout risk", SMALL),
-            Paragraph(data["worst_blackout_risk"], BIG),
+            Paragraph(blackout_value, BIG),
             Paragraph(
-                data["worst_blackout_pct"] or "Lowest annual risk found in the checked device set.",
+                data["worst_blackout_pct"] or "Annual blackout exposure found in the checked device set.",
                 SMALL
             ),
         ]],
@@ -185,7 +188,7 @@ def build_summary(data):
     story.append(Paragraph("Management Summary", SMALL))
     story.append(Spacer(1, 4))
     story.append(Paragraph("Feasibility Result", TITLE))
-    story.append(Spacer(1, 14))
+    story.append(Spacer(1, 16))
 
     left_card = _build_left_card(data)
     conclusion = _build_conclusion(data)
@@ -229,7 +232,7 @@ def build_summary(data):
     ]))
 
     story.append(main_grid)
-    story.append(Spacer(1, 14))
+    story.append(Spacer(1, 16))
 
     footer_strip = Table(
         [[Paragraph(data["methodology_note"], SMALL)]],

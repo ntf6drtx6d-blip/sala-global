@@ -14,6 +14,7 @@ from core.db import (
     user_exists,
 )
 from core.auth import hash_password
+from core.devices import DEVICES
 
 
 def _safe_json_list(raw_value):
@@ -26,6 +27,20 @@ def _safe_json_list(raw_value):
         return []
     except Exception:
         return []
+
+
+def _device_label_from_id(device_id):
+    try:
+        d = DEVICES[device_id]
+        return d.get("code") or d.get("name") or str(device_id)
+    except Exception:
+        return str(device_id)
+
+
+def _device_labels_from_json(raw_value):
+    ids = _safe_json_list(raw_value)
+    labels = [_device_label_from_id(x) for x in ids]
+    return labels
 
 
 def _generate_temp_password(length=12):
@@ -168,26 +183,40 @@ def _render_studies_tab():
         st.info("No studies recorded yet.")
         return
 
-    data = []
     for row in rows:
-        devices = _safe_json_list(row["selected_devices_json"])
-        devices_text = ", ".join(str(x) for x in devices) if devices else ""
+        labels = _device_labels_from_json(row["selected_devices_json"])
+        devices_text = ", ".join(labels) if labels else "-"
 
-        data.append(
-            {
-                "Created": row["created_at"],
-                "User": row["email"],
-                "Airport": row["airport_label"] or "",
-                "Hours/day": row["required_hours"],
-                "Mode": row["operating_profile_mode"] or "",
-                "Devices": devices_text,
-                "Result": row["overall_result"] or "",
-                "Worst blackout days": row["worst_blackout_days"],
-                "Worst blackout %": row["worst_blackout_pct"],
-            }
-        )
+        with st.container():
+            st.markdown("---")
 
-    st.dataframe(data, use_container_width=True, hide_index=True)
+            c1, c2, c3 = st.columns([2.2, 1.1, 1.2])
+
+            with c1:
+                st.markdown(f"**{row['airport_label'] or 'Unnamed study'}**")
+                st.caption(f"{row['created_at']} · {row['email']}")
+                st.write(f"Mode: {row['operating_profile_mode'] or '-'}")
+                st.write(f"Devices: {devices_text}")
+
+            with c2:
+                st.write(f"**Result:** {row['overall_result'] or '-'}")
+                st.write(f"**Hours/day:** {row['required_hours']}")
+                st.write(f"**Worst blackout days:** {row['worst_blackout_days'] if row['worst_blackout_days'] is not None else '-'}")
+
+            with c3:
+                pct = row["worst_blackout_pct"]
+                pct_text = f"{pct:.2f}%" if pct is not None else "-"
+                st.write(f"**Worst blackout %:** {pct_text}")
+
+                if row["pdf_bytes"]:
+                    st.download_button(
+                        "Download PDF",
+                        data=row["pdf_bytes"],
+                        file_name=row["pdf_name"] or "study_report.pdf",
+                        mime="application/pdf",
+                        key=f"admin_pdf_{row['id']}",
+                        use_container_width=True,
+                    )
 
 
 def render_admin_panel():

@@ -15,9 +15,9 @@ def render_login_page():
         """
         <style>
         .block-container {
-            max-width: 760px;
+            max-width: 960px;
             padding-top: 2.2rem;
-            padding-bottom: 2rem;
+            padding-bottom: 2.5rem;
         }
 
         .sala-login-logo-wrap {
@@ -34,11 +34,10 @@ def render_login_page():
             color: #1f4fbf;
             font-size: 0.84rem;
             font-weight: 700;
-            margin-bottom: 14px;
         }
 
         .sala-login-title {
-            font-size: 2.05rem;
+            font-size: 2.15rem;
             line-height: 1.08;
             font-weight: 800;
             color: #0f172a;
@@ -51,16 +50,17 @@ def render_login_page():
             font-size: 1rem;
             line-height: 1.55;
             text-align: center;
-            margin-bottom: 28px;
+            max-width: 720px;
+            margin: 0 auto 28px auto;
         }
 
         .sala-login-card {
             background: #ffffff;
             border: 1px solid #e6eaf0;
             border-radius: 20px;
-            padding: 26px 26px 22px 26px;
+            padding: 24px 24px 20px 24px;
             box-shadow: 0 10px 30px rgba(16,24,40,0.06);
-            margin-bottom: 22px;
+            height: 100%;
         }
 
         .sala-section-title {
@@ -77,18 +77,19 @@ def render_login_page():
             margin-bottom: 16px;
         }
 
-        .sala-divider {
-            height: 1px;
-            background: #eef2f6;
-            margin: 22px 0;
-        }
-
         .sala-note {
             color: #667085;
             font-size: 0.92rem;
-            line-height: 1.5;
+            line-height: 1.55;
             text-align: center;
-            margin-top: 16px;
+            margin-top: 18px;
+        }
+
+        .sala-mini-note {
+            color: #667085;
+            font-size: 0.86rem;
+            line-height: 1.45;
+            margin-top: 10px;
         }
 
         div[data-testid="stTextInput"] input,
@@ -112,8 +113,8 @@ def render_login_page():
         with c2:
             st.image(LOGO_PATH, width=120)
 
-    badge_left, badge_mid, badge_right = st.columns([1, 1.2, 1])
-    with badge_mid:
+    b1, b2, b3 = st.columns([1.2, 1, 1.2])
+    with b2:
         st.markdown(
             '<div style="text-align:center;"><span class="sala-login-badge">Member access required</span></div>',
             unsafe_allow_html=True,
@@ -124,65 +125,78 @@ def render_login_page():
         unsafe_allow_html=True,
     )
     st.markdown(
-        '<div class="sala-login-subtitle">Approved SALA members and registered external users can access the feasibility calculator after login.</div>',
+        '<div class="sala-login-subtitle">Approved SALA members and registered external users can access the feasibility calculator after login. New users may request access below.</div>',
         unsafe_allow_html=True,
     )
 
-    # Main card
-    st.markdown('<div class="sala-login-card">', unsafe_allow_html=True)
+    left, right = st.columns(2, gap="large")
 
-    st.markdown('<div class="sala-section-title">Log in</div>', unsafe_allow_html=True)
+    # LOGIN CARD
+    with left:
+        st.markdown('<div class="sala-login-card">', unsafe_allow_html=True)
+        st.markdown('<div class="sala-section-title">Log in</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="sala-section-subtitle">Use your approved credentials to enter the tool.</div>',
+            unsafe_allow_html=True,
+        )
+
+        email = st.text_input("Email", key="login_email")
+        password = st.text_input("Password", type="password", key="login_password")
+
+        if st.button("Log in", type="primary", use_container_width=True, key="login_submit"):
+            ok = login_user(email.strip(), password)
+            if ok:
+                st.success("Logged in.")
+                st.rerun()
+            else:
+                st.error("Invalid credentials or inactive account.")
+
+        st.markdown(
+            '<div class="sala-mini-note">Access is restricted to approved SALA members and registered external users.</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # REQUEST ACCESS CARD
+    with right:
+        st.markdown('<div class="sala-login-card">', unsafe_allow_html=True)
+        st.markdown('<div class="sala-section-title">Request access</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="sala-section-subtitle">If you do not have an account yet, send a request to SALA for review.</div>',
+            unsafe_allow_html=True,
+        )
+
+        req_name = st.text_input("Full name", key="req_full_name")
+        req_email = st.text_input("Work email", key="req_email")
+        req_org = st.text_input("Organization", key="req_organization")
+        req_message = st.text_area(
+            "Short message",
+            key="req_message",
+            height=128,
+            placeholder="Who are you and why do you need access?",
+        )
+
+        if st.button("Send access request", use_container_width=True, key="send_access_request"):
+            if not req_name.strip():
+                st.error("Please enter your full name.")
+            elif not req_email.strip():
+                st.error("Please enter your email.")
+            else:
+                create_access_request(
+                    full_name=req_name.strip(),
+                    email=req_email.strip(),
+                    organization=req_org.strip() or None,
+                    message=req_message.strip() or None,
+                )
+                st.success("Your request has been sent to SALA for review.")
+
+        st.markdown(
+            '<div class="sala-mini-note">Your request is recorded in the SALA system and can be reviewed by an administrator.</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+
     st.markdown(
-        '<div class="sala-section-subtitle">Use your approved credentials to enter the tool.</div>',
+        '<div class="sala-note">SALA controls access to this tool. Credentials are issued only after approval.</div>',
         unsafe_allow_html=True,
     )
-
-    email = st.text_input("Email", key="login_email")
-    password = st.text_input("Password", type="password", key="login_password")
-
-    if st.button("Log in", type="primary", use_container_width=True, key="login_submit"):
-        ok = login_user(email.strip(), password)
-        if ok:
-            st.success("Logged in.")
-            st.rerun()
-        else:
-            st.error("Invalid credentials or inactive account.")
-
-    st.markdown('<div class="sala-divider"></div>', unsafe_allow_html=True)
-
-    st.markdown('<div class="sala-section-title">Request access</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="sala-section-subtitle">If you do not have an account yet, send a request to SALA. Your request will be recorded for review.</div>',
-        unsafe_allow_html=True,
-    )
-
-    req_name = st.text_input("Full name", key="req_full_name")
-    req_email = st.text_input("Work email", key="req_email")
-    req_org = st.text_input("Organization", key="req_organization")
-    req_message = st.text_area(
-        "Short message",
-        key="req_message",
-        height=110,
-        placeholder="Who are you and why do you need access?",
-    )
-
-    if st.button("Send access request", use_container_width=True, key="send_access_request"):
-        if not req_name.strip():
-            st.error("Please enter your full name.")
-        elif not req_email.strip():
-            st.error("Please enter your email.")
-        else:
-            create_access_request(
-                full_name=req_name.strip(),
-                email=req_email.strip(),
-                organization=req_org.strip() or None,
-                message=req_message.strip() or None,
-            )
-            st.success("Your request has been sent to SALA for review.")
-
-    st.markdown(
-        '<div class="sala-note">Access is controlled by SALA. You will need approval before receiving credentials.</div>',
-        unsafe_allow_html=True,
-    )
-
-    st.markdown("</div>", unsafe_allow_html=True)

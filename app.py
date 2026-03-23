@@ -281,6 +281,24 @@ def apply_global_styles():
         unsafe_allow_html=True,
     )
 
+def _display_name_from_email(email: str) -> str:
+    if not email:
+        return "Account"
+
+    local = email.split("@")[0]
+    parts = local.replace(".", " ").replace("_", " ").split()
+
+    if not parts:
+        return email
+
+    if len(parts) == 1:
+        return parts[0].capitalize()
+
+    first = parts[0][:1].upper()
+    last = parts[-1].capitalize()
+
+    return f"{first}. {last}"
+
 def render_header():
     c1, c2, c3 = st.columns([1, 6, 2])
 
@@ -297,7 +315,8 @@ def render_header():
     with c3:
         email = st.session_state.get("auth_email", "")
         role = st.session_state.get("auth_role", "")
-        user_label = f"{email} · {role}"
+        display_name = _display_name_from_email(email)
+        user_label = f"{display_name} ▾"
 
         with st.popover(user_label, use_container_width=True):
             st.markdown("**My profile**")

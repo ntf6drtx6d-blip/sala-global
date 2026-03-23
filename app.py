@@ -298,12 +298,6 @@ def render_top_action_bar():
                     use_container_width=True,
                     key="top_download_pdf_report",
                 )
-            # ADMIN PANEL (only for admins)
-            from core.auth import is_admin
-            from ui.admin import render_admin_panel
-            
-            if is_admin():
-                render_admin_panel()
 
         with c2:
             if st.button(
@@ -389,3 +383,10 @@ if st.session_state.get("results") is not None:
     render_graph()
     render_device_capability_cards(results)
     render_weather_basis()
+
+# 👇 ОЦЕ СЮДИ
+from core.auth import is_admin
+from ui.admin import render_admin_panel
+
+if is_admin():
+    render_admin_panel()

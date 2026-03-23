@@ -29,7 +29,9 @@ from .blocks import draw_footer
 
 def draw_cover_page(c, data):
     page_w = c._pagesize[0]
-
+    c.setFont("Helvetica-Bold", 40)
+    c.setFillColor("#FF0000")
+    c.drawString(100, 700, "V4 COVER TEST")
     # Top rule
     c.setStrokeColor(LINE)
     c.setLineWidth(1)

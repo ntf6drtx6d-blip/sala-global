@@ -25,7 +25,9 @@ from .blocks import draw_footer, kpi_card, draw_fake_map
 
 def draw_summary_page(c, data):
     page_w = c._pagesize[0]
-
+    c.setFont("Helvetica-Bold", 40)
+    c.setFillColor("#FF0000")
+    c.drawString(100, 700, "V4 SUMMARY TEST")
     # Top rule
     c.setStrokeColor(LINE)
     c.setLineWidth(1)

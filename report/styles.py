@@ -85,12 +85,12 @@ BIG = ParagraphStyle(
 )
 
 BIG_BLUE = ParagraphStyle(
-    "BIG_BLUE",
+    "BIG",
     parent=styles["BodyText"],
     fontName="Helvetica-Bold",
-    fontSize=18,
-    leading=20,
-    textColor=BLUE,
+    fontSize=14,
+    leading=16,
+    textColor=NAVY,
     spaceAfter=0,
 )
 

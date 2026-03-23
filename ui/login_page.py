@@ -15,15 +15,30 @@ def render_login_page():
         """
         <style>
         .block-container {
-            max-width: 960px;
+            max-width: 760px;
             padding-top: 2.2rem;
             padding-bottom: 2.5rem;
         }
 
-        .sala-login-logo-wrap {
+        .sala-login-header {
             display: flex;
+            align-items: center;
             justify-content: center;
-            margin-bottom: 14px;
+            gap: 18px;
+            margin-bottom: 12px;
+        }
+
+        .sala-login-title {
+            font-size: 2rem;
+            line-height: 1.08;
+            font-weight: 800;
+            color: #0f172a;
+            margin: 0;
+        }
+
+        .sala-login-lock {
+            text-align: center;
+            margin-bottom: 22px;
         }
 
         .sala-login-badge {
@@ -32,64 +47,39 @@ def render_login_page():
             border-radius: 999px;
             background: #eef4ff;
             color: #1f4fbf;
-            font-size: 0.84rem;
+            font-size: 0.83rem;
             font-weight: 700;
-        }
-
-        .sala-login-title {
-            font-size: 2.15rem;
-            line-height: 1.08;
-            font-weight: 800;
-            color: #0f172a;
-            text-align: center;
-            margin-bottom: 10px;
-        }
-
-        .sala-login-subtitle {
-            color: #475467;
-            font-size: 1rem;
-            line-height: 1.55;
-            text-align: center;
-            max-width: 720px;
-            margin: 0 auto 28px auto;
         }
 
         .sala-login-card {
             background: #ffffff;
             border: 1px solid #e6eaf0;
             border-radius: 20px;
-            padding: 24px 24px 20px 24px;
-            box-shadow: 0 10px 30px rgba(16,24,40,0.06);
-            height: 100%;
+            padding: 28px 28px 22px 28px;
+            box-shadow: 0 12px 34px rgba(16,24,40,0.07);
+            margin-bottom: 18px;
         }
 
         .sala-section-title {
-            font-size: 1.05rem;
+            font-size: 1.08rem;
             font-weight: 800;
             color: #1f2937;
-            margin-bottom: 6px;
-        }
-
-        .sala-section-subtitle {
-            color: #667085;
-            font-size: 0.92rem;
-            line-height: 1.5;
-            margin-bottom: 16px;
+            margin-bottom: 14px;
         }
 
         .sala-note {
             color: #667085;
             font-size: 0.92rem;
-            line-height: 1.55;
-            text-align: center;
-            margin-top: 18px;
+            line-height: 1.5;
+            margin-top: 14px;
         }
 
-        .sala-mini-note {
+        .sala-footer-note {
             color: #667085;
-            font-size: 0.86rem;
-            line-height: 1.45;
-            margin-top: 10px;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            text-align: center;
+            margin-top: 18px;
         }
 
         div[data-testid="stTextInput"] input,
@@ -102,77 +92,76 @@ def render_login_page():
             border-radius: 12px !important;
             font-weight: 700 !important;
         }
+
+        div[data-testid="stExpander"] details {
+            border: 1px solid #e6eaf0 !important;
+            border-radius: 16px !important;
+            background: #ffffff !important;
+            overflow: hidden;
+        }
+
+        div[data-testid="stExpander"] summary {
+            font-weight: 700 !important;
+            color: #1f2937 !important;
+        }
         </style>
         """,
         unsafe_allow_html=True,
     )
 
-    # Header
+    # Header: logo left, title right
     if Path(LOGO_PATH).exists():
-        c1, c2, c3 = st.columns([1.4, 1, 1.4])
+        st.markdown('<div class="sala-login-header">', unsafe_allow_html=True)
+        c1, c2, c3 = st.columns([1.2, 0.34, 4.0])
         with c2:
-            st.image(LOGO_PATH, width=120)
-
-    b1, b2, b3 = st.columns([1.2, 1, 1.2])
-    with b2:
-        st.markdown(
-            '<div style="text-align:center;"><span class="sala-login-badge">Member access required</span></div>',
-            unsafe_allow_html=True,
-        )
-
-    st.markdown(
-        '<div class="sala-login-title">SALA Standardized Feasibility Study for Solar AGL</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        '<div class="sala-login-subtitle">Approved SALA members and registered external users can access the feasibility calculator after login. New users may request access below.</div>',
-        unsafe_allow_html=True,
-    )
-
-    left, right = st.columns(2, gap="large")
-
-    # LOGIN CARD
-    with left:
-        st.markdown('<div class="sala-login-card">', unsafe_allow_html=True)
-        st.markdown('<div class="sala-section-title">Log in</div>', unsafe_allow_html=True)
-        st.markdown(
-            '<div class="sala-section-subtitle">Use your approved credentials to enter the tool.</div>',
-            unsafe_allow_html=True,
-        )
-
-        email = st.text_input("Email", key="login_email")
-        password = st.text_input("Password", type="password", key="login_password")
-
-        if st.button("Log in", type="primary", use_container_width=True, key="login_submit"):
-            ok = login_user(email.strip(), password)
-            if ok:
-                st.success("Logged in.")
-                st.rerun()
-            else:
-                st.error("Invalid credentials or inactive account.")
-
-        st.markdown(
-            '<div class="sala-mini-note">Access is restricted to approved SALA members and registered external users.</div>',
-            unsafe_allow_html=True,
-        )
+            st.image(LOGO_PATH, width=82)
+        with c3:
+            st.markdown(
+                '<div class="sala-login-title">SALA Standardized Feasibility Study for Solar AGL</div>',
+                unsafe_allow_html=True,
+            )
         st.markdown("</div>", unsafe_allow_html=True)
-
-    # REQUEST ACCESS CARD
-    with right:
-        st.markdown('<div class="sala-login-card">', unsafe_allow_html=True)
-        st.markdown('<div class="sala-section-title">Request access</div>', unsafe_allow_html=True)
+    else:
         st.markdown(
-            '<div class="sala-section-subtitle">If you do not have an account yet, send a request to SALA for review.</div>',
+            '<div class="sala-login-title" style="text-align:center;">SALA Standardized Feasibility Study for Solar AGL</div>',
             unsafe_allow_html=True,
         )
 
-        req_name = st.text_input("Full name", key="req_full_name")
-        req_email = st.text_input("Work email", key="req_email")
-        req_org = st.text_input("Organization", key="req_organization")
+    st.markdown(
+        '<div class="sala-login-lock"><span class="sala-login-badge">Member access required</span></div>',
+        unsafe_allow_html=True,
+    )
+
+    # Login card
+    st.markdown('<div class="sala-login-card">', unsafe_allow_html=True)
+    st.markdown('<div class="sala-section-title">Log in</div>', unsafe_allow_html=True)
+
+    email = st.text_input("Email", key="login_email_input")
+    password = st.text_input("Password", type="password", key="login_password_input")
+
+    if st.button("Log in", type="primary", use_container_width=True, key="login_submit"):
+        ok = login_user(email.strip(), password)
+        if ok:
+            st.success("Logged in.")
+            st.rerun()
+        else:
+            st.error("Invalid credentials or inactive account.")
+
+    st.markdown(
+        '<div class="sala-note">Access is granted by SALA.</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # Request access collapsed underneath
+    with st.expander("Request access", expanded=False):
+        req_name = st.text_input("Full name", key="req_full_name_input")
+        req_email = st.text_input("Work email", key="req_email_input")
+        req_org = st.text_input("Organization", key="req_organization_input")
         req_message = st.text_area(
             "Short message",
-            key="req_message",
-            height=128,
+            key="req_message_input",
+            height=120,
             placeholder="Who are you and why do you need access?",
         )
 
@@ -190,13 +179,7 @@ def render_login_page():
                 )
                 st.success("Your request has been sent to SALA for review.")
 
-        st.markdown(
-            '<div class="sala-mini-note">Your request is recorded in the SALA system and can be reviewed by an administrator.</div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown("</div>", unsafe_allow_html=True)
-
     st.markdown(
-        '<div class="sala-note">SALA controls access to this tool. Credentials are issued only after approval.</div>',
+        '<div class="sala-footer-note">External users can request access below.</div>',
         unsafe_allow_html=True,
     )

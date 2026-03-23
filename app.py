@@ -208,6 +208,20 @@ def apply_global_styles():
         </style>
         """,
         unsafe_allow_html=True,
+
+        div[data-testid="stPopover"] button {
+    border-radius: 999px !important;
+    min-height: 44px !important;
+    font-weight: 700 !important;
+    border: 1px solid #e6eaf0 !important;
+    background: #f9fafb !important;
+    color: #344054 !important;
+}
+
+div[data-testid="stPopover"] button:hover {
+    background: #f5f7fa !important;
+    border-color: #d0d5dd !important;
+}
     )
 def render_header():
     c1, c2, c3 = st.columns([1, 6, 2])

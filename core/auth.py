@@ -9,10 +9,6 @@ import streamlit as st
 from core.db import get_user_by_email, update_last_login
 
 
-# =========================
-# PASSWORD HASHING
-# =========================
-
 _ITERATIONS = 200_000
 _SALT_BYTES = 16
 
@@ -52,10 +48,6 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
-# =========================
-# SESSION
-# =========================
-
 def init_auth_state():
     if "auth_ok" not in st.session_state:
         st.session_state.auth_ok = False
@@ -79,10 +71,6 @@ def logout():
     st.session_state.auth_role = None
     st.rerun()
 
-
-# =========================
-# LOGIN
-# =========================
 
 def login_user(email: str, password: str) -> bool:
     user = get_user_by_email(email)

@@ -1,5 +1,3 @@
-# app.py
-
 import os
 import streamlit as st
 
@@ -96,14 +94,11 @@ def refresh_study_ready_from_state():
         len(selected_ids) > 0 and study_point_confirmed and mode_ready
     )
 
+
 def apply_global_styles():
     st.markdown(
         """
         <style>
-
-        /* =========================
-           GLOBAL LAYOUT
-        ========================= */
 
         .block-container {
             padding-top: 1.2rem;
@@ -115,10 +110,6 @@ def apply_global_styles():
             background: rgba(255,255,255,0);
         }
 
-        /* =========================
-           TITLE
-        ========================= */
-
         .main-title {
             font-size: 2.2rem;
             font-weight: 800;
@@ -126,10 +117,6 @@ def apply_global_styles():
             margin-bottom: 0.2rem;
             color: #1f2937;
         }
-
-        /* =========================
-           ACTION BOX
-        ========================= */
 
         .top-action-wrap {
             border: 1px solid #e8edf4;
@@ -155,10 +142,6 @@ def apply_global_styles():
             margin-top: 8px;
         }
 
-        /* =========================
-           BUTTONS (GLOBAL)
-        ========================= */
-
         div[data-testid="stButton"] > button,
         div[data-testid="stDownloadButton"] > button {
             border-radius: 12px !important;
@@ -172,7 +155,6 @@ def apply_global_styles():
             margin: 0 !important;
         }
 
-        /* PRIMARY (blue download) */
         div[data-testid="stDownloadButton"] > button {
             background: #1f4fbf !important;
             color: white !important;
@@ -185,16 +167,11 @@ def apply_global_styles():
             color: white !important;
         }
 
-        /* SECONDARY (yellow buttons) */
         div[data-testid="stButton"] button[kind="secondary"] {
             background: #fff7db !important;
             border: 1px solid #f5c451 !important;
             color: #7a5a00 !important;
         }
-
-        /* =========================
-           FIX BUTTON ALIGNMENT
-        ========================= */
 
         div[data-testid="stHorizontalBlock"] > div {
             display: flex !important;
@@ -218,67 +195,41 @@ def apply_global_styles():
             padding-top: 0 !important;
         }
 
-        /* =========================
-           POPOVER (USER MENU)
-        ========================= */
-
         div[data-testid="stPopover"] button {
             border-radius: 999px !important;
             min-height: 44px !important;
             padding: 8px 16px !important;
             font-weight: 700 !important;
-        
+
             background: #eef4ff !important;
             border: 1px solid #d6e4ff !important;
             color: #1f3a8a !important;
-        
+
             transition: all 0.2s ease;
         }
 
-div[data-testid="stPopover"] button:hover {
-    background: #e0edff !important;
-    border-color: #bcd3ff !important;
-}
-
         div[data-testid="stPopover"] button:hover {
-            background: #f5f7fa !important;
-            border-color: #d0d5dd !important;
+            background: #e0edff !important;
+            border-color: #bcd3ff !important;
         }
 
-        /* Dropdown content spacing */
         div[data-testid="stPopover"] {
             border-radius: 14px !important;
         }
-
-        /* =========================
-           TABLE LOOK
-        ========================= */
 
         .stDataFrame {
             border-radius: 12px !important;
             overflow: hidden !important;
         }
 
-        /* =========================
-           EXPANDER CLEANUP
-        ========================= */
-
         div[data-testid="stExpander"] {
             border-radius: 12px !important;
             border: 1px solid #e6eaf0 !important;
         }
 
-        /* =========================
-           INPUTS
-        ========================= */
-
         input, textarea {
             border-radius: 10px !important;
         }
-
-        /* =========================
-           SMALL DETAILS
-        ========================= */
 
         hr {
             border: none;
@@ -289,6 +240,7 @@ div[data-testid="stPopover"] button:hover {
         """,
         unsafe_allow_html=True,
     )
+
 
 def _display_name_from_email(email: str) -> str:
     if not email:
@@ -307,6 +259,7 @@ def _display_name_from_email(email: str) -> str:
     last = parts[-1].capitalize()
 
     return f"{first}. {last}"
+
 
 def render_header():
     c1, c2, c3 = st.columns([1, 6, 2])
@@ -334,6 +287,7 @@ def render_header():
 
             if st.button("Log out", key="logout_from_popover", use_container_width=True):
                 logout()
+
 
 def _trigger_simulation():
     st.session_state.running = True
@@ -491,6 +445,8 @@ def maybe_save_current_study():
     )
 
     st.session_state.study_saved_for_current_result = True
+
+
 def _extract_energy_flow_payload(results, required_hours, overall, selected_ids):
     months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -499,7 +455,6 @@ def _extract_energy_flow_payload(results, required_hours, overall, selected_ids)
     if selected_ids:
         selected_device_name = ", ".join(str(x) for x in selected_ids)
 
-    # defaults / fallback
     worst_blackout_risk = "N/A"
     lowest_reserve_pct = 0
     worst_month = "N/A"
@@ -522,11 +477,9 @@ def _extract_energy_flow_payload(results, required_hours, overall, selected_ids)
             "worst_month": worst_month,
         }
 
-    # pick first device result as primary source if real monthly data exists there
     first_key = next(iter(results.keys()))
     first_result = results[first_key] or {}
 
-    # worst blackout risk from overall_empty_battery_pct across selected devices
     worst_pct = None
     for _, r in results.items():
         pct = r.get("overall_empty_battery_pct")
@@ -542,7 +495,6 @@ def _extract_energy_flow_payload(results, required_hours, overall, selected_ids)
         worst_days = round(365 * worst_pct / 100.0)
         worst_blackout_risk = f"{worst_days} days/year"
 
-    # try to extract monthly reserve from common field names
     monthly_reserve_candidates = [
         first_result.get("monthly_reserve_pct"),
         first_result.get("reserve_pct_by_month"),
@@ -558,7 +510,6 @@ def _extract_energy_flow_payload(results, required_hours, overall, selected_ids)
             except Exception:
                 pass
 
-    # try to extract monthly generation
     monthly_generation_candidates = [
         first_result.get("monthly_generated_wh"),
         first_result.get("generated_wh_by_month"),
@@ -574,7 +525,6 @@ def _extract_energy_flow_payload(results, required_hours, overall, selected_ids)
             except Exception:
                 pass
 
-    # demand derived from required hours if not present
     monthly_demand_candidates = [
         first_result.get("monthly_required_wh"),
         first_result.get("required_wh_by_month"),
@@ -593,7 +543,6 @@ def _extract_energy_flow_payload(results, required_hours, overall, selected_ids)
                 pass
 
     if not demand_found:
-        # derive a flat annual profile only as fallback
         daily_wh = first_result.get("daily_consumption_wh")
         if daily_wh is None:
             hourly_wh = first_result.get("hourly_consumption_wh")
@@ -615,7 +564,6 @@ def _extract_energy_flow_payload(results, required_hours, overall, selected_ids)
         worst_idx = reserve_pct.index(lowest_reserve_pct)
         worst_month = months[worst_idx]
 
-    # selected device label
     device_name_candidates = [
         first_result.get("device_name"),
         first_result.get("label"),
@@ -638,6 +586,7 @@ def _extract_energy_flow_payload(results, required_hours, overall, selected_ids)
         "demand_monthly_wh": demand_monthly_wh,
         "worst_month": worst_month,
     }
+
 
 def render_calculator_app():
     if st.session_state.get("running", False):
@@ -680,11 +629,36 @@ def render_calculator_app():
 
     if st.session_state.get("results") is not None:
         maybe_save_current_study()
+
         results = st.session_state.get("results")
-        render_result()
-        render_graph()
-        render_device_capability_cards(results)
-        render_weather_basis()
+        tab_results, tab_energy = st.tabs(["Study Results", "Energy Flow"])
+
+        with tab_results:
+            render_result()
+            render_graph()
+            render_device_capability_cards(results)
+            render_weather_basis()
+
+        with tab_energy:
+            payload = _extract_energy_flow_payload(
+                results=st.session_state.get("results"),
+                required_hours=st.session_state.get("required_hours", 12),
+                overall=st.session_state.get("overall", "N/A"),
+                selected_ids=st.session_state.get("selected_ids", []),
+            )
+
+            render_energy_flow(
+                selected_device_name=payload["selected_device_name"],
+                required_hours=payload["required_hours"],
+                overall_result=payload["overall_result"],
+                worst_blackout_risk=payload["worst_blackout_risk"],
+                lowest_reserve_pct=payload["lowest_reserve_pct"],
+                months=payload["months"],
+                reserve_pct=payload["reserve_pct"],
+                generated_monthly_wh=payload["generated_monthly_wh"],
+                demand_monthly_wh=payload["demand_monthly_wh"],
+                worst_month=payload["worst_month"],
+            )
 
 
 # ---------------- APP FLOW ----------------
@@ -715,7 +689,7 @@ if is_admin():
     with tab_admin:
         render_admin_panel()
 else:
-    tab_calc, tab_my = st.tabs(["Calculator", "My studies"])
+    tab_calc, tab_my = st.tabs(["Feasibility Study", "My studies"])
 
     with tab_calc:
         render_calculator_app()

@@ -74,7 +74,13 @@ def bootstrap_admin_user():
             full_name=admin_full_name,
             organization=admin_organization,
         )
-
+def render_main_app():
+    if st.session_state.get("results") is not None:
+        results = st.session_state.get("results")
+        render_result()
+        render_graph()
+        render_device_capability_cards(results)
+        render_weather_basis()
 
 def refresh_study_ready_from_state():
     selected_ids = st.session_state.get("selected_ids", [])
@@ -385,8 +391,17 @@ if st.session_state.get("results") is not None:
     render_weather_basis()
 
 # 👇 ОЦЕ СЮДИ
-from core.auth import is_admin
-from ui.admin import render_admin_panel
+if is_admin():
+    tab_calc, tab_admin = st.tabs(["Calculator", "Admin"])
+
+    with tab_calc:
+        render_main_app()
+
+    with tab_admin:
+        render_admin_panel()
+
+else:
+    render_main_app()
 
 if is_admin():
     render_admin_panel()

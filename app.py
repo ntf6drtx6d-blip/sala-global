@@ -4,13 +4,14 @@ import os
 import streamlit as st
 
 from core.db import init_db, create_user, user_exists
-from core.auth import hash_password
+from core.auth import hash_password, init_auth_state, is_logged_in
 
 from ui.setup import render_setup
 from ui.cockpit import _run_simulation, reset_study
 from ui.result import render_result, render_device_capability_cards
 from ui.graph import render_graph
 from ui.weather_basis import render_weather_basis
+from ui.login_page import render_login_page
 
 
 st.set_page_config(
@@ -326,8 +327,14 @@ def render_top_action_bar():
 # ---------------- APP FLOW ----------------
 
 init_state()
+init_auth_state()
 bootstrap_admin_user()
 apply_global_styles()
+
+if not is_logged_in():
+    render_login_page()
+    st.stop()
+
 render_header()
 
 if st.session_state.get("running", False):
@@ -341,7 +348,6 @@ else:
         render_setup(disabled=False)
 
 refresh_study_ready_from_state()
-
 action_state = render_top_action_bar()
 
 if st.session_state.get("trigger_run"):

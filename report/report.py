@@ -6,6 +6,14 @@ from .pages.cover import build_cover
 from .pages.summary import build_summary
 
 
+def _extract_selected_devices(results):
+    devices = []
+    for device_id, result in results.items():
+        label = result.get("device_name") or result.get("label") or str(device_id)
+        devices.append(label)
+    return devices
+
+
 def make_pdf(
     out_path,
     loc,
@@ -30,7 +38,16 @@ def make_pdf(
         report_date=report_date,
     )
 
-    doc = SimpleDocTemplate(out_path, pagesize=A4)
+    data["selected_devices"] = _extract_selected_devices(results)
+
+    doc = SimpleDocTemplate(
+        out_path,
+        pagesize=A4,
+        leftMargin=42,
+        rightMargin=42,
+        topMargin=36,
+        bottomMargin=30,
+    )
 
     story = []
     story += build_cover(data)

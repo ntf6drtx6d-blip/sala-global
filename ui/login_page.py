@@ -11,7 +11,7 @@ LOGIN_BG_PATH = "assets/login_bg.jpg"
 LOGO_PATH = "sala_logo.png"
 
 
-def _img_to_base64(path: str) -> str | None:
+def _img_to_base64(path: str):
     p = Path(path)
     if not p.exists():
         return None
@@ -24,102 +24,68 @@ def render_login_page():
     if bg_b64:
         bg_css = f"""
         background-image:
-            linear-gradient(rgba(12,18,28,0.42), rgba(12,18,28,0.42)),
+            linear-gradient(rgba(15, 23, 42, 0.40), rgba(15, 23, 42, 0.40)),
             url("data:image/jpeg;base64,{bg_b64}");
         background-size: cover;
         background-position: center;
         """
     else:
         bg_css = """
-        background:
-            linear-gradient(135deg, #0f172a 0%, #1e3a8a 45%, #334155 100%);
+        background: linear-gradient(135deg, #1e3a8a 0%, #334155 100%);
         """
 
     st.markdown(
         f"""
         <style>
         .block-container {{
-            max-width: 1000px;
-            padding-top: 2rem;
+            max-width: 1200px;
+            padding-top: 1.5rem;
             padding-bottom: 2rem;
         }}
 
-        .sala-login-shell {{
-            min-height: 78vh;
-            border-radius: 24px;
-            overflow: hidden;
-            position: relative;
+        .sala-login-hero {{
             {bg_css}
-            box-shadow: 0 18px 50px rgba(15, 23, 42, 0.20);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border: 1px solid rgba(255,255,255,0.10);
+            min-height: 320px;
+            border-radius: 26px;
+            border: 1px solid rgba(255,255,255,0.14);
+            box-shadow: 0 18px 60px rgba(15, 23, 42, 0.18);
+            margin-bottom: 28px;
         }}
 
-        .sala-login-blur {{
-            position: absolute;
-            inset: 0;
-            backdrop-filter: blur(6px);
-            -webkit-backdrop-filter: blur(6px);
-        }}
-
-        .sala-login-card {{
-            position: relative;
-            z-index: 2;
-            width: 100%;
-            max-width: 430px;
-            background: rgba(255,255,255,0.90);
-            border: 1px solid rgba(255,255,255,0.65);
-            border-radius: 22px;
-            padding: 28px 28px 22px 28px;
-            box-shadow: 0 20px 60px rgba(15,23,42,0.22);
-        }}
-
-        .sala-login-logo-wrap {{
-            display: flex;
-            justify-content: center;
-            margin-bottom: 10px;
-        }}
-
-        .sala-login-title {{
-            text-align: center;
-            font-size: 1.5rem;
-            font-weight: 800;
-            color: #0f172a;
-            line-height: 1.15;
-            margin-bottom: 8px;
-        }}
-
-        .sala-login-subtitle {{
-            text-align: center;
-            color: #475467;
-            font-size: 0.96rem;
-            line-height: 1.45;
-            margin-bottom: 20px;
-        }}
-
-        .sala-login-note {{
-            text-align: center;
-            color: #667085;
-            font-size: 0.88rem;
-            line-height: 1.45;
-            margin-top: 14px;
-        }}
-
-        .sala-locked-badge {{
+        .sala-login-badge {{
             display: inline-block;
-            margin: 0 auto 14px auto;
-            padding: 6px 12px;
+            padding: 7px 14px;
             border-radius: 999px;
             background: #eef4ff;
             color: #1f4fbf;
-            font-size: 0.82rem;
+            font-size: 0.84rem;
             font-weight: 700;
+            margin-bottom: 14px;
         }}
 
-        div[data-testid="stTextInput"] > div {{
-            background: transparent !important;
+        .sala-login-title {{
+            font-size: 2rem;
+            line-height: 1.1;
+            font-weight: 800;
+            color: #0f172a;
+            text-align: center;
+            margin-bottom: 10px;
+        }}
+
+        .sala-login-subtitle {{
+            color: #475467;
+            font-size: 1rem;
+            line-height: 1.5;
+            text-align: center;
+            margin-bottom: 24px;
+        }}
+
+        .sala-login-note {{
+            color: #667085;
+            font-size: 0.92rem;
+            line-height: 1.45;
+            text-align: center;
+            margin-top: 18px;
         }}
 
         div[data-testid="stTextInput"] input {{
@@ -127,7 +93,7 @@ def render_login_page():
         }}
 
         div[data-testid="stButton"] > button {{
-            min-height: 46px !important;
+            min-height: 48px !important;
             border-radius: 12px !important;
             font-weight: 700 !important;
         }}
@@ -136,38 +102,44 @@ def render_login_page():
         unsafe_allow_html=True,
     )
 
-    st.markdown('<div class="sala-login-shell"><div class="sala-login-blur"></div>', unsafe_allow_html=True)
-    st.markdown('<div class="sala-login-card">', unsafe_allow_html=True)
+    st.markdown('<div class="sala-login-hero"></div>', unsafe_allow_html=True)
 
-    if Path(LOGO_PATH).exists():
-        c1, c2, c3 = st.columns([1, 2, 1])
-        with c2:
-            st.image(LOGO_PATH, width=120)
+    outer_left, center, outer_right = st.columns([1.2, 2.4, 1.2])
 
-    st.markdown('<div class="sala-locked-badge">Member access required</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="sala-login-title">SALA Standardized Feasibility Study for Solar AGL</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        '<div class="sala-login-subtitle">Please log in to access the SALA feasibility calculator and member tools.</div>',
-        unsafe_allow_html=True,
-    )
+    with center:
+        if Path(LOGO_PATH).exists():
+            logo_left, logo_mid, logo_right = st.columns([1.3, 1, 1.3])
+            with logo_mid:
+                st.image(LOGO_PATH, width=120)
 
-    email = st.text_input("Email", key="login_email")
-    password = st.text_input("Password", type="password", key="login_password")
+        badge_left, badge_mid, badge_right = st.columns([1, 1.6, 1])
+        with badge_mid:
+            st.markdown(
+                '<div style="text-align:center;"><span class="sala-login-badge">Member access required</span></div>',
+                unsafe_allow_html=True,
+            )
 
-    if st.button("Log in", type="primary", use_container_width=True, key="login_submit"):
-        ok = login_user(email.strip(), password)
-        if ok:
-            st.success("Logged in.")
-            st.rerun()
-        else:
-            st.error("Invalid credentials or inactive account.")
+        st.markdown(
+            '<div class="sala-login-title">SALA Standardized Feasibility Study for Solar AGL</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            '<div class="sala-login-subtitle">Please log in to access the SALA feasibility calculator and member tools.</div>',
+            unsafe_allow_html=True,
+        )
 
-    st.markdown(
-        '<div class="sala-login-note">Access is restricted to approved SALA members and registered external users.</div>',
-        unsafe_allow_html=True,
-    )
+        email = st.text_input("Email", key="login_email")
+        password = st.text_input("Password", type="password", key="login_password")
 
-    st.markdown("</div></div>", unsafe_allow_html=True)
+        if st.button("Log in", type="primary", use_container_width=True, key="login_submit"):
+            ok = login_user(email.strip(), password)
+            if ok:
+                st.success("Logged in.")
+                st.rerun()
+            else:
+                st.error("Invalid credentials or inactive account.")
+
+        st.markdown(
+            '<div class="sala-login-note">Access is restricted to approved SALA members and registered external users.</div>',
+            unsafe_allow_html=True,
+        )

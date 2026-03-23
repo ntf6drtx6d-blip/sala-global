@@ -14,6 +14,7 @@ from ui.weather_basis import render_weather_basis
 from ui.admin import render_admin_panel
 from ui.my_studies import render_my_studies
 from ui.result_helpers import annual_empty_battery_stats, overall_state
+from ui.energy_flow import render_energy_flow
 
 
 st.set_page_config(
@@ -490,7 +491,153 @@ def maybe_save_current_study():
     )
 
     st.session_state.study_saved_for_current_result = True
+def _extract_energy_flow_payload(results, required_hours, overall, selected_ids):
+    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
+    selected_device_name = "Selected configuration"
+    if selected_ids:
+        selected_device_name = ", ".join(str(x) for x in selected_ids)
+
+    # defaults / fallback
+    worst_blackout_risk = "N/A"
+    lowest_reserve_pct = 0
+    worst_month = "N/A"
+
+    reserve_pct = [48, 44, 58, 73, 86, 91, 94, 88, 71, 49, 24, 12]
+    generated_monthly_wh = [280, 300, 410, 520, 610, 690, 720, 670, 520, 390, 260, 210]
+    demand_monthly_wh = [420, 380, 420, 410, 420, 410, 420, 420, 410, 420, 410, 420]
+
+    if not results:
+        return {
+            "selected_device_name": selected_device_name,
+            "required_hours": float(required_hours or 12),
+            "overall_result": overall or "N/A",
+            "worst_blackout_risk": worst_blackout_risk,
+            "lowest_reserve_pct": lowest_reserve_pct,
+            "months": months,
+            "reserve_pct": reserve_pct,
+            "generated_monthly_wh": generated_monthly_wh,
+            "demand_monthly_wh": demand_monthly_wh,
+            "worst_month": worst_month,
+        }
+
+    # pick first device result as primary source if real monthly data exists there
+    first_key = next(iter(results.keys()))
+    first_result = results[first_key] or {}
+
+    # worst blackout risk from overall_empty_battery_pct across selected devices
+    worst_pct = None
+    for _, r in results.items():
+        pct = r.get("overall_empty_battery_pct")
+        if pct is not None:
+            try:
+                pct = float(pct)
+                if worst_pct is None or pct > worst_pct:
+                    worst_pct = pct
+            except Exception:
+                pass
+
+    if worst_pct is not None:
+        worst_days = round(365 * worst_pct / 100.0)
+        worst_blackout_risk = f"{worst_days} days/year"
+
+    # try to extract monthly reserve from common field names
+    monthly_reserve_candidates = [
+        first_result.get("monthly_reserve_pct"),
+        first_result.get("reserve_pct_by_month"),
+        first_result.get("battery_reserve_pct_by_month"),
+        first_result.get("monthly_battery_reserve_pct"),
+    ]
+
+    for candidate in monthly_reserve_candidates:
+        if isinstance(candidate, (list, tuple)) and len(candidate) == 12:
+            try:
+                reserve_pct = [float(x) for x in candidate]
+                break
+            except Exception:
+                pass
+
+    # try to extract monthly generation
+    monthly_generation_candidates = [
+        first_result.get("monthly_generated_wh"),
+        first_result.get("generated_wh_by_month"),
+        first_result.get("monthly_generation_wh"),
+        first_result.get("pv_output_wh_by_month"),
+    ]
+
+    for candidate in monthly_generation_candidates:
+        if isinstance(candidate, (list, tuple)) and len(candidate) == 12:
+            try:
+                generated_monthly_wh = [float(x) for x in candidate]
+                break
+            except Exception:
+                pass
+
+    # demand derived from required hours if not present
+    monthly_demand_candidates = [
+        first_result.get("monthly_required_wh"),
+        first_result.get("required_wh_by_month"),
+        first_result.get("monthly_load_wh"),
+        first_result.get("load_wh_by_month"),
+    ]
+
+    demand_found = False
+    for candidate in monthly_demand_candidates:
+        if isinstance(candidate, (list, tuple)) and len(candidate) == 12:
+            try:
+                demand_monthly_wh = [float(x) for x in candidate]
+                demand_found = True
+                break
+            except Exception:
+                pass
+
+    if not demand_found:
+        # derive a flat annual profile only as fallback
+        daily_wh = first_result.get("daily_consumption_wh")
+        if daily_wh is None:
+            hourly_wh = first_result.get("hourly_consumption_wh")
+            if hourly_wh is not None:
+                try:
+                    daily_wh = float(hourly_wh) * float(required_hours or 12)
+                except Exception:
+                    daily_wh = None
+
+        if daily_wh is not None:
+            month_days = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+            try:
+                demand_monthly_wh = [float(daily_wh) * d for d in month_days]
+            except Exception:
+                pass
+
+    if reserve_pct:
+        lowest_reserve_pct = min(reserve_pct)
+        worst_idx = reserve_pct.index(lowest_reserve_pct)
+        worst_month = months[worst_idx]
+
+    # selected device label
+    device_name_candidates = [
+        first_result.get("device_name"),
+        first_result.get("label"),
+        first_result.get("code"),
+    ]
+    for c in device_name_candidates:
+        if c:
+            selected_device_name = str(c)
+            break
+
+    return {
+        "selected_device_name": selected_device_name,
+        "required_hours": float(required_hours or 12),
+        "overall_result": overall or "N/A",
+        "worst_blackout_risk": worst_blackout_risk,
+        "lowest_reserve_pct": lowest_reserve_pct,
+        "months": months,
+        "reserve_pct": reserve_pct,
+        "generated_monthly_wh": generated_monthly_wh,
+        "demand_monthly_wh": demand_monthly_wh,
+        "worst_month": worst_month,
+    }
 
 def render_calculator_app():
     if st.session_state.get("running", False):

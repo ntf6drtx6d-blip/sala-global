@@ -10,8 +10,7 @@ import streamlit as st
 
 from core.simulate import simulate_for_devices
 from core.devices import DEVICES
-from report.report import make_pdf
-
+from report_html.render import make_pdf
 EU_LOGO_PATH = "logo_en.gif"
 
 

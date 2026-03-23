@@ -680,45 +680,34 @@ def render_calculator_app():
 
     if st.session_state.get("results") is not None:
         maybe_save_current_study()
+
         results = st.session_state.get("results")
-        render_result()
-        render_graph()
-        render_device_capability_cards(results)
-        render_weather_basis()
 
+        tab_results, tab_energy = st.tabs(["Study Results", "Energy Flow"])
 
-# ---------------- APP FLOW ----------------
+        with tab_results:
+            render_result()
+            render_graph()
+            render_device_capability_cards(results)
+            render_weather_basis()
 
-init_state()
-init_auth_state()
-bootstrap_admin_user()
-apply_global_styles()
+        with tab_energy:
+            payload = _extract_energy_flow_payload(
+                results=st.session_state.get("results"),
+                required_hours=st.session_state.get("required_hours", 12),
+                overall=st.session_state.get("overall", "N/A"),
+                selected_ids=st.session_state.get("selected_ids", []),
+            )
 
-if not is_logged_in():
-    from ui.login_page import render_login_page
-    render_login_page()
-    st.stop()
-
-render_header()
-
-user_id = st.session_state.get("auth_user_id")
-
-if is_admin():
-    tab_calc, tab_my, tab_admin = st.tabs(["Feasibility Study", "My studies", "Admin"])
-
-    with tab_calc:
-        render_calculator_app()
-
-    with tab_my:
-        render_my_studies(user_id)
-
-    with tab_admin:
-        render_admin_panel()
-else:
-    tab_calc, tab_my = st.tabs(["Calculator", "My studies"])
-
-    with tab_calc:
-        render_calculator_app()
-
-    with tab_my:
-        render_my_studies(user_id)
+            render_energy_flow(
+                selected_device_name=payload["selected_device_name"],
+                required_hours=payload["required_hours"],
+                overall_result=payload["overall_result"],
+                worst_blackout_risk=payload["worst_blackout_risk"],
+                lowest_reserve_pct=payload["lowest_reserve_pct"],
+                months=payload["months"],
+                reserve_pct=payload["reserve_pct"],
+                generated_monthly_wh=payload["generated_monthly_wh"],
+                demand_monthly_wh=payload["demand_monthly_wh"],
+                worst_month=payload["worst_month"],
+            )

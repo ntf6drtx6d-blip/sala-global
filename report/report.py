@@ -435,17 +435,16 @@ def draw_summary_page(c):
 # -----------------------------
 # BUILD PDF
 # -----------------------------
-
-def build_pdf(out_path):
-    c = canvas.Canvas(out_path, pagesize=A4)
-    draw_cover_page(c)
-    c.showPage()
-    draw_summary_page(c)
-    c.showPage()
-    c.save()
-
-
-if __name__ == "__main__":
-    out = "/mnt/data/sala_first_two_pages_demo.pdf"
-    build_pdf(out)
-    print(out)
+def make_pdf(
+    out_path,
+    loc,
+    required_hours,
+    results,
+    overall,
+    project_name="",
+    revision_no=0,
+    document_no="",
+    airport_label="",
+    report_date="",
+    reviewer=None,
+):

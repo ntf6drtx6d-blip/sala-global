@@ -3,7 +3,7 @@
 import os
 import streamlit as st
 
-from core.db import init_db, create_user, user_exists
+from core.db import init_db, create_user, user_exists, save_study
 from core.auth import hash_password, init_auth_state, is_logged_in, is_admin
 
 from ui.setup import render_setup
@@ -13,11 +13,12 @@ from ui.graph import render_graph
 from ui.weather_basis import render_weather_basis
 from ui.login_page import render_login_page
 from ui.admin import render_admin_panel
+from ui.result_helpers import annual_empty_battery_stats, overall_state
 
 
 st.set_page_config(
     page_title="SALA Standardized Feasibility Study for Solar AGL",
-    layout="wide"
+    layout="wide",
 )
 
 LOGO_PATH = "sala_logo.png"
@@ -47,6 +48,7 @@ def init_state():
         "trigger_run": False,
         "study_point_confirmed": False,
         "study_ready": False,
+        "study_saved_for_current_result": False,
     }
 
     for k, v in defaults.items():
@@ -218,6 +220,7 @@ def _trigger_simulation():
     st.session_state.run_stage = "Validating study inputs"
     st.session_state.run_progress = 0.0
     st.session_state.trigger_run = True
+    st.session_state.study_saved_for_current_result = False
     st.rerun()
 
 
@@ -292,7 +295,9 @@ def render_top_action_bar():
                 st.download_button(
                     "📄 Download PDF report",
                     data=st.session_state.get("pdf_bytes"),
-                    file_name=st.session_state.get("pdf_name", "sala_standardized_feasibility_study.pdf"),
+                    file_name=st.session_state.get(
+                        "pdf_name", "sala_standardized_feasibility_study.pdf"
+                    ),
                     mime="application/pdf",
                     use_container_width=True,
                     key="top_download_pdf_report",
@@ -323,6 +328,47 @@ def render_top_action_bar():
 
     st.markdown("</div>", unsafe_allow_html=True)
     return action_state
+
+
+def maybe_save_current_study():
+    results = st.session_state.get("results")
+    if not results:
+        return
+
+    if st.session_state.get("study_saved_for_current_result", False):
+        return
+
+    user_id = st.session_state.get("auth_user_id")
+    if not user_id:
+        return
+
+    days, pct = annual_empty_battery_stats(results)
+    state_value = overall_state(results)
+    overall_result = state_value.upper() if state_value else "UNKNOWN"
+
+    result_summary = {
+        "overall_state": state_value,
+        "worst_blackout_days": days,
+        "worst_blackout_pct": pct,
+        "results": results,
+    }
+
+    save_study(
+        user_id=user_id,
+        airport_label=st.session_state.get("airport_label", ""),
+        lat=float(st.session_state.get("lat", 0)),
+        lon=float(st.session_state.get("lon", 0)),
+        required_hours=float(st.session_state.get("required_hours", 0)),
+        operating_profile_mode=st.session_state.get("operating_profile_mode", ""),
+        selected_devices=st.session_state.get("selected_ids", []),
+        per_device_config=st.session_state.get("per_device_config", {}),
+        overall_result=overall_result,
+        worst_blackout_days=days,
+        worst_blackout_pct=pct,
+        result_summary=result_summary,
+    )
+
+    st.session_state.study_saved_for_current_result = True
 
 
 def render_calculator_app():
@@ -365,6 +411,7 @@ def render_calculator_app():
         _run_simulation(progress_callback=progress_callback)
 
     if st.session_state.get("results") is not None:
+        maybe_save_current_study()
         results = st.session_state.get("results")
         render_result()
         render_graph()

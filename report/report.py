@@ -1,9 +1,20 @@
-from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import BaseDocTemplate, Frame, PageTemplate
 
-from .theme import PAGE_W, PAGE_H
 from .data_builder import build_report_data
-from .page_cover import draw_cover_page
-from .page_summary import draw_summary_page
+from .pages.cover import build_cover
+from .pages.summary import build_summary
+
+
+def _add_footer(canvas, doc):
+    canvas.saveState()
+    canvas.setFont("Helvetica", 9)
+    canvas.setFillColorRGB(0.4, 0.45, 0.52)
+    report_id = getattr(doc, "report_id", "")
+    revision = getattr(doc, "revision", "")
+    canvas.drawString(doc.leftMargin, 20, f"{report_id} | {revision}")
+    canvas.drawRightString(A4[0] - doc.rightMargin, 20, f"Page {canvas.getPageNumber()}")
+    canvas.restoreState()
 
 
 def make_pdf(
@@ -30,9 +41,31 @@ def make_pdf(
         report_date=report_date,
     )
 
-    c = canvas.Canvas(out_path, pagesize=(PAGE_W, PAGE_H))
-    draw_cover_page(c, data)
-    c.showPage()
-    draw_summary_page(c, data)
-    c.showPage()
-    c.save()
+    doc = BaseDocTemplate(
+        out_path,
+        pagesize=A4,
+        leftMargin=50,
+        rightMargin=50,
+        topMargin=40,
+        bottomMargin=36,
+    )
+
+    frame = Frame(
+        doc.leftMargin,
+        doc.bottomMargin + 8,
+        doc.width,
+        doc.height - 8,
+        id="normal",
+    )
+
+    template = PageTemplate(id="main", frames=[frame], onPage=_add_footer)
+    doc.addPageTemplates([template])
+
+    doc.report_id = data["report_id"]
+    doc.revision = data["revision"]
+
+    story = []
+    story += build_cover(data)
+    story += build_summary(data)
+
+    doc.build(story)

@@ -11,7 +11,6 @@ from ui.cockpit import _run_simulation, reset_study
 from ui.result import render_result, render_device_capability_cards
 from ui.graph import render_graph
 from ui.weather_basis import render_weather_basis
-from ui.login_page import render_login_page
 from ui.admin import render_admin_panel
 from ui.my_studies import render_my_studies
 from ui.result_helpers import annual_empty_battery_stats, overall_state
@@ -387,6 +386,8 @@ def maybe_save_current_study():
         worst_blackout_days=days,
         worst_blackout_pct=pct,
         result_summary=result_summary,
+        pdf_name=st.session_state.get("pdf_name", "sala_standardized_feasibility_study.pdf"),
+        pdf_bytes=st.session_state.get("pdf_bytes"),
     )
 
     st.session_state.study_saved_for_current_result = True

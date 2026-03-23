@@ -20,16 +20,20 @@ def render_login_page():
             padding-bottom: 2.5rem;
         }
 
+        .sala-login-head-wrap {
+            max-width: 760px;
+            margin: 0 auto 18px auto;
+        }
+
         .sala-login-header {
             display: flex;
             align-items: center;
-            justify-content: center;
             gap: 18px;
-            margin-bottom: 12px;
+            margin-bottom: 10px;
         }
 
         .sala-login-title {
-            font-size: 2rem;
+            font-size: 2.05rem;
             line-height: 1.08;
             font-weight: 800;
             color: #0f172a;
@@ -37,8 +41,7 @@ def render_login_page():
         }
 
         .sala-login-lock {
-            text-align: center;
-            margin-bottom: 22px;
+            margin-bottom: 18px;
         }
 
         .sala-login-badge {
@@ -109,21 +112,21 @@ def render_login_page():
         unsafe_allow_html=True,
     )
 
-    # Header: logo left, title right
+    # Header block aligned to same width as login area
+    st.markdown('<div class="sala-login-head-wrap">', unsafe_allow_html=True)
+
     if Path(LOGO_PATH).exists():
-        st.markdown('<div class="sala-login-header">', unsafe_allow_html=True)
-        c1, c2, c3 = st.columns([1.2, 0.34, 4.0])
-        with c2:
-            st.image(LOGO_PATH, width=82)
-        with c3:
+        col_logo, col_title = st.columns([0.16, 0.84], gap="small")
+        with col_logo:
+            st.image(LOGO_PATH, width=92)
+        with col_title:
             st.markdown(
                 '<div class="sala-login-title">SALA Standardized Feasibility Study for Solar AGL</div>',
                 unsafe_allow_html=True,
             )
-        st.markdown("</div>", unsafe_allow_html=True)
     else:
         st.markdown(
-            '<div class="sala-login-title" style="text-align:center;">SALA Standardized Feasibility Study for Solar AGL</div>',
+            '<div class="sala-login-title">SALA Standardized Feasibility Study for Solar AGL</div>',
             unsafe_allow_html=True,
         )
 
@@ -131,6 +134,8 @@ def render_login_page():
         '<div class="sala-login-lock"><span class="sala-login-badge">Member access required</span></div>',
         unsafe_allow_html=True,
     )
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
     # Login card
     st.markdown('<div class="sala-login-card">', unsafe_allow_html=True)

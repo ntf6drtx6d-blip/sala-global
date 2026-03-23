@@ -223,7 +223,39 @@ def _render_studies_tab():
         st.info("No studies recorded yet.")
         return
 
-    for row in rows:
+    # collect filter options
+    user_options = sorted({row["email"] for row in rows if row["email"]})
+    result_options = sorted({row["overall_result"] for row in rows if row["overall_result"]})
+
+    f1, f2 = st.columns(2)
+
+    with f1:
+        selected_user = st.selectbox(
+            "Filter by user",
+            options=["All users"] + user_options,
+            key="admin_studies_user_filter",
+        )
+
+    with f2:
+        selected_result = st.selectbox(
+            "Filter by result",
+            options=["All results"] + result_options,
+            key="admin_studies_result_filter",
+        )
+
+    filtered_rows = rows
+
+    if selected_user != "All users":
+        filtered_rows = [row for row in filtered_rows if row["email"] == selected_user]
+
+    if selected_result != "All results":
+        filtered_rows = [row for row in filtered_rows if row["overall_result"] == selected_result]
+
+    if not filtered_rows:
+        st.info("No studies match the selected filters.")
+        return
+
+    for row in filtered_rows:
         labels = _device_labels_from_json(row["selected_devices_json"])
         devices_text = ", ".join(labels) if labels else "-"
 

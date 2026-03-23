@@ -209,8 +209,6 @@ def apply_global_styles():
         """,
         unsafe_allow_html=True,
     )
-
-
 def render_header():
     c1, c2, c3 = st.columns([1, 6, 2])
 
@@ -227,53 +225,15 @@ def render_header():
     with c3:
         email = st.session_state.get("auth_email", "")
         role = st.session_state.get("auth_role", "")
+        user_label = f"{email} · {role}"
 
-        st.markdown(f"""
-        <div style="
-            display:flex;
-            justify-content:flex-end;
-            align-items:center;
-        ">
-            <div style="
-                display:flex;
-                align-items:center;
-                gap:12px;
-                padding:6px 10px;
-                border-radius:999px;
-                border:1px solid #e6eaf0;
-                background:#f9fafb;
-                font-size:0.85rem;
-                font-weight:600;
-                color:#344054;
-            ">
-                <span>{email}</span>
-                <span style="opacity:0.6;">·</span>
-                <span style="color:#667085;">{role}</span>
+        with st.popover(user_label, use_container_width=True):
+            st.markdown("**My profile**")
+            st.write(f"Email: {email}")
+            st.write(f"Role: {role}")
 
-                <form action="" method="post">
-                    <button name="logout_btn" style="
-                        border:none;
-                        background:transparent;
-                        cursor:pointer;
-                        font-size:1rem;
-                        padding:4px 6px;
-                        border-radius:6px;
-                    " title="Log out">
-                        ⎋
-                    </button>
-                </form>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        # handle logout
-        if st.session_state.get("logout_triggered"):
-            logout()
-
-        if st.button("hidden_logout", key="logout_btn", help="logout", visible=False):
-            st.session_state.logout_triggered = True
-            st.rerun()
-
+            if st.button("Log out", key="logout_from_popover", use_container_width=True):
+                logout()
 
 def _trigger_simulation():
     st.session_state.running = True

@@ -21,39 +21,54 @@ def build_cover(data):
     story = []
 
     # ------------------------------------------------------------------
-    # LOGOS
+    # TOP LOGO STRIP
     # ------------------------------------------------------------------
-    logos = Table(
-        [[
-            _logo_or_spacer(SALA_LOGO, 70, 40),
-            _logo_or_spacer(JRC_LOGO, 120, 40),
-        ]],
-        colWidths=[220, 290],
+    left_logo = _logo_or_spacer(SALA_LOGO, 58, 58)
+
+    right_logo = _logo_or_spacer(JRC_LOGO, 110, 40)
+    right_text = Paragraph("PVGIS (JRC, European Commission)", SMALL)
+
+    right_block = Table(
+        [[right_logo], [right_text]],
+        colWidths=[180],
     )
-    logos.setStyle(TableStyle([
-        ("ALIGN", (0, 0), (0, 0), "LEFT"),
-        ("ALIGN", (1, 0), (1, 0), "RIGHT"),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    right_block.setStyle(TableStyle([
+        ("ALIGN", (0, 0), (-1, -1), "RIGHT"),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
         ("TOPPADDING", (0, 0), (-1, -1), 0),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
+
+    logos = Table(
+        [[left_logo, right_block]],
+        colWidths=[90, 420],
+    )
+    logos.setStyle(TableStyle([
+        ("ALIGN", (0, 0), (0, 0), "LEFT"),
+        ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+
     story.append(logos)
-    story.append(Spacer(1, 22))
+    story.append(Spacer(1, 26))
 
     # ------------------------------------------------------------------
     # TITLE BLOCK
     # ------------------------------------------------------------------
     story.append(Paragraph("SALA Standardized Feasibility Study", SMALL))
-    story.append(Spacer(1, 6))
+    story.append(Spacer(1, 4))
 
     story.append(Paragraph("Solar Airfield Lighting System", TITLE))
-    story.append(Spacer(1, 14))
+    story.append(Spacer(1, 10))
 
     story.append(Paragraph(
-        "Independent feasibility assessment of solar airfield lighting performance "
-        "based on long-term solar irradiation data and off-grid simulation.",
+        "Independent feasibility assessment based on long-term solar data and off-grid simulation.",
         BODY,
     ))
     story.append(Spacer(1, 22))
@@ -61,14 +76,14 @@ def build_cover(data):
     # ------------------------------------------------------------------
     # MAIN INFO TABLE
     # ------------------------------------------------------------------
-    airport_block = f"""
-    <b>{data["airport_name"]}</b><br/>
-    <font size="9" color="#667085">{data["coordinates"]}</font>
-    """
+    airport_block = Paragraph(
+        f'<b>{data["airport_name"]}</b><br/><font color="#667085">{data["coordinates"]}</font>',
+        BODY
+    )
 
     info_data = [
-        ["Report ID", data["report_id"]],
-        ["Date", data["date"]],
+        ["Report ID", Paragraph(data["report_id"], BODY)],
+        ["Date", Paragraph(data["date"], BODY)],
         ["Airport", airport_block],
     ]
 
@@ -84,10 +99,10 @@ def build_cover(data):
         ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
     ]))
     story.append(info_table)
-    story.append(Spacer(1, 24))
+    story.append(Spacer(1, 22))
 
     # ------------------------------------------------------------------
-    # SALA VERIFICATION METHODOLOGY
+    # METHODOLOGY TITLE BAR
     # ------------------------------------------------------------------
     methodology_title = Table(
         [[Paragraph("SALA Verification Methodology", BOLD)]],
@@ -104,18 +119,15 @@ def build_cover(data):
     story.append(methodology_title)
     story.append(Spacer(1, 8))
 
+    # ------------------------------------------------------------------
+    # METHODOLOGY BODY
+    # ------------------------------------------------------------------
     methodology_body = Table(
         [[Paragraph(
             """
-            This report is prepared in accordance with the <b>SALA Solar AGL Design Manual</b>, 
-            which establishes a standardized methodology for evaluating solar airfield lighting systems.
-            <br/><br/>
-            The assessment is based on independent solar resource data and off-grid performance simulation 
-            using the <b>Photovoltaic Geographical Information System (PVGIS)</b>, developed by the 
-            <b>Joint Research Centre (JRC) of the European Commission</b>.
-            <br/><br/>
-            PVGIS is a publicly available scientific platform providing long-term, satellite-derived solar 
-            irradiation data and photovoltaic system performance modelling for both grid-connected and off-grid systems.
+            Prepared under the <b>SALA Solar AGL Design Manual</b>.<br/><br/>
+            Based on <b>PVGIS</b> off-grid simulation and independent solar data from the 
+            <b>Joint Research Centre (JRC), European Commission</b>.
             """,
             BODY
         )]],
@@ -130,14 +142,14 @@ def build_cover(data):
         ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
     ]))
     story.append(methodology_body)
-    story.append(Spacer(1, 16))
+    story.append(Spacer(1, 14))
 
     # ------------------------------------------------------------------
     # TRUST STRIP
     # ------------------------------------------------------------------
     trust_strip = Table(
         [[Paragraph(
-            "Independent data source and simulation basis: PVGIS — Joint Research Centre (JRC), European Commission.",
+            "Independent basis: PVGIS — Joint Research Centre (JRC), European Commission.",
             SMALL
         )]],
         colWidths=[510],

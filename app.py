@@ -331,7 +331,51 @@ def render_top_action_bar():
     st.markdown('</div>', unsafe_allow_html=True)
     return action_state
 
+def render_calculator_app():
+    if st.session_state.get("running", False):
+        with st.expander("Show study setup", expanded=False):
+            st.caption("Inputs are temporarily locked while the simulation is running.")
+            render_setup(disabled=True)
+    elif not st.session_state.get("results"):
+        render_setup(disabled=False)
+    else:
+        with st.expander("Show study setup", expanded=False):
+            render_setup(disabled=False)
 
+    refresh_study_ready_from_state()
+    action_state = render_top_action_bar()
+
+    if st.session_state.get("trigger_run"):
+        st.session_state.trigger_run = False
+
+        def progress_callback(percent: int, stage: str):
+            percent = max(0, min(100, int(percent)))
+            st.session_state.run_progress = percent
+            st.session_state.run_stage = stage
+
+            if action_state["progress_bar"] is not None:
+                action_state["progress_bar"].progress(percent)
+
+            if action_state["progress_text"] is not None:
+                action_state["progress_text"].markdown(
+                    f"<div style='text-align:right;font-weight:700;color:#667085;'>{percent}%</div>",
+                    unsafe_allow_html=True,
+                )
+
+            if action_state["stage_text"] is not None:
+                action_state["stage_text"].markdown(
+                    f"<div class='secondary-note'>{stage}</div>",
+                    unsafe_allow_html=True,
+                )
+
+        _run_simulation(progress_callback=progress_callback)
+
+    if st.session_state.get("results") is not None:
+        results = st.session_state.get("results")
+        render_result()
+        render_graph()
+        render_device_capability_cards(results)
+        render_weather_basis()
 # ---------------- APP FLOW ----------------
 
 init_state()

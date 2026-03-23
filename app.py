@@ -224,12 +224,20 @@ def apply_global_styles():
         div[data-testid="stPopover"] button {
             border-radius: 999px !important;
             min-height: 44px !important;
-            padding: 8px 14px !important;
+            padding: 8px 16px !important;
             font-weight: 700 !important;
-            border: 1px solid #e6eaf0 !important;
-            background: #f9fafb !important;
-            color: #344054 !important;
+        
+            background: #eef4ff !important;
+            border: 1px solid #d6e4ff !important;
+            color: #1f3a8a !important;
+        
+            transition: all 0.2s ease;
         }
+
+div[data-testid="stPopover"] button:hover {
+    background: #e0edff !important;
+    border-color: #bcd3ff !important;
+}
 
         div[data-testid="stPopover"] button:hover {
             background: #f5f7fa !important;

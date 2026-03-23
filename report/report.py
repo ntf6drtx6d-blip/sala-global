@@ -1,60 +1,22 @@
-# sala_report_first_two_pages.py
-# First two pages of SALA report
-# Visual direction: web UI style, but more consultant-grade / report-grade
+# report/report.py
 
 from reportlab.lib.pagesizes import A4
-from reportlab.lib.colors import HexColor, white, black
+from reportlab.lib.colors import HexColor, white
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase.pdfmetrics import stringWidth
+
+from datetime import datetime
 import os
 
 PAGE_W, PAGE_H = A4
 
 # -----------------------------
-# CONFIG / SAMPLE DATA
+# OPTIONAL ASSETS
 # -----------------------------
 
-DATA = {
-    "report_id": "SALA-SFS-2026-000134",
-    "revision": "Rev 01 – Issued for Review",
-    "date": "23 March 2026",
-    "airport_name": "radom airport",
-    "country": "Poland",
-    "coordinates": "51.388745, 21.214478",
-    "required_operation": "12 hrs/day",
-    "worst_blackout_risk": "249 days/year",
-    "worst_blackout_pct": "68.1% of the year",
-    "overall_conclusion_title": "The selected device does not meet the required operating profile.",
-    "overall_conclusion_text": "The selected device does not support the selected operating profile year-round.",
-    "interpretation": (
-        "The system does not sustain the required operating profile under worst-case solar conditions. "
-        "The result indicates insufficient energy recovery over the annual cycle, resulting in prolonged "
-        "periods of blackout exposure."
-    ),
-    "recommendation": "System redesign is required to achieve the defined operating profile.",
-    "methodology_note": (
-        "This assessment is based on long-term solar irradiation data and hourly off-grid simulation "
-        "methodology consistent with PVGIS (European Commission Joint Research Centre)."
-    ),
-    "status": "SALA Approved Style",
-    "prepared_under": "Prepared under SALA-SAGL-100 methodology",
-}
-
-# Optional assets
-SALA_LOGO = "/mnt/data/sala_logo.png" if os.path.exists("/mnt/data/sala_logo.png") else None
-EC_LOGO = "/mnt/data/ec_logo.png" if os.path.exists("/mnt/data/ec_logo.png") else None
-
-# Optional cropped map screenshot from current summary render
-MAP_IMAGE = None
-for p in [
-    "/mnt/data/current_report_render/page-1.png",
-    "/mnt/data/sala_first_two_pages_render/page-2.png",
-    "/mnt/data/sala_first_two_pages_render3/page-2.png",
-]:
-    if os.path.exists(p):
-        MAP_IMAGE = p
-        break
+SALA_LOGO = "sala_logo.png" if os.path.exists("sala_logo.png") else None
+EU_LOGO = "logo_en.gif" if os.path.exists("logo_en.gif") else None
 
 # -----------------------------
 # COLORS
@@ -102,7 +64,7 @@ def draw_text(c, x, y, text, size=11, color=TEXT, font="Helvetica", max_width=No
         return y
     if leading is None:
         leading = size * 1.35
-    words = text.split()
+    words = str(text).split()
     line = ""
     yy = y
     for w in words:
@@ -123,38 +85,20 @@ def draw_title(c, x, y, text, size=28, color=NAVY, max_width=None):
     if max_width is None:
         c.drawString(x, y, text)
         return y
-    return draw_text(c, x, y, text, size=size, color=color, font="Helvetica-Bold", max_width=max_width, leading=size*1.1)
+    return draw_text(c, x, y, text, size=size, color=color, font="Helvetica-Bold", max_width=max_width, leading=size*1.12)
 
 def draw_small_caps(c, x, y, text, size=10, color=MUTED):
     c.setFillColor(color)
     c.setFont("Helvetica-Bold", size)
-    c.drawString(x, y, text.upper())
+    c.drawString(x, y, str(text).upper())
 
 def draw_label_value(c, x, y, label, value, label_w=120, value_size=11):
     c.setFont("Helvetica-Bold", 10)
     c.setFillColor(MUTED)
-    c.drawString(x, y, label)
+    c.drawString(x, y, str(label))
     c.setFont("Helvetica", value_size)
     c.setFillColor(TEXT)
-    c.drawString(x + label_w, y, value)
-
-def kpi_card(c, x, y, w, h, title, value, subtitle="", accent="red"):
-    if accent == "red":
-        bg, border, main = RED_BG, RED_BORDER, RED
-    elif accent == "blue":
-        bg, border, main = BLUE_SOFT, BLUE_BORDER, BLUE
-    elif accent == "green":
-        bg, border, main = GREEN_BG, GREEN_BORDER, GREEN
-    else:
-        bg, border, main = SOFT_BG, LINE, NAVY
-
-    draw_round_rect(c, x, y, w, h, r=14, fill_color=bg, stroke_color=border, line_width=1.2)
-    draw_small_caps(c, x + 18, y + h - 24, title, size=9, color=MUTED)
-    c.setFont("Helvetica-Bold", 22)
-    c.setFillColor(main)
-    c.drawString(x + 18, y + h - 62, value)
-    if subtitle:
-        draw_text(c, x + 18, y + 18, subtitle, size=10.5, color=MUTED, font="Helvetica", max_width=w - 36)
+    c.drawString(x + label_w, y, str(value))
 
 def draw_logo(c, path, x, y, w=None, h=None):
     if not path or not os.path.exists(path):
@@ -169,79 +113,214 @@ def draw_logo(c, path, x, y, w=None, h=None):
         w, h = iw, ih
     c.drawImage(img, x, y, width=w, height=h, mask="auto")
 
-def crop_and_draw_map(c, path, x, y, w, h):
-    if not path or not os.path.exists(path):
-        draw_round_rect(c, x, y, w, h, r=10, fill_color=SOFT_BG, stroke_color=LINE)
-        draw_text(c, x + 20, y + h/2, "Map preview not available", size=12, color=MUTED)
-        return
+def kpi_card(c, x, y, w, h, title, value, subtitle="", accent="red"):
+    if accent == "red":
+        bg, border, main = RED_BG, RED_BORDER, RED
+    elif accent == "blue":
+        bg, border, main = BLUE_SOFT, BLUE_BORDER, BLUE
+    elif accent == "green":
+        bg, border, main = GREEN_BG, GREEN_BORDER, GREEN
+    elif accent == "gold":
+        bg, border, main = GOLD_BG, GOLD_BORDER, GOLD
+    else:
+        bg, border, main = SOFT_BG, LINE, NAVY
 
-    from PIL import Image
-    img = Image.open(path)
-    iw, ih = img.size
+    draw_round_rect(c, x, y, w, h, r=14, fill_color=bg, stroke_color=border, line_width=1.2)
+    draw_small_caps(c, x + 18, y + h - 24, title, size=9, color=MUTED)
+    c.setFont("Helvetica-Bold", 22)
+    c.setFillColor(main)
+    c.drawString(x + 18, y + h - 62, str(value))
+    if subtitle:
+        draw_text(c, x + 18, y + 18, subtitle, size=10.5, color=MUTED, font="Helvetica", max_width=w - 36)
 
-    # crop left summary map block heuristically from screenshot
-    # tuned for uploaded screenshots
-    left = int(iw * 0.03)
-    top = int(ih * 0.14)
-    right = int(iw * 0.39)
-    bottom = int(ih * 0.90)
-    crop = img.crop((left, top, right, bottom))
-
-    tmp = "/mnt/data/_tmp_summary_map.png"
-    crop.save(tmp)
-
+def draw_fake_map(c, x, y, w, h, airport_name, coordinates):
+    # clean placeholder map-like block, since PDF cannot reuse live folium map directly
     draw_round_rect(c, x, y, w, h, r=12, fill_color=WHITE, stroke_color=LINE)
-    c.drawImage(tmp, x + 1, y + 1, width=w - 2, height=h - 2, mask="auto")
+
+    # background zones
+    c.setFillColor(HexColor("#F4F7F5"))
+    c.roundRect(x + 1, y + 1, w - 2, h - 2, 11, stroke=0, fill=1)
+
+    c.setStrokeColor(HexColor("#D9E2E7"))
+    c.setLineWidth(0.8)
+
+    # abstract roads / contours
+    c.line(x + 20, y + 40, x + w - 30, y + h - 35)
+    c.line(x + 35, y + h - 20, x + w - 20, y + 70)
+    c.line(x + 10, y + h/2, x + w - 15, y + h/2 + 20)
+    c.line(x + 25, y + 25, x + 80, y + h - 30)
+
+    c.setDash(2, 2)
+    c.line(x + 45, y + 10, x + 110, y + h - 10)
+    c.line(x + w - 80, y + 18, x + w - 30, y + h - 20)
+    c.setDash()
+
+    # study point
+    px = x + w * 0.50
+    py = y + h * 0.47
+    c.setFillColor(HexColor("#C24D3A"))
+    c.circle(px, py, 6, stroke=0, fill=1)
+
+    # caption-like labels
+    c.setFont("Helvetica", 11)
+    c.setFillColor(HexColor("#98A2B3"))
+    c.drawString(x + 30, y + h * 0.52, airport_name[:18].upper())
+
+    c.setFont("Helvetica", 9.2)
+    c.setFillColor(MUTED)
+    c.drawString(x + 12, y + 10, coordinates)
 
 # -----------------------------
-# PAGE 1 - COVER
+# DATA BUILDING
 # -----------------------------
 
-def draw_cover_page(c):
+def _annual_empty_battery_stats(results: dict):
+    pcts = []
+    for _, r in results.items():
+        pct = r.get("overall_empty_battery_pct")
+        if pct is not None:
+            try:
+                pcts.append(float(pct))
+            except Exception:
+                pass
+
+    if not pcts:
+        return None, None
+
+    worst_pct = max(pcts)
+    worst_days = round(365 * worst_pct / 100.0)
+    return worst_days, worst_pct
+
+def _count_device_statuses(results: dict):
+    total = len(results)
+    passed = 0
+    for _, r in results.items():
+        if r.get("status") == "PASS":
+            passed += 1
+    failed = total - passed
+    return total, passed, failed
+
+def _overall_state(results: dict):
+    total, passed, failed = _count_device_statuses(results)
+    if total == 0:
+        return "unknown"
+    if passed == total:
+        return "all_pass"
+    if failed == total:
+        return "none_pass"
+    return "mixed"
+
+def _build_report_data(loc, required_hours, results, overall, document_no="", revision_no=1, airport_label="", report_date=""):
+    airport_name = airport_label or loc.get("label", "Study point")
+    country = loc.get("country", "") or ""
+    coordinates = f"{loc.get('lat', 0):.6f}, {loc.get('lon', 0):.6f}"
+
+    worst_days, worst_pct = _annual_empty_battery_stats(results)
+    state = _overall_state(results)
+
+    if state == "all_pass":
+        conclusion_title = "The selected system meets the required operating profile."
+        conclusion_text = "The selected configuration supports the required operating profile year-round."
+        interpretation = (
+            "The system demonstrates sufficient energy autonomy and operational resilience "
+            "to support continuous airfield operations under the defined profile."
+        )
+        recommendation = "Proceed with solar AGL deployment under the defined configuration."
+        status_color = "green"
+    elif state == "none_pass":
+        conclusion_title = "The selected system does not meet the required operating profile."
+        conclusion_text = "The selected configuration does not support the required operating profile year-round."
+        interpretation = (
+            "The system does not sustain the required operating profile under worst-case solar conditions. "
+            "The result indicates insufficient energy recovery over the annual cycle, resulting in prolonged "
+            "periods of blackout exposure."
+        )
+        recommendation = "System redesign is required to achieve the defined operating profile."
+        status_color = "red"
+    else:
+        conclusion_title = "The selected system partially meets the required operating profile."
+        conclusion_text = "At least one selected device remains below the required operating profile."
+        interpretation = (
+            "The selected configuration is not fully compliant because at least one device remains below "
+            "requirement under worst-case solar conditions."
+        )
+        recommendation = "Review the non-compliant device configuration before deployment."
+        status_color = "gold"
+
+    if not document_no:
+        year = datetime.now().strftime("%Y")
+        document_no = f"SALA-SFS-{year}-000134"
+
+    if not report_date:
+        report_date = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    return {
+        "report_id": document_no,
+        "revision": f"Rev {int(revision_no):02d} – Issued for Review",
+        "date": report_date,
+        "airport_name": airport_name,
+        "country": country,
+        "coordinates": coordinates,
+        "required_operation": f"{float(required_hours):.0f} hrs/day",
+        "worst_blackout_risk": f"{worst_days} days/year" if worst_days is not None else "N/A",
+        "worst_blackout_pct": f"{worst_pct:.1f}% of the year" if worst_pct is not None else "",
+        "overall_conclusion_title": conclusion_title,
+        "overall_conclusion_text": conclusion_text,
+        "interpretation": interpretation,
+        "recommendation": recommendation,
+        "methodology_note": (
+            "This assessment is based on long-term solar irradiation data and hourly off-grid simulation "
+            "methodology consistent with PVGIS (European Commission Joint Research Centre)."
+        ),
+        "status": "SALA Approved Style",
+        "status_color": status_color,
+        "prepared_under": "Prepared under SALA-SAGL-100 methodology",
+    }
+
+# -----------------------------
+# PAGE 1
+# -----------------------------
+
+def _draw_cover_page(c, data):
     margin = 48
-    top = PAGE_H - 44
+    top = PAGE_H - 42
 
-    # Top line
     c.setStrokeColor(LINE)
     c.setLineWidth(1)
     c.line(margin, top, PAGE_W - margin, top)
 
-    # Logos row
     if SALA_LOGO:
-        draw_logo(c, SALA_LOGO, margin, PAGE_H - 110, w=78)
-    if EC_LOGO:
-        draw_logo(c, EC_LOGO, PAGE_W - margin - 95, PAGE_H - 105, w=95)
+        draw_logo(c, SALA_LOGO, margin, PAGE_H - 105, w=76)
 
-    # Title block
-    title_x = margin
-    title_y = PAGE_H - 155
-    draw_small_caps(c, title_x, title_y, "SALA Standardized Feasibility Study", size=11, color=BLUE)
+    if EU_LOGO:
+        draw_logo(c, EU_LOGO, PAGE_W - margin - 102, PAGE_H - 102, w=102)
+
+    draw_small_caps(c, margin, PAGE_H - 140, "SALA Standardized Feasibility Study", size=11, color=BLUE)
     draw_title(
         c,
-        title_x,
-        title_y - 38,
+        margin,
+        PAGE_H - 178,
         "Solar Airfield Lighting System",
         size=27,
         color=NAVY,
-        max_width=PAGE_W - 2 * margin - 40
+        max_width=PAGE_W - 2 * margin - 30
     )
 
-    # Report identity plate
+    # identity plate
     plate_x = margin
-    plate_y = PAGE_H - 340
+    plate_y = PAGE_H - 338
     plate_w = PAGE_W - 2 * margin
     plate_h = 118
     draw_round_rect(c, plate_x, plate_y, plate_w, plate_h, r=16, fill_color=SOFT_BG, stroke_color=LINE)
 
-    draw_label_value(c, plate_x + 24, plate_y + 84, "Report ID", DATA["report_id"], label_w=100, value_size=11)
-    draw_label_value(c, plate_x + 24, plate_y + 62, "Date", DATA["date"], label_w=100, value_size=11)
-    draw_label_value(c, plate_x + 24, plate_y + 40, "Revision", DATA["revision"], label_w=100, value_size=11)
+    draw_label_value(c, plate_x + 24, plate_y + 84, "Report ID", data["report_id"], label_w=100, value_size=11)
+    draw_label_value(c, plate_x + 24, plate_y + 62, "Date", data["date"], label_w=100, value_size=11)
+    draw_label_value(c, plate_x + 24, plate_y + 40, "Revision", data["revision"], label_w=100, value_size=11)
 
-    draw_label_value(c, plate_x + 310, plate_y + 84, "Airport", DATA["airport_name"], label_w=75, value_size=11)
-    draw_label_value(c, plate_x + 310, plate_y + 62, "Location", DATA["country"], label_w=75, value_size=11)
-    draw_label_value(c, plate_x + 310, plate_y + 40, "Coordinates", DATA["coordinates"], label_w=75, value_size=11)
+    draw_label_value(c, plate_x + 310, plate_y + 84, "Airport", data["airport_name"], label_w=75, value_size=11)
+    draw_label_value(c, plate_x + 310, plate_y + 62, "Location", data["country"], label_w=75, value_size=11)
+    draw_label_value(c, plate_x + 310, plate_y + 40, "Coordinates", data["coordinates"], label_w=75, value_size=11)
 
-    # Status badge
     badge_w = 172
     badge_h = 28
     badge_x = plate_x + plate_w - badge_w - 22
@@ -249,19 +328,19 @@ def draw_cover_page(c):
     draw_round_rect(c, badge_x, badge_y, badge_w, badge_h, r=14, fill_color=BLUE_SOFT, stroke_color=BLUE_BORDER)
     c.setFillColor(BLUE)
     c.setFont("Helvetica-Bold", 10)
-    c.drawCentredString(badge_x + badge_w/2, badge_y + 9, DATA["status"])
+    c.drawCentredString(badge_x + badge_w / 2, badge_y + 9, data["status"])
 
-    # Methodology block
-    box_y = PAGE_H - 515
-    box_h = 150
+    # methodology block
+    box_y = PAGE_H - 510
+    box_h = 148
     draw_round_rect(c, margin, box_y, plate_w, box_h, r=16, fill_color=WHITE, stroke_color=LINE)
 
     draw_small_caps(c, margin + 24, box_y + box_h - 24, "Methodology basis", size=10, color=MUTED)
-    draw_title(c, margin + 24, box_y + box_h - 58, "Prepared under SALA-SAGL-100 methodology", size=18, color=NAVY, max_width=plate_w - 48)
+    draw_title(c, margin + 24, box_y + box_h - 56, data["prepared_under"], size=18, color=NAVY, max_width=plate_w - 48)
     draw_text(
         c,
         margin + 24,
-        box_y + box_h - 92,
+        box_y + box_h - 90,
         "This report presents the feasibility outcome for the selected solar airfield lighting configuration based on long-term solar irradiation data and off-grid performance simulation.",
         size=11,
         color=TEXT,
@@ -269,8 +348,8 @@ def draw_cover_page(c):
         leading=15
     )
 
-    # Trust strip
-    strip_y = 120
+    # trust strip
+    strip_y = 118
     strip_h = 78
     draw_round_rect(c, margin, strip_y, plate_w, strip_h, r=14, fill_color=WHITE, stroke_color=LINE)
 
@@ -285,31 +364,29 @@ def draw_cover_page(c):
         max_width=plate_w - 44
     )
 
-    # Footer
     c.setStrokeColor(LINE)
     c.line(margin, 58, PAGE_W - margin, 58)
     c.setFont("Helvetica", 9)
     c.setFillColor(MUTED)
-    c.drawString(margin, 42, f"{DATA['report_id']}  |  {DATA['revision']}")
+    c.drawString(margin, 42, f"{data['report_id']}  |  {data['revision']}")
     c.drawRightString(PAGE_W - margin, 42, "Page 1")
 
 # -----------------------------
-# PAGE 2 - MANAGEMENT SUMMARY
+# PAGE 2
 # -----------------------------
 
-def draw_summary_page(c):
+def _draw_summary_page(c, data):
     margin = 48
-    top = PAGE_H - 44
+    top = PAGE_H - 42
 
     c.setStrokeColor(LINE)
     c.setLineWidth(1)
     c.line(margin, top, PAGE_W - margin, top)
 
-    # Title
     draw_small_caps(c, margin, PAGE_H - 74, "Management summary", size=11, color=BLUE)
     draw_title(c, margin, PAGE_H - 114, "Feasibility result", size=28, color=NAVY)
 
-    # Left map block
+    # left map/context block
     left_x = margin
     left_y = 222
     left_w = 230
@@ -319,13 +396,13 @@ def draw_summary_page(c):
     draw_small_caps(c, left_x + 18, left_y + left_h - 24, "Airport / study point", size=9, color=MUTED)
     c.setFillColor(NAVY)
     c.setFont("Helvetica-Bold", 16)
-    c.drawString(left_x + 18, left_y + left_h - 56, DATA["airport_name"])
+    c.drawString(left_x + 18, left_y + left_h - 56, data["airport_name"])
 
-    crop_and_draw_map(c, MAP_IMAGE, left_x + 14, left_y + 86, left_w - 28, 300)
+    draw_fake_map(c, left_x + 14, left_y + 86, left_w - 28, 300, data["airport_name"], data["coordinates"])
 
     c.setFont("Helvetica", 10.5)
     c.setFillColor(MUTED)
-    c.drawString(left_x + 18, left_y + 58, DATA["coordinates"])
+    c.drawString(left_x + 18, left_y + 58, data["coordinates"])
     draw_text(
         c,
         left_x + 18,
@@ -337,36 +414,43 @@ def draw_summary_page(c):
         leading=13
     )
 
-    # Right side
+    # right area
     rx = left_x + left_w + 24
     rw = PAGE_W - margin - rx
 
-    # Conclusion card
+    # conclusion color
+    if data["status_color"] == "green":
+        concl_bg, concl_border, concl_main = GREEN_BG, GREEN_BORDER, GREEN
+    elif data["status_color"] == "gold":
+        concl_bg, concl_border, concl_main = GOLD_BG, GOLD_BORDER, GOLD
+    else:
+        concl_bg, concl_border, concl_main = RED_BG, RED_BORDER, RED
+
     conclusion_y = 555
     conclusion_h = 127
-    draw_round_rect(c, rx, conclusion_y, rw, conclusion_h, r=16, fill_color=RED_BG, stroke_color=RED_BORDER, line_width=1.2)
+    draw_round_rect(c, rx, conclusion_y, rw, conclusion_h, r=16, fill_color=concl_bg, stroke_color=concl_border, line_width=1.2)
 
     draw_small_caps(c, rx + 18, conclusion_y + conclusion_h - 24, "Overall conclusion", size=9, color=MUTED)
     draw_title(
         c,
         rx + 18,
         conclusion_y + conclusion_h - 63,
-        DATA["overall_conclusion_title"],
+        data["overall_conclusion_title"],
         size=22,
-        color=RED,
+        color=concl_main,
         max_width=rw - 36
     )
     draw_text(
         c,
         rx + 18,
         conclusion_y + 24,
-        DATA["overall_conclusion_text"],
+        data["overall_conclusion_text"],
         size=11,
         color=TEXT,
         max_width=rw - 36
     )
 
-    # KPI cards (ONLY 2 as requested)
+    # KPI cards - only two
     kpi_y = 378
     kpi_h = 145
     gap = 16
@@ -375,7 +459,7 @@ def draw_summary_page(c):
     kpi_card(
         c, rx, kpi_y, kpi_w, kpi_h,
         "Required operation",
-        DATA["required_operation"],
+        data["required_operation"],
         "Required operating profile applied to all selected devices.",
         accent="blue"
     )
@@ -383,12 +467,12 @@ def draw_summary_page(c):
     kpi_card(
         c, rx + kpi_w + gap, kpi_y, kpi_w, kpi_h,
         "Worst blackout risk",
-        DATA["worst_blackout_risk"],
-        DATA["worst_blackout_pct"],
-        accent="red"
+        data["worst_blackout_risk"],
+        data["worst_blackout_pct"],
+        accent="red" if data["status_color"] != "green" else "green"
     )
 
-    # Interpretation block
+    # interpretation
     interp_y = 210
     interp_h = 142
     draw_round_rect(c, rx, interp_y, rw, interp_h, r=16, fill_color=WHITE, stroke_color=LINE)
@@ -398,14 +482,14 @@ def draw_summary_page(c):
         c,
         rx + 18,
         interp_y + interp_h - 50,
-        DATA["interpretation"],
+        data["interpretation"],
         size=11,
         color=TEXT,
         max_width=rw - 36,
         leading=15
     )
 
-    # Recommendation
+    # recommendation
     rec_y = 132
     rec_h = 58
     draw_round_rect(c, rx, rec_y, rw, rec_h, r=14, fill_color=SOFT_BG, stroke_color=LINE)
@@ -414,27 +498,27 @@ def draw_summary_page(c):
     c.drawString(rx + 18, rec_y + 36, "Recommendation")
     c.setFont("Helvetica", 11)
     c.setFillColor(TEXT)
-    c.drawString(rx + 130, rec_y + 36, DATA["recommendation"])
+    draw_text(c, rx + 128, rec_y + 36, data["recommendation"], size=11, color=TEXT, max_width=rw - 146)
 
-    # Trust strip
+    # methodology note strip
     strip_y = 70
     strip_h = 42
-    draw_round_rect(c, margin, strip_y, PAGE_W - 2*margin, strip_h, r=12, fill_color=WHITE, stroke_color=LINE)
+    draw_round_rect(c, margin, strip_y, PAGE_W - 2 * margin, strip_h, r=12, fill_color=WHITE, stroke_color=LINE)
     c.setFont("Helvetica", 9.8)
     c.setFillColor(MUTED)
-    c.drawString(margin + 16, strip_y + 15, DATA["methodology_note"])
+    draw_text(c, margin + 16, strip_y + 15, data["methodology_note"], size=9.8, color=MUTED, max_width=PAGE_W - 2*margin - 32, leading=12)
 
-    # Footer
     c.setStrokeColor(LINE)
     c.line(margin, 48, PAGE_W - margin, 48)
     c.setFont("Helvetica", 9)
     c.setFillColor(MUTED)
-    c.drawString(margin, 32, f"{DATA['report_id']}  |  {DATA['revision']}")
+    c.drawString(margin, 32, f"{data['report_id']}  |  {data['revision']}")
     c.drawRightString(PAGE_W - margin, 32, "Page 2")
 
 # -----------------------------
-# BUILD PDF
+# PUBLIC API
 # -----------------------------
+
 def make_pdf(
     out_path,
     loc,
@@ -442,9 +526,26 @@ def make_pdf(
     results,
     overall,
     project_name="",
-    revision_no=0,
+    revision_no=1,
     document_no="",
     airport_label="",
     report_date="",
     reviewer=None,
 ):
+    data = _build_report_data(
+        loc=loc,
+        required_hours=required_hours,
+        results=results,
+        overall=overall,
+        document_no=document_no,
+        revision_no=revision_no if revision_no else 1,
+        airport_label=airport_label,
+        report_date=report_date,
+    )
+
+    c = canvas.Canvas(out_path, pagesize=A4)
+    _draw_cover_page(c, data)
+    c.showPage()
+    _draw_summary_page(c, data)
+    c.showPage()
+    c.save()

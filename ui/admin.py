@@ -12,6 +12,8 @@ from core.db import (
     create_user,
     update_access_request_status,
     user_exists,
+    update_user_active,
+    update_user_password,
 )
 from core.auth import hash_password
 from core.devices import DEVICES
@@ -157,21 +159,59 @@ def _render_users_tab():
         st.info("No users found.")
         return
 
-    data = []
-    for row in rows:
-        data.append(
-            {
-                "Email": row["email"],
-                "Full name": row["full_name"] or "",
-                "Organization": row["organization"] or "",
-                "Role": row["role"],
-                "Active": "Yes" if row["is_active"] else "No",
-                "Created": row["created_at"],
-                "Last login": row["last_login_at"] or "",
-            }
-        )
+    current_user_id = st.session_state.get("auth_user_id")
 
-    st.dataframe(data, use_container_width=True, hide_index=True)
+    for row in rows:
+        with st.container():
+            st.markdown("---")
+
+            c1, c2, c3 = st.columns([2.4, 1.1, 1.7])
+
+            with c1:
+                st.markdown(f"**{row['email']}**")
+                st.write(f"Name: {row['full_name'] or '-'}")
+                st.write(f"Organization: {row['organization'] or '-'}")
+
+            with c2:
+                st.write(f"Role: {row['role']}")
+                st.write(f"Active: {'Yes' if row['is_active'] else 'No'}")
+                st.write(f"Created: {row['created_at']}")
+
+            with c3:
+                can_manage = row["id"] != current_user_id
+
+                if row["is_active"]:
+                    if st.button(
+                        "Deactivate",
+                        key=f"deactivate_user_{row['id']}",
+                        use_container_width=True,
+                        disabled=not can_manage,
+                    ):
+                        update_user_active(row["id"], False)
+                        st.warning(f"User {row['email']} deactivated.")
+                        st.rerun()
+                else:
+                    if st.button(
+                        "Reactivate",
+                        key=f"reactivate_user_{row['id']}",
+                        use_container_width=True,
+                        disabled=not can_manage,
+                    ):
+                        update_user_active(row["id"], True)
+                        st.success(f"User {row['email']} reactivated.")
+                        st.rerun()
+
+                if st.button(
+                    "Reset password",
+                    key=f"reset_password_{row['id']}",
+                    use_container_width=True,
+                    disabled=not can_manage,
+                ):
+                    temp_password = _generate_temp_password()
+                    update_user_password(row["id"], hash_password(temp_password))
+                    st.success(
+                        f"Password reset for {row['email']}. New temporary password: {temp_password}"
+                    )
 
 
 def _render_studies_tab():
@@ -201,7 +241,9 @@ def _render_studies_tab():
             with c2:
                 st.write(f"**Result:** {row['overall_result'] or '-'}")
                 st.write(f"**Hours/day:** {row['required_hours']}")
-                st.write(f"**Worst blackout days:** {row['worst_blackout_days'] if row['worst_blackout_days'] is not None else '-'}")
+                st.write(
+                    f"**Worst blackout days:** {row['worst_blackout_days'] if row['worst_blackout_days'] is not None else '-'}"
+                )
 
             with c3:
                 pct = row["worst_blackout_pct"]

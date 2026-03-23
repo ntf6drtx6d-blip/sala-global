@@ -15,6 +15,12 @@ def get_connection():
     return conn
 
 
+def _column_exists(cur, table_name, column_name):
+    cur.execute(f"PRAGMA table_info({table_name})")
+    rows = cur.fetchall()
+    return any(row["name"] == column_name for row in rows)
+
+
 def init_db():
     conn = get_connection()
     cur = conn.cursor()
@@ -57,9 +63,19 @@ def init_db():
 
         result_summary_json TEXT,
 
+        pdf_name TEXT,
+        pdf_bytes BLOB,
+
         FOREIGN KEY(user_id) REFERENCES users(id)
     )
     """)
+
+    # migrate old DBs if needed
+    if not _column_exists(cur, "studies", "pdf_name"):
+        cur.execute("ALTER TABLE studies ADD COLUMN pdf_name TEXT")
+
+    if not _column_exists(cur, "studies", "pdf_bytes"):
+        cur.execute("ALTER TABLE studies ADD COLUMN pdf_bytes BLOB")
 
     # ACCESS REQUESTS
     cur.execute("""
@@ -164,7 +180,9 @@ def save_study(
     overall_result,
     worst_blackout_days,
     worst_blackout_pct,
-    result_summary
+    result_summary,
+    pdf_name=None,
+    pdf_bytes=None,
 ):
     conn = get_connection()
     cur = conn.cursor()
@@ -183,9 +201,11 @@ def save_study(
             overall_result,
             worst_blackout_days,
             worst_blackout_pct,
-            result_summary_json
+            result_summary_json,
+            pdf_name,
+            pdf_bytes
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         user_id,
         datetime.utcnow().isoformat(),
@@ -199,7 +219,9 @@ def save_study(
         overall_result,
         worst_blackout_days,
         worst_blackout_pct,
-        json.dumps(result_summary)
+        json.dumps(result_summary),
+        pdf_name,
+        pdf_bytes,
     ))
 
     conn.commit()

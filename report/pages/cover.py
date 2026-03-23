@@ -1,7 +1,7 @@
 from reportlab.platypus import Paragraph, Spacer, Table, TableStyle, PageBreak
 from reportlab.lib import colors
 
-from ..styles import TITLE, BODY, SMALL, BOLD, LINE, SOFT_BG, WHITE
+from ..styles import TITLE, BODY, SMALL, BOLD, LINE, SOFT_BG
 
 
 def build_cover(data):
@@ -30,7 +30,10 @@ def build_cover(data):
         ("BACKGROUND", (0, 0), (-1, -1), SOFT_BG),
         ("BOX", (0, 0), (-1, -1), 1, LINE),
         ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.lightgrey),
-        ("PADDING", (0, 0), (-1, -1), 8),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
     ]))
 
     story.append(table)

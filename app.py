@@ -557,7 +557,7 @@ render_header()
 user_id = st.session_state.get("auth_user_id")
 
 if is_admin():
-    tab_calc, tab_my, tab_admin = st.tabs(["Calculator", "My studies", "Admin"])
+    tab_calc, tab_my, tab_admin = st.tabs(["Feasibility Study", "My studies", "Admin"])
 
     with tab_calc:
         render_calculator_app()

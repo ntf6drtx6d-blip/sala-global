@@ -280,3 +280,42 @@ def list_access_requests():
     rows = cur.fetchall()
     conn.close()
     return rows
+def get_access_request(request_id):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("SELECT * FROM access_requests WHERE id = ?", (request_id,))
+    row = cur.fetchone()
+
+    conn.close()
+    return row
+
+
+def update_access_request_status(request_id, status):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        UPDATE access_requests
+        SET status = ?
+        WHERE id = ?
+    """, (status, request_id))
+
+    conn.commit()
+    conn.close()
+
+
+def list_all_studies():
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT s.*, u.email
+        FROM studies s
+        JOIN users u ON s.user_id = u.id
+        ORDER BY s.created_at DESC
+    """)
+
+    rows = cur.fetchall()
+    conn.close()
+    return rows

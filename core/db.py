@@ -70,7 +70,18 @@ def init_db():
     conn.commit()
     conn.close()
 
-
+    # ACCESS REQUESTS
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS access_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at TEXT NOT NULL,
+        full_name TEXT NOT NULL,
+        email TEXT NOT NULL,
+        organization TEXT,
+        message TEXT,
+        status TEXT NOT NULL DEFAULT 'new'
+    )
+    """)
 # =========================
 # USERS
 # =========================
@@ -217,3 +228,28 @@ def list_all_studies():
     rows = cur.fetchall()
     conn.close()
     return rows
+def create_access_request(full_name, email, organization=None, message=None):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        INSERT INTO access_requests (
+            created_at,
+            full_name,
+            email,
+            organization,
+            message,
+            status
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (
+        datetime.utcnow().isoformat(),
+        full_name,
+        email,
+        organization,
+        message,
+        "new"
+    ))
+
+    conn.commit()
+    conn.close()

@@ -95,11 +95,15 @@ def refresh_study_ready_from_state():
         len(selected_ids) > 0 and study_point_confirmed and mode_ready
     )
 
-
 def apply_global_styles():
     st.markdown(
         """
         <style>
+
+        /* =========================
+           GLOBAL LAYOUT
+        ========================= */
+
         .block-container {
             padding-top: 1.2rem;
             padding-bottom: 2rem;
@@ -110,6 +114,10 @@ def apply_global_styles():
             background: rgba(255,255,255,0);
         }
 
+        /* =========================
+           TITLE
+        ========================= */
+
         .main-title {
             font-size: 2.2rem;
             font-weight: 800;
@@ -117,6 +125,10 @@ def apply_global_styles():
             margin-bottom: 0.2rem;
             color: #1f2937;
         }
+
+        /* =========================
+           ACTION BOX
+        ========================= */
 
         .top-action-wrap {
             border: 1px solid #e8edf4;
@@ -142,16 +154,9 @@ def apply_global_styles():
             margin-top: 8px;
         }
 
-        .user-badge {
-            display: inline-block;
-            padding: 7px 12px;
-            border-radius: 999px;
-            background: #f5f7fa;
-            border: 1px solid #e6eaf0;
-            color: #344054;
-            font-size: 0.86rem;
-            font-weight: 700;
-        }
+        /* =========================
+           BUTTONS (GLOBAL)
+        ========================= */
 
         div[data-testid="stButton"] > button,
         div[data-testid="stDownloadButton"] > button {
@@ -166,6 +171,7 @@ def apply_global_styles():
             margin: 0 !important;
         }
 
+        /* PRIMARY (blue download) */
         div[data-testid="stDownloadButton"] > button {
             background: #1f4fbf !important;
             color: white !important;
@@ -178,11 +184,16 @@ def apply_global_styles():
             color: white !important;
         }
 
+        /* SECONDARY (yellow buttons) */
         div[data-testid="stButton"] button[kind="secondary"] {
             background: #fff7db !important;
             border: 1px solid #f5c451 !important;
             color: #7a5a00 !important;
         }
+
+        /* =========================
+           FIX BUTTON ALIGNMENT
+        ========================= */
 
         div[data-testid="stHorizontalBlock"] > div {
             display: flex !important;
@@ -205,24 +216,71 @@ def apply_global_styles():
             margin-top: 0 !important;
             padding-top: 0 !important;
         }
+
+        /* =========================
+           POPOVER (USER MENU)
+        ========================= */
+
+        div[data-testid="stPopover"] button {
+            border-radius: 999px !important;
+            min-height: 44px !important;
+            padding: 8px 14px !important;
+            font-weight: 700 !important;
+            border: 1px solid #e6eaf0 !important;
+            background: #f9fafb !important;
+            color: #344054 !important;
+        }
+
+        div[data-testid="stPopover"] button:hover {
+            background: #f5f7fa !important;
+            border-color: #d0d5dd !important;
+        }
+
+        /* Dropdown content spacing */
+        div[data-testid="stPopover"] {
+            border-radius: 14px !important;
+        }
+
+        /* =========================
+           TABLE LOOK
+        ========================= */
+
+        .stDataFrame {
+            border-radius: 12px !important;
+            overflow: hidden !important;
+        }
+
+        /* =========================
+           EXPANDER CLEANUP
+        ========================= */
+
+        div[data-testid="stExpander"] {
+            border-radius: 12px !important;
+            border: 1px solid #e6eaf0 !important;
+        }
+
+        /* =========================
+           INPUTS
+        ========================= */
+
+        input, textarea {
+            border-radius: 10px !important;
+        }
+
+        /* =========================
+           SMALL DETAILS
+        ========================= */
+
+        hr {
+            border: none;
+            border-top: 1px solid #e6eaf0;
+        }
+
         </style>
         """,
         unsafe_allow_html=True,
-
-        div[data-testid="stPopover"] button {
-    border-radius: 999px !important;
-    min-height: 44px !important;
-    font-weight: 700 !important;
-    border: 1px solid #e6eaf0 !important;
-    background: #f9fafb !important;
-    color: #344054 !important;
-}
-
-div[data-testid="stPopover"] button:hover {
-    background: #f5f7fa !important;
-    border-color: #d0d5dd !important;
-}
     )
+
 def render_header():
     c1, c2, c3 = st.columns([1, 6, 2])
 

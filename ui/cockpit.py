@@ -61,8 +61,15 @@ def pvgis_short_card():
         unsafe_allow_html=True,
     )
 
-
 def reset_study():
+    # preserve authentication/session identity
+    auth_keys = {
+        "auth_ok": st.session_state.get("auth_ok", False),
+        "auth_user_id": st.session_state.get("auth_user_id"),
+        "auth_email": st.session_state.get("auth_email"),
+        "auth_role": st.session_state.get("auth_role"),
+    }
+
     keep = {
         "airport_label": "",
         "airport_query": "",
@@ -76,24 +83,30 @@ def reset_study():
         "map_click_info": "",
         "study_point_confirmed": False,
         "study_ready": False,
+        "results": None,
+        "overall": None,
+        "pdf_bytes": None,
+        "pdf_name": "sala_standardized_feasibility_study.pdf",
+        "elapsed": None,
+        "running": False,
+        "run_progress": 0,
+        "run_stage": "Ready",
+        "run_log": [],
+        "trigger_run": False,
+        "study_saved_for_current_result": False,
     }
 
+    # clear everything
     for key in list(st.session_state.keys()):
         del st.session_state[key]
 
-    for k, v in keep.items():
+    # restore auth
+    for k, v in auth_keys.items():
         st.session_state[k] = v
 
-    st.session_state.results = None
-    st.session_state.overall = None
-    st.session_state.pdf_bytes = None
-    st.session_state.pdf_name = "sala_standardized_feasibility_study.pdf"
-    st.session_state.elapsed = None
-    st.session_state.running = False
-    st.session_state.run_progress = 0
-    st.session_state.run_stage = "Ready"
-    st.session_state.run_log = []
-    st.session_state.trigger_run = False
+    # restore clean study state
+    for k, v in keep.items():
+        st.session_state[k] = v
 
     st.rerun()
 

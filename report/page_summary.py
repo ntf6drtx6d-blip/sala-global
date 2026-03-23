@@ -1,5 +1,6 @@
 from .theme import (
-    PAGE_H, MARGIN, TOP_RULE_Y, LINE, WHITE, MUTED, NAVY, BLUE, TEXT,
+    PAGE_H, MARGIN, TOP_RULE_Y,
+    LINE, WHITE, MUTED, NAVY, BLUE, TEXT,
     RED_BG, RED_BORDER, RED,
     GREEN_BG, GREEN_BORDER, GREEN,
     GOLD_BG, GOLD_BORDER, GOLD,
@@ -9,32 +10,170 @@ from .blocks import draw_footer, kpi_card, draw_fake_map
 
 
 def draw_summary_page(c, data):
+    page_w = c._pagesize[0]
+
+    # top rule
     c.setStrokeColor(LINE)
     c.setLineWidth(1)
-    c.line(MARGIN, TOP_RULE_Y, c._pagesize[0] - MARGIN, TOP_RULE_Y)
+    c.line(MARGIN, TOP_RULE_Y, page_w - MARGIN, TOP_RULE_Y)
 
-    draw_small_caps(c, MARGIN, PAGE_H - 72, "Management summary", size=10.5, color=BLUE)
-    draw_title(c, MARGIN, PAGE_H - 108, "Feasibility result", size=28, color=NAVY)
+    draw_small_caps(c, MARGIN, PAGE_H - 70, "Management summary", size=10, color=BLUE)
+    draw_title(c, MARGIN, PAGE_H - 105, "Feasibility result", size=28)
 
-    # left context block
+    # layout constants
+    gap = 16
+
+    # LEFT COLUMN (map)
     left_x = MARGIN
-    left_y = 214
-    left_w = 228
-    left_h = 470
+    left_w = 230
+    left_y = 200
+    left_h = 480
 
     draw_round_rect(c, left_x, left_y, left_w, left_h, r=16, fill_color=WHITE, stroke_color=LINE)
 
-    draw_small_caps(c, left_x + 16, left_y + left_h - 22, "Airport / study point", size=8.5, color=MUTED)
+    draw_small_caps(c, left_x + 16, left_y + left_h - 22, "Airport / study point", size=8.5)
 
+    c.setFont("Helvetica-Bold", 15)
     c.setFillColor(NAVY)
-    c.setFont("Helvetica-Bold", 15.5)
     c.drawString(left_x + 16, left_y + left_h - 50, data["airport_name"])
 
-    draw_fake_map(c, left_x + 14, left_y + 104, left_w - 28, 292, data["airport_name"])
+    draw_fake_map(c, left_x + 12, left_y + 110, left_w - 24, 300, data["airport_name"])
 
-    c.setFillColor(TEXT)
-    c.setFont("Helvetica", 10.0)
-    c.drawString(left_x + 16, left_y + 72, data["coordinates"])
+    draw_text(
+        c,
+        left_x + 16,
+        left_y + 80,
+        data["coordinates"],
+        size=10,
+    )
+
+    draw_text(
+        c,
+        left_x + 16,
+        left_y + 60,
+        "Study location used for PVGIS simulation.",
+        size=9,
+        color=MUTED,
+    )
+
+    # RIGHT COLUMN
+    rx = left_x + left_w + gap
+    rw = page_w - MARGIN - rx
+
+    if data["accent"] == "green":
+        bg, border, main = GREEN_BG, GREEN_BORDER, GREEN
+        risk = "green"
+    elif data["accent"] == "gold":
+        bg, border, main = GOLD_BG, GOLD_BORDER, GOLD
+        risk = "red"
+    else:
+        bg, border, main = RED_BG, RED_BORDER, RED
+        risk = "red"
+
+    y = PAGE_H - 150
+
+    # CONCLUSION
+    h = 120
+    draw_round_rect(c, rx, y - h, rw, h, r=16, fill_color=bg, stroke_color=border)
+
+    draw_small_caps(c, rx + 16, y - 22, "Overall conclusion", size=8.5)
+
+    draw_title(
+        c,
+        rx + 16,
+        y - 50,
+        data["overall_conclusion_title"],
+        size=16,
+        max_width=rw - 32,
+        leading=18,
+    )
+
+    draw_text(
+        c,
+        rx + 16,
+        y - h + 20,
+        data["overall_conclusion_text"],
+        size=10,
+        max_width=rw - 32,
+    )
+
+    y -= (h + gap)
+
+    # KPI
+    kpi_h = 130
+    kpi_w = (rw - gap) / 2
+
+    kpi_card(
+        c,
+        rx,
+        y - kpi_h,
+        kpi_w,
+        kpi_h,
+        "Required operation",
+        data["required_operation"],
+        "Applied to all devices",
+        accent="blue",
+    )
+
+    kpi_card(
+        c,
+        rx + kpi_w + gap,
+        y - kpi_h,
+        kpi_w,
+        kpi_h,
+        "Worst blackout risk",
+        data["worst_blackout_risk"],
+        data["worst_blackout_pct"],
+        accent=risk,
+    )
+
+    y -= (kpi_h + gap)
+
+    # INTERPRETATION (no heavy box → cleaner)
+    draw_small_caps(c, rx, y, "Interpretation", size=8.5)
+
+    draw_text(
+        c,
+        rx,
+        y - 20,
+        data["interpretation"],
+        size=10,
+        max_width=rw,
+    )
+
+    y -= 80
+
+    # RECOMMENDATION (clean bar)
+    draw_round_rect(c, rx, y - 40, rw, 40, r=10, fill_color="#F8FAFC", stroke_color=LINE)
+
+    draw_small_caps(c, rx + 16, y - 18, "Recommendation", size=8.5)
+
+    draw_text(
+        c,
+        rx + 130,
+        y - 18,
+        data["recommendation"],
+        size=10,
+        max_width=rw - 140,
+    )
+
+    y -= 60
+
+    # METHODOLOGY STRIP
+    draw_round_rect(c, MARGIN, 70, page_w - 2 * MARGIN, 40, r=10, fill_color=WHITE, stroke_color=LINE)
+
+    draw_text(
+        c,
+        MARGIN + 12,
+        84,
+        data["methodology_note"],
+        size=9,
+        color=MUTED,
+        max_width=page_w - 2 * MARGIN - 24,
+    )
+
+    # footer
+    draw_footer(c, MARGIN, data["report_id"], data["revision"], 2)    c.drawString(left_x + 16, left_y + 72, data["coordinates"])
 
     draw_text(
         c,

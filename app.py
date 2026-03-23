@@ -1,14 +1,15 @@
 # app.py
-# ACTION: REPLACE ENTIRE FILE
 
 import os
 import streamlit as st
+
+from core.db import init_db, create_user, user_exists
+from core.auth import hash_password
 
 from ui.setup import render_setup
 from ui.cockpit import _run_simulation, reset_study
 from ui.result import render_result, render_device_capability_cards
 from ui.graph import render_graph
-from ui.battery import render_battery_section
 from ui.weather_basis import render_weather_basis
 
 
@@ -49,6 +50,27 @@ def init_state():
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
+
+
+def bootstrap_admin_user():
+    init_db()
+
+    admin_email = st.secrets.get("ADMIN_EMAIL")
+    admin_password = st.secrets.get("ADMIN_PASSWORD")
+    admin_full_name = st.secrets.get("ADMIN_FULL_NAME", "Admin")
+    admin_organization = st.secrets.get("ADMIN_ORGANIZATION", "SALA")
+
+    if not admin_email or not admin_password:
+        return
+
+    if not user_exists(admin_email):
+        create_user(
+            email=admin_email,
+            password_hash=hash_password(admin_password),
+            role="admin",
+            full_name=admin_full_name,
+            organization=admin_organization,
+        )
 
 
 def refresh_study_ready_from_state():
@@ -116,10 +138,6 @@ def apply_global_styles():
             margin-top: 8px;
         }
 
-        /* =========================
-           BUTTON BASE STYLE
-        ========================= */
-
         div[data-testid="stButton"] > button,
         div[data-testid="stDownloadButton"] > button {
             border-radius: 12px !important;
@@ -133,7 +151,6 @@ def apply_global_styles():
             margin: 0 !important;
         }
 
-        /* PRIMARY (blue download) */
         div[data-testid="stDownloadButton"] > button {
             background: #1f4fbf !important;
             color: white !important;
@@ -146,25 +163,18 @@ def apply_global_styles():
             color: white !important;
         }
 
-        /* SECONDARY (yellow - Start new study) */
         div[data-testid="stButton"] button[kind="secondary"] {
             background: #fff7db !important;
             border: 1px solid #f5c451 !important;
             color: #7a5a00 !important;
         }
 
-        /* =========================
-           FIX ALIGNMENT
-        ========================= */
-
-        /* Make each column in horizontal rows vertically centered */
         div[data-testid="stHorizontalBlock"] > div {
             display: flex !important;
             flex-direction: column !important;
             justify-content: center !important;
         }
 
-        /* Normalize button wrappers */
         div[data-testid="stButton"],
         div[data-testid="stDownloadButton"] {
             display: flex !important;
@@ -175,7 +185,6 @@ def apply_global_styles():
             padding-top: 0 !important;
         }
 
-        /* Remove extra top spacing inside widgets */
         div[data-testid="stButton"] > div,
         div[data-testid="stDownloadButton"] > div {
             margin-top: 0 !important;
@@ -185,6 +194,8 @@ def apply_global_styles():
         """,
         unsafe_allow_html=True,
     )
+
+
 def render_header():
     st.write("")
     c1, c2 = st.columns([1, 8])
@@ -276,17 +287,14 @@ def render_top_action_bar():
 
         with c1:
             if st.session_state.get("pdf_bytes") is not None:
-                if is_logged_in():
-                    st.download_button(
-                        "📄 Download PDF report",
-                        data=st.session_state.get("pdf_bytes"),
-                        file_name=st.session_state.get("pdf_name", "sala_standardized_feasibility_study.pdf"),
-                        mime="application/pdf",
-                        use_container_width=True,
-                        key="top_download_pdf_report",
-                    )
-                else:
-                    render_login_inline()
+                st.download_button(
+                    "📄 Download PDF report",
+                    data=st.session_state.get("pdf_bytes"),
+                    file_name=st.session_state.get("pdf_name", "sala_standardized_feasibility_study.pdf"),
+                    mime="application/pdf",
+                    use_container_width=True,
+                    key="top_download_pdf_report",
+                )
 
         with c2:
             if st.button(
@@ -318,6 +326,7 @@ def render_top_action_bar():
 # ---------------- APP FLOW ----------------
 
 init_state()
+bootstrap_admin_user()
 apply_global_styles()
 render_header()
 

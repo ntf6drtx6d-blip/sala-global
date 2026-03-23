@@ -4,7 +4,7 @@ import os
 import streamlit as st
 
 from core.db import init_db, create_user, user_exists, save_study
-from core.auth import hash_password, init_auth_state, is_logged_in, is_admin
+from core.auth import hash_password, init_auth_state, is_logged_in, is_admin, logout
 
 from ui.setup import render_setup
 from ui.cockpit import _run_simulation, reset_study
@@ -13,6 +13,7 @@ from ui.graph import render_graph
 from ui.weather_basis import render_weather_basis
 from ui.login_page import render_login_page
 from ui.admin import render_admin_panel
+from ui.my_studies import render_my_studies
 from ui.result_helpers import annual_empty_battery_stats, overall_state
 
 
@@ -142,6 +143,17 @@ def apply_global_styles():
             margin-top: 8px;
         }
 
+        .user-badge {
+            display: inline-block;
+            padding: 7px 12px;
+            border-radius: 999px;
+            background: #f5f7fa;
+            border: 1px solid #e6eaf0;
+            color: #344054;
+            font-size: 0.86rem;
+            font-weight: 700;
+        }
+
         div[data-testid="stButton"] > button,
         div[data-testid="stDownloadButton"] > button {
             border-radius: 12px !important;
@@ -201,8 +213,7 @@ def apply_global_styles():
 
 
 def render_header():
-    st.write("")
-    c1, c2 = st.columns([1, 8])
+    c1, c2, c3 = st.columns([1, 7, 2])
 
     with c1:
         if os.path.exists(LOGO_PATH):
@@ -213,6 +224,16 @@ def render_header():
             '<div class="main-title">SALA Standardized Feasibility Study for Solar AGL</div>',
             unsafe_allow_html=True,
         )
+
+    with c3:
+        email = st.session_state.get("auth_email", "")
+        role = st.session_state.get("auth_role", "")
+        st.markdown(
+            f'<div style="text-align:right;"><span class="user-badge">{email} · {role}</span></div>',
+            unsafe_allow_html=True,
+        )
+        if st.button("Log out", key="logout_button", use_container_width=True):
+            logout()
 
 
 def _trigger_simulation():
@@ -427,18 +448,30 @@ bootstrap_admin_user()
 apply_global_styles()
 
 if not is_logged_in():
+    from ui.login_page import render_login_page
     render_login_page()
     st.stop()
 
 render_header()
 
+user_id = st.session_state.get("auth_user_id")
+
 if is_admin():
-    tab_calc, tab_admin = st.tabs(["Calculator", "Admin"])
+    tab_calc, tab_my, tab_admin = st.tabs(["Calculator", "My studies", "Admin"])
 
     with tab_calc:
         render_calculator_app()
 
+    with tab_my:
+        render_my_studies(user_id)
+
     with tab_admin:
         render_admin_panel()
 else:
-    render_calculator_app()
+    tab_calc, tab_my = st.tabs(["Calculator", "My studies"])
+
+    with tab_calc:
+        render_calculator_app()
+
+    with tab_my:
+        render_my_studies(user_id)

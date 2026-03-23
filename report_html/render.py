@@ -1,5 +1,4 @@
 import base64
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -13,10 +12,10 @@ from report.data_builder import build_report_data
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATE_DIR = BASE_DIR
 ASSETS_DIR = BASE_DIR / "assets"
+TEMPLATE_NAME = "template.html"
 
 SALA_LOGO = ASSETS_DIR / "sala_logo.png"
 JRC_LOGO = ASSETS_DIR / "jrc_logo.jpg"
-TEMPLATE_NAME = "template.html"
 
 
 def _file_to_data_uri(path: Path) -> str:
@@ -33,33 +32,37 @@ def _file_to_data_uri(path: Path) -> str:
     else:
         mime = "application/octet-stream"
 
-    raw = path.read_bytes()
-    encoded = base64.b64encode(raw).decode("utf-8")
+    encoded = base64.b64encode(path.read_bytes()).decode("utf-8")
     return f"data:{mime};base64,{encoded}"
 
 
 def _optional_image_to_data_uri(path_str: Optional[str]) -> str:
     if not path_str:
         return ""
+
     path = Path(path_str)
     if not path.exists():
         return ""
+
     return _file_to_data_uri(path)
 
 
 def _find_map_image() -> str:
     """
-    Optional.
-    If you later save a static map screenshot somewhere, put candidate paths here.
+    Optional map placeholder.
+    If later you save a static screenshot for the study point,
+    add its path here.
     """
     candidates = [
+        Path("/mnt/data/study_map.png"),
         Path("/mnt/data/current_report_render/page-1.png"),
         Path("/mnt/data/current_report_render/page-2.png"),
-        Path("/mnt/data/study_map.png"),
     ]
+
     for p in candidates:
         if p.exists():
             return str(p)
+
     return ""
 
 
@@ -94,10 +97,7 @@ def _build_html_context(
         conclusion_class = ""
 
     worst_blackout_risk = str(data.get("worst_blackout_risk", ""))
-    if worst_blackout_risk.startswith("0 "):
-        risk_class = "pass"
-    else:
-        risk_class = ""
+    risk_class = "pass" if worst_blackout_risk.startswith("0 ") else ""
 
     context = {
         "report_id": data["report_id"],
@@ -164,7 +164,7 @@ def make_pdf(
     airport_label="",
     report_date="",
     reviewer=None,
-    save_debug_html: bool = False,
+    save_debug_html=False,
 ):
     html_string = render_html(
         loc=loc,
@@ -182,4 +182,7 @@ def make_pdf(
         with open(debug_path, "w", encoding="utf-8") as f:
             f.write(html_string)
 
-    HTML(string=html_string, base_url=str(BASE_DIR)).write_pdf(out_path)
+    HTML(
+        string=html_string,
+        base_url=str(BASE_DIR),
+    ).write_pdf(out_path)

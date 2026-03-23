@@ -316,7 +316,7 @@ def render_header():
         email = st.session_state.get("auth_email", "")
         role = st.session_state.get("auth_role", "")
         display_name = _display_name_from_email(email)
-        user_label = f"{display_name} ▾"
+        user_label = f"{display_name}"
 
         with st.popover(user_label, use_container_width=True):
             st.markdown("**My profile**")

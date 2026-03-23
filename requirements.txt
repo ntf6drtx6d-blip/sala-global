@@ -8,3 +8,6 @@ tqdm
 folium
 streamlit-folium
 altair
+streamlit
+jinja2
+weasyprint

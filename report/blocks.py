@@ -1,3 +1,5 @@
+from reportlab.pdfbase.pdfmetrics import stringWidth
+
 from .theme import (
     WHITE, LINE, SOFT_BG, MUTED, TEXT, NAVY,
     RED, RED_BG, RED_BORDER,
@@ -17,6 +19,14 @@ def draw_footer(c, margin, report_id, revision, page_no):
     c.drawRightString(c._pagesize[0] - margin, 34, f"Page {page_no}")
 
 
+def _fit_font_size(text, font_name, start_size, min_size, max_width):
+    text = str(text)
+    size = start_size
+    while size > min_size and stringWidth(text, font_name, size) > max_width:
+        size -= 0.5
+    return max(size, min_size)
+
+
 def kpi_card(c, x, y, w, h, title, value, subtitle="", accent="red"):
     if accent == "red":
         bg, border, main = RED_BG, RED_BORDER, RED
@@ -29,13 +39,43 @@ def kpi_card(c, x, y, w, h, title, value, subtitle="", accent="red"):
     else:
         bg, border, main = SOFT_BG, LINE, NAVY
 
-    draw_round_rect(c, x, y, w, h, r=14, fill_color=bg, stroke_color=border, line_width=1.15)
-    draw_small_caps(c, x + 16, y + h - 22, title, size=8.6, color=MUTED)
+    draw_round_rect(
+        c,
+        x,
+        y,
+        w,
+        h,
+        r=14,
+        fill_color=bg,
+        stroke_color=border,
+        line_width=1.15,
+    )
 
-    c.setFont("Helvetica-Bold", 21)
+    # title
+    draw_small_caps(
+        c,
+        x + 16,
+        y + h - 20,
+        title,
+        size=8.0,
+        color=MUTED,
+    )
+
+    # value with auto-fit
+    value_text = str(value)
+    value_size = _fit_font_size(
+        text=value_text,
+        font_name="Helvetica-Bold",
+        start_size=21,
+        min_size=14,
+        max_width=w - 32,
+    )
+
+    c.setFont("Helvetica-Bold", value_size)
     c.setFillColor(main)
-    c.drawString(x + 16, y + h - 56, str(value))
+    c.drawString(x + 16, y + h - 56, value_text)
 
+    # subtitle
     if subtitle:
         draw_text(
             c,
@@ -68,12 +108,11 @@ def draw_fake_map(c, x, y, w, h, airport_name):
     c.line(x + w - 85, y + 14, x + w - 24, y + h - 18)
     c.setDash()
 
+    # study point
     px = x + w * 0.54
     py = y + h * 0.47
     c.setFillColor("#C24D3A")
     c.circle(px, py, 6, stroke=0, fill=1)
 
-    c.setFont("Helvetica", 11)
-    c.setFillColor("#98A2B3")
-    label = str(airport_name).upper()[:20]
-    c.drawString(x + 24, y + h * 0.60, label)
+    # intentionally no airport label inside map
+    # to avoid duplication with title above the map

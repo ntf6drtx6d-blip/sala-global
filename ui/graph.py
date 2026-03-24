@@ -31,7 +31,7 @@ def calc_battery_reserve_hours(result_row: dict):
 def _extract_monthly_empty_battery_pct(result_row: dict):
     """
     Tries several possible keys for monthly empty-battery exposure.
-    Expected shape: 12 values, each meaning percent of month/day exposure.
+    Expected: 12 values.
     """
     candidates = [
         result_row.get("monthly_empty_battery_pct"),
@@ -131,8 +131,8 @@ def build_monthly_df(results: dict, required_hrs: float) -> pd.DataFrame:
 
 
 def render_blackout_graph(results: dict, visible_devices: list[str]):
-    st.markdown("## Monthly empty-battery exposure")
-    st.caption("Estimated blackout exposure and empty-battery percentage by month.")
+    st.markdown("## Monthly empty-battery days")
+    st.caption("Estimated number of days in each month when battery reserve reaches empty state.")
 
     blackout_df = build_blackout_df(results)
 
@@ -156,9 +156,9 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
         )
     )
 
-    bars = alt.Chart(plot_df).mark_bar(opacity=0.75).encode(
+    bars = alt.Chart(plot_df).mark_bar(opacity=0.8).encode(
         x=x_axis,
-        y=alt.Y("EstimatedBlackoutDays:Q", title="Estimated blackout days"),
+        y=alt.Y("EstimatedBlackoutDays:Q", title="Estimated empty-battery days"),
         color=alt.Color(
             "Device:N",
             title="Selected devices",
@@ -168,38 +168,18 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
         tooltip=[
             alt.Tooltip("Device:N", title="Device"),
             alt.Tooltip("Month:N", title="Month"),
-            alt.Tooltip("EstimatedBlackoutDays:Q", title="Estimated blackout days", format=".1f"),
+            alt.Tooltip("EstimatedBlackoutDays:Q", title="Estimated empty-battery days", format=".1f"),
             alt.Tooltip("EmptyBatteryPct:Q", title="Empty-battery exposure", format=".1f"),
             alt.Tooltip("MonthDays:Q", title="Days in month", format=".0f"),
         ],
     )
 
-    pct_line = alt.Chart(plot_df).mark_line(
-        point=True,
-        strokeWidth=2.2,
-        color="#111827"
-    ).encode(
-        x=x_axis,
-        y=alt.Y("EmptyBatteryPct:Q", title="Empty-battery exposure (%)"),
-        detail="Device:N",
-        tooltip=[
-            alt.Tooltip("Device:N", title="Device"),
-            alt.Tooltip("Month:N", title="Month"),
-            alt.Tooltip("EmptyBatteryPct:Q", title="Empty-battery exposure", format=".1f"),
-            alt.Tooltip("EstimatedBlackoutDays:Q", title="Estimated blackout days", format=".1f"),
-        ],
-    )
+    chart = bars.properties(height=300).interactive()
 
-    blackout_chart = alt.layer(bars, pct_line).resolve_scale(
-        y="independent"
-    ).properties(
-        height=340
-    ).interactive()
-
-    st.altair_chart(blackout_chart, use_container_width=True)
+    st.altair_chart(chart, use_container_width=True)
 
     st.caption(
-        "Estimated blackout days are derived from monthly empty-battery exposure and calendar month length."
+        "Estimated monthly values are derived from monthly empty-battery exposure and the number of days in each calendar month."
     )
 
 
@@ -212,7 +192,6 @@ def render_graph():
     chart_df = build_monthly_df(results, required_hours)
     device_labels = list(chart_df["Device"].unique())
 
-    # shared device filter for both graphs
     visible_devices = st.multiselect(
         "Devices shown on graph",
         device_labels,
@@ -221,7 +200,7 @@ def render_graph():
         key="graph_devices_filter",
     )
 
-    # -------- NEW GRAPH ABOVE --------
+    # NEW GRAPH ABOVE
     render_blackout_graph(results, visible_devices)
 
     st.markdown("## Annual operating profile")

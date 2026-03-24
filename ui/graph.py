@@ -49,6 +49,7 @@ def _monthly_blackout_days_from_pct(monthly_pct):
         for pct, days in zip(monthly_pct, MONTH_DAYS)
     ]
 
+
 def build_blackout_df(results: dict) -> pd.DataFrame:
     rows = []
 
@@ -74,6 +75,8 @@ def build_blackout_df(results: dict) -> pd.DataFrame:
             rows.append({
                 "Month": month,
                 "MonthIndex": i + 1,
+                "MonthStart": i + 0.55,
+                "MonthEnd": i + 1.45,
                 "Device": label,
                 "EmptyBatteryPct": float(monthly_pct[i]),
                 "EstimatedBlackoutDays": days_val,
@@ -81,7 +84,7 @@ def build_blackout_df(results: dict) -> pd.DataFrame:
                 "StatusBand": status_band,
                 "Meaning": (
                     f"Estimated days with battery at 0% in {month}: {days_val:.1f}. "
-                    f"Battery at 0% exposure: {float(monthly_pct[i]):.1f}% of the month. "
+                    f"Share of month with empty battery: {float(monthly_pct[i]):.1f}%. "
                     f"Calendar month length: {MONTH_DAYS[i]} days."
                 ),
             })
@@ -456,9 +459,3 @@ def render_graph():
         "Hover any point to compare required hours, achieved hours, gap versus requirement, and battery reserve. "
         "Battery reserve means battery-only fallback capability without solar input."
     )
-
-It seems all ok  just replace 
-0 days -> no color
-1-3 yellow
-3+ red
-and replace that text in caption below it with other/better/less technical one. and  Estimated number of days in each month when battery reserve reaches empty state.also there on top before the graph. Or just give me exact lines to chagne and into what. +#+#+#+#+#+assistant to=commentary.canmore.create_textdoc  天天中彩票一等奖?

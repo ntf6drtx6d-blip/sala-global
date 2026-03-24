@@ -170,24 +170,25 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
 
         st.markdown(f"**{device}**")
 
-        # severity bands for background bars
-        def _band_color(days):
-            if days <= 0:
-                return "#16a34a"
-            elif days <= 1:
-                return "#f59e0b"
-            return "#dc2626"
-
-        device_df["BandColor"] = device_df["EstimatedBlackoutDays"].apply(_band_color)
+        # status for bar colouring
+        device_df["Severity"] = device_df["EstimatedBlackoutDays"].apply(
+            lambda d: "0 days"
+            if d <= 0
+            else "Up to 1 day"
+            if d <= 1
+            else "More than 1 day"
+        )
 
         x_axis = alt.X(
-            "MonthIndex:Q",
-            scale=alt.Scale(domain=[0.5, 12.5]),
-            axis=alt.Axis(
-                title="Month",
-                values=list(range(1, 13)),
-                labelExpr="['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][datum.value-1]"
-            )
+            "Month:N",
+            sort=MONTHS,
+            axis=alt.Axis(title="Month", labelAngle=0)
+        )
+
+        y_axis = alt.Y(
+            "EstimatedBlackoutDays:Q",
+            scale=alt.Scale(domain=[0, y_max]),
+            title="Estimated empty-battery days"
         )
 
         tooltip_fields = [
@@ -199,55 +200,51 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
             alt.Tooltip("Meaning:N", title="Interpretation"),
         ]
 
-        # soft monthly background bars
-        bg_bars = alt.Chart(device_df).mark_bar(
-            opacity=0.16,
-            size=38
+        bars = alt.Chart(device_df).mark_bar(
+            opacity=0.22,
+            size=42
         ).encode(
             x=x_axis,
-            y=alt.Y(
-                "EstimatedBlackoutDays:Q",
-                scale=alt.Scale(domain=[0, y_max]),
-                title="Estimated empty-battery days"
+            y=y_axis,
+            color=alt.Color(
+                "Severity:N",
+                scale=alt.Scale(
+                    domain=["0 days", "Up to 1 day", "More than 1 day"],
+                    range=["#16a34a", "#f59e0b", "#dc2626"],
+                ),
+                legend=None,
             ),
-            color=alt.Color("BandColor:N", scale=None, legend=None),
             tooltip=tooltip_fields,
         )
 
-        # line over bars
         line_chart = alt.Chart(device_df).mark_line(
             point=True,
             strokeWidth=2.8,
             color="#5b7aa6"
         ).encode(
             x=x_axis,
-            y=alt.Y(
-                "EstimatedBlackoutDays:Q",
-                scale=alt.Scale(domain=[0, y_max]),
-                title="Estimated empty-battery days"
-            ),
+            y=y_axis,
             tooltip=tooltip_fields,
         )
 
-        # zero target line
         zero_line_df = pd.DataFrame({
-            "MonthIndex": list(range(1, 13)),
+            "Month": MONTHS,
             "Target": [0] * 12,
         })
 
         zero_line = alt.Chart(zero_line_df).mark_line(
             color="#111827",
             strokeDash=[10, 5],
-            strokeWidth=2.2
+            strokeWidth=2.0
         ).encode(
-            x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0.5, 12.5])),
+            x=alt.X("Month:N", sort=MONTHS),
             y=alt.Y("Target:Q", scale=alt.Scale(domain=[0, y_max])),
         )
 
         zero_label_df = pd.DataFrame({
-            "MonthIndex": [12],
+            "Month": ["Dec"],
             "Target": [0],
-            "Text": ["Target = 0 empty-battery days/month"],
+            "Text": ["Target = 0 days/month"],
         })
 
         zero_label = alt.Chart(zero_label_df).mark_text(
@@ -258,18 +255,13 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
             fontWeight="bold",
             color="#111827"
         ).encode(
-            x="MonthIndex:Q",
-            y="Target:Q",
+            x=alt.X("Month:N", sort=MONTHS),
+            y=alt.Y("Target:Q", scale=alt.Scale(domain=[0, y_max])),
             text="Text:N",
         )
 
-        chart = (
-            bg_bars
-            + line_chart
-            + zero_line
-            + zero_label
-        ).properties(
-            height=220
+        chart = (bars + line_chart + zero_line + zero_label).properties(
+            height=230
         ).interactive()
 
         st.altair_chart(chart, use_container_width=True)

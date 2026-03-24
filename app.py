@@ -17,6 +17,7 @@ from ui.energy_flow import render_energy_flow
 
 st.set_page_config(
     page_title="SALA Standardized Feasibility Study for Solar AGL",
+    page_icon="sala_logo.png",
     layout="wide",
 )
 
@@ -200,11 +201,9 @@ def apply_global_styles():
             min-height: 44px !important;
             padding: 8px 16px !important;
             font-weight: 700 !important;
-
             background: #eef4ff !important;
             border: 1px solid #d6e4ff !important;
             color: #1f3a8a !important;
-
             transition: all 0.2s ease;
         }
 
@@ -291,7 +290,7 @@ def render_header():
 
 def _trigger_simulation():
     st.session_state.running = True
-    st.session_state.run_stage = "Validating study inputs"
+    st.session_state.run_stage = "Connecting to PVGIS"
     st.session_state.run_progress = 0.0
     st.session_state.trigger_run = True
     st.session_state.study_saved_for_current_result = False
@@ -310,85 +309,87 @@ def render_top_action_bar():
         "progress_bar": None,
         "progress_text": None,
         "stage_text": None,
+        "status_box": None,
+        "trust_note": None,
     }
 
     if is_running:
-    st.markdown("**Simulation in progress**")
-    st.markdown(
-        "<div class='secondary-note' style='margin-top:0;'>Using PVGIS (JRC, European Commission) as the solar-data basis.</div>",
-        unsafe_allow_html=True,
-    )
-
-    progress_cols = st.columns([6, 1])
-    with progress_cols[0]:
-        action_state["progress_bar"] = st.progress(0)
-    with progress_cols[1]:
-        action_state["progress_text"] = st.empty()
-
-    action_state["stage_text"] = st.empty()
-    action_state["status_box"] = st.empty()
-    action_state["trust_note"] = st.empty()
-
-    pct = int(st.session_state.get("run_progress", 0))
-    stage = st.session_state.get("run_stage", "Preparing simulation")
-
-    action_state["progress_bar"].progress(pct)
-    action_state["progress_text"].markdown(
-        f"<div style='text-align:right;font-weight:700;color:#667085;'>{pct}%</div>",
-        unsafe_allow_html=True,
-    )
-    action_state["stage_text"].markdown(
-        f"<div class='secondary-note'><b>Current step:</b> {stage}</div>",
-        unsafe_allow_html=True,
-    )
-
-    logs = st.session_state.get("run_log", [])
-    if logs:
-        log_html = "".join(
-            [
-                f"<div style='padding:6px 0;border-bottom:1px solid #eef2f6;color:#344054;'>{line}</div>"
-                for line in logs[-6:]
-            ]
+        st.markdown("**Simulation in progress**")
+        st.markdown(
+            "<div class='secondary-note' style='margin-top:0;'>Using PVGIS (JRC, European Commission) as the solar-data basis.</div>",
+            unsafe_allow_html=True,
         )
-    else:
-        log_html = "<div style='color:#667085;'>Initializing simulation...</div>"
 
-    action_state["status_box"].markdown(
-        f"""
-        <div style="
-            border:1px solid #e6eaf0;
-            border-radius:14px;
-            background:#ffffff;
-            padding:12px 14px;
-            margin-top:10px;
-            box-shadow:0 2px 10px rgba(16,24,40,0.04);
-        ">
-            <div style="font-size:0.88rem;font-weight:700;color:#344054;margin-bottom:8px;">
-                Live calculation status
+        progress_cols = st.columns([6, 1])
+        with progress_cols[0]:
+            action_state["progress_bar"] = st.progress(0)
+        with progress_cols[1]:
+            action_state["progress_text"] = st.empty()
+
+        action_state["stage_text"] = st.empty()
+        action_state["status_box"] = st.empty()
+        action_state["trust_note"] = st.empty()
+
+        pct = int(st.session_state.get("run_progress", 0))
+        stage = st.session_state.get("run_stage", "Preparing simulation")
+
+        action_state["progress_bar"].progress(pct)
+        action_state["progress_text"].markdown(
+            f"<div style='text-align:right;font-weight:700;color:#667085;'>{pct}%</div>",
+            unsafe_allow_html=True,
+        )
+        action_state["stage_text"].markdown(
+            f"<div class='secondary-note'><b>Current step:</b> {stage}</div>",
+            unsafe_allow_html=True,
+        )
+
+        logs = st.session_state.get("run_log", [])
+        if logs:
+            log_html = "".join(
+                [
+                    f"<div style='padding:6px 0;border-bottom:1px solid #eef2f6;color:#344054;'>{line}</div>"
+                    for line in logs[-6:]
+                ]
+            )
+        else:
+            log_html = "<div style='color:#667085;'>Initializing simulation...</div>"
+
+        action_state["status_box"].markdown(
+            f"""
+            <div style="
+                border:1px solid #e6eaf0;
+                border-radius:14px;
+                background:#ffffff;
+                padding:12px 14px;
+                margin-top:10px;
+                box-shadow:0 2px 10px rgba(16,24,40,0.04);
+            ">
+                <div style="font-size:0.88rem;font-weight:700;color:#344054;margin-bottom:8px;">
+                    Live calculation status
+                </div>
+                {log_html}
             </div>
-            {log_html}
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+            """,
+            unsafe_allow_html=True,
+        )
 
-    action_state["trust_note"].markdown(
-        """
-        <div style="
-            margin-top:10px;
-            border:1px solid #d6e4ff;
-            border-radius:12px;
-            background:#eef4ff;
-            padding:10px 12px;
-            color:#344054;
-            font-size:0.93rem;
-            line-height:1.45;
-        ">
-            <b>Transparent method:</b> SALA uses PVGIS as an independent solar-data source and applies a standardized off-grid feasibility logic to the selected operating profile and device configuration.
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+        action_state["trust_note"].markdown(
+            """
+            <div style="
+                margin-top:10px;
+                border:1px solid #d6e4ff;
+                border-radius:12px;
+                background:#eef4ff;
+                padding:10px 12px;
+                color:#344054;
+                font-size:0.93rem;
+                line-height:1.45;
+            ">
+                <b>Transparent method:</b> SALA uses PVGIS as an independent solar-data source and applies a standardized off-grid feasibility logic to the selected operating profile and device configuration.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
     elif not has_results:
         c1, c2 = st.columns([1.4, 4])
@@ -675,7 +676,38 @@ def render_calculator_app():
 
             if action_state["stage_text"] is not None:
                 action_state["stage_text"].markdown(
-                    f"<div class='secondary-note'>{stage}</div>",
+                    f"<div class='secondary-note'><b>Current step:</b> {stage}</div>",
+                    unsafe_allow_html=True,
+                )
+
+            if action_state["status_box"] is not None:
+                logs = st.session_state.get("run_log", [])
+                if logs:
+                    log_html = "".join(
+                        [
+                            f"<div style='padding:6px 0;border-bottom:1px solid #eef2f6;color:#344054;'>{line}</div>"
+                            for line in logs[-6:]
+                        ]
+                    )
+                else:
+                    log_html = "<div style='color:#667085;'>Initializing simulation...</div>"
+
+                action_state["status_box"].markdown(
+                    f"""
+                    <div style="
+                        border:1px solid #e6eaf0;
+                        border-radius:14px;
+                        background:#ffffff;
+                        padding:12px 14px;
+                        margin-top:10px;
+                        box-shadow:0 2px 10px rgba(16,24,40,0.04);
+                    ">
+                        <div style="font-size:0.88rem;font-weight:700;color:#344054;margin-bottom:8px;">
+                            Live calculation status
+                        </div>
+                        {log_html}
+                    </div>
+                    """,
                     unsafe_allow_html=True,
                 )
 
@@ -714,8 +746,6 @@ def render_calculator_app():
                 worst_month=payload["worst_month"],
             )
 
-
-# ---------------- APP FLOW ----------------
 
 init_state()
 init_auth_state()

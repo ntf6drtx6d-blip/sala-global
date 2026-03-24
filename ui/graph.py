@@ -146,6 +146,10 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
         st.info("No devices selected for display.")
         return
 
+    zero_df = plot_df[plot_df["StatusBand"] == "zero"].copy()
+    yellow_df = plot_df[plot_df["StatusBand"] == "near-threshold"].copy()
+    red_df = plot_df[plot_df["StatusBand"] == "exposed"].copy()
+
     x_axis = alt.X(
         "MonthIndex:Q",
         scale=alt.Scale(domain=[0.5, 12.5]),
@@ -156,9 +160,62 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
         )
     )
 
-    bars = alt.Chart(plot_df).mark_bar(opacity=0.8).encode(
+    y_axis = alt.Y(
+        "EstimatedBlackoutDays:Q",
+        scale=alt.Scale(domain=[0, max(2, float(plot_df['EstimatedBlackoutDays'].max()) + 2)]),
+        title="Estimated empty-battery days"
+    )
+
+    # green = 0 days/month
+    green_rect = alt.Chart(zero_df).mark_rect(
+        color="#16a34a",
+        opacity=0.12
+    ).encode(
+        x=alt.X(
+            "MonthStart:Q",
+            scale=alt.Scale(domain=[0.5, 12.5]),
+            axis=alt.Axis(
+                title="Month",
+                values=list(range(1, 13)),
+                labelExpr="['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][datum.value-1]"
+            )
+        ),
+        x2="MonthEnd:Q",
+        y=alt.value(0),
+        y2=alt.value(0),
+        detail="Device:N",
+    )
+
+    # yellow = >0 and <=1 day
+    yellow_rect = alt.Chart(yellow_df).mark_rect(
+        color="#f59e0b",
+        opacity=0.18
+    ).encode(
+        x=alt.X("MonthStart:Q", scale=alt.Scale(domain=[0.5, 12.5])),
+        x2="MonthEnd:Q",
+        y=alt.value(0),
+        y2="EstimatedBlackoutDays:Q",
+        detail="Device:N",
+    )
+
+    # red = >1 day
+    red_rect = alt.Chart(red_df).mark_rect(
+        color="#dc2626",
+        opacity=0.15
+    ).encode(
+        x=alt.X("MonthStart:Q", scale=alt.Scale(domain=[0.5, 12.5])),
+        x2="MonthEnd:Q",
+        y=alt.value(0),
+        y2="EstimatedBlackoutDays:Q",
+        detail="Device:N",
+    )
+
+    line_chart = alt.Chart(plot_df).mark_line(
+        point=True,
+        strokeWidth=2.8
+    ).encode(
         x=x_axis,
-        y=alt.Y("EstimatedBlackoutDays:Q", title="Estimated empty-battery days"),
+        y=y_axis,
         color=alt.Color(
             "Device:N",
             title="Selected devices",
@@ -171,12 +228,67 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
             alt.Tooltip("EstimatedBlackoutDays:Q", title="Estimated empty-battery days", format=".1f"),
             alt.Tooltip("EmptyBatteryPct:Q", title="Empty-battery exposure", format=".1f"),
             alt.Tooltip("MonthDays:Q", title="Days in month", format=".0f"),
+            alt.Tooltip("Meaning:N", title="Interpretation"),
         ],
     )
 
-    chart = bars.properties(height=300).interactive()
+    # target line at zero
+    target_df = pd.DataFrame({
+        "MonthIndex": list(range(1, 13)),
+        "Target": [0] * 12,
+    })
+
+    target_line = alt.Chart(target_df).mark_line(
+        color="#111827",
+        strokeDash=[10, 5],
+        strokeWidth=2.4
+    ).encode(
+        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0.5, 12.5])),
+        y=alt.Y("Target:Q", scale=alt.Scale(domain=[0, max(2, float(plot_df['EstimatedBlackoutDays'].max()) + 2)])),
+    )
+
+    target_label_df = pd.DataFrame({
+        "MonthIndex": [12],
+        "Target": [0],
+        "Text": ["Target = 0 empty-battery days/month"],
+    })
+
+    target_label = alt.Chart(target_label_df).mark_text(
+        align="right",
+        dx=-8,
+        dy=-10,
+        fontSize=12,
+        fontWeight="bold",
+        color="#111827"
+    ).encode(
+        x="MonthIndex:Q",
+        y="Target:Q",
+        text="Text:N",
+    )
+
+    chart = (
+        red_rect
+        + yellow_rect
+        + green_rect
+        + line_chart
+        + target_line
+        + target_label
+    ).properties(
+        height=360
+    ).interactive()
 
     st.altair_chart(chart, use_container_width=True)
+
+    st.markdown(
+        """
+        <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:8px;font-size:0.95rem;color:#475467;">
+            <div><span style="display:inline-block;width:14px;height:14px;background:#16a34a;opacity:0.7;border-radius:3px;margin-right:6px;"></span>0 days in month</div>
+            <div><span style="display:inline-block;width:14px;height:14px;background:#f59e0b;opacity:0.7;border-radius:3px;margin-right:6px;"></span>Up to 1 day in month</div>
+            <div><span style="display:inline-block;width:14px;height:14px;background:#dc2626;opacity:0.7;border-radius:3px;margin-right:6px;"></span>More than 1 day in month</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     st.caption(
         "Estimated monthly values are derived from monthly empty-battery exposure and the number of days in each calendar month."

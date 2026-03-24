@@ -49,7 +49,6 @@ def _monthly_blackout_days_from_pct(monthly_pct):
         for pct, days in zip(monthly_pct, MONTH_DAYS)
     ]
 
-
 def build_blackout_df(results: dict) -> pd.DataFrame:
     rows = []
 

@@ -170,9 +170,15 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
 
         st.markdown(f"**{device}**")
 
-        zero_df = device_df[device_df["StatusBand"] == "zero"].copy()
-        yellow_df = device_df[device_df["StatusBand"] == "near-threshold"].copy()
-        red_df = device_df[device_df["StatusBand"] == "exposed"].copy()
+        # severity bands for background bars
+        def _band_color(days):
+            if days <= 0:
+                return "#16a34a"
+            elif days <= 1:
+                return "#f59e0b"
+            return "#dc2626"
+
+        device_df["BandColor"] = device_df["EstimatedBlackoutDays"].apply(_band_color)
 
         x_axis = alt.X(
             "MonthIndex:Q",
@@ -184,12 +190,6 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
             )
         )
 
-        y_axis = alt.Y(
-            "EstimatedBlackoutDays:Q",
-            scale=alt.Scale(domain=[0, y_max]),
-            title="Estimated empty-battery days"
-        )
-
         tooltip_fields = [
             alt.Tooltip("Device:N", title="Device"),
             alt.Tooltip("Month:N", title="Month"),
@@ -199,49 +199,37 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
             alt.Tooltip("Meaning:N", title="Interpretation"),
         ]
 
-        green_rect = alt.Chart(zero_df).mark_rect(
-            color="#16a34a",
-            opacity=0.12
+        # soft monthly background bars
+        bg_bars = alt.Chart(device_df).mark_bar(
+            opacity=0.16,
+            size=38
         ).encode(
-            x=alt.X("MonthStart:Q", scale=alt.Scale(domain=[0.5, 12.5])),
-            x2="MonthEnd:Q",
-            y=alt.value(0),
-            y2=alt.value(0.6),
+            x=x_axis,
+            y=alt.Y(
+                "EstimatedBlackoutDays:Q",
+                scale=alt.Scale(domain=[0, y_max]),
+                title="Estimated empty-battery days"
+            ),
+            color=alt.Color("BandColor:N", scale=None, legend=None),
             tooltip=tooltip_fields,
         )
 
-        yellow_rect = alt.Chart(yellow_df).mark_rect(
-            color="#f59e0b",
-            opacity=0.18
-        ).encode(
-            x=alt.X("MonthStart:Q", scale=alt.Scale(domain=[0.5, 12.5])),
-            x2="MonthEnd:Q",
-            y=alt.value(0),
-            y2="EstimatedBlackoutDays:Q",
-            tooltip=tooltip_fields,
-        )
-
-        red_rect = alt.Chart(red_df).mark_rect(
-            color="#dc2626",
-            opacity=0.15
-        ).encode(
-            x=alt.X("MonthStart:Q", scale=alt.Scale(domain=[0.5, 12.5])),
-            x2="MonthEnd:Q",
-            y=alt.value(0),
-            y2="EstimatedBlackoutDays:Q",
-            tooltip=tooltip_fields,
-        )
-
+        # line over bars
         line_chart = alt.Chart(device_df).mark_line(
             point=True,
             strokeWidth=2.8,
             color="#5b7aa6"
         ).encode(
             x=x_axis,
-            y=y_axis,
+            y=alt.Y(
+                "EstimatedBlackoutDays:Q",
+                scale=alt.Scale(domain=[0, y_max]),
+                title="Estimated empty-battery days"
+            ),
             tooltip=tooltip_fields,
         )
 
+        # zero target line
         zero_line_df = pd.DataFrame({
             "MonthIndex": list(range(1, 13)),
             "Target": [0] * 12,
@@ -276,9 +264,7 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
         )
 
         chart = (
-            red_rect
-            + yellow_rect
-            + green_rect
+            bg_bars
             + line_chart
             + zero_line
             + zero_label

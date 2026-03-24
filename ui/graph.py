@@ -145,7 +145,6 @@ def build_monthly_df(results: dict, required_hrs: float) -> pd.DataFrame:
             })
 
     return pd.DataFrame(rows)
-
 def render_blackout_graph(results: dict, visible_devices: list[str]):
     st.markdown("## Monthly empty-battery days")
     st.caption("Estimated number of days in each month when battery reserve reaches empty state.")
@@ -162,166 +161,132 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
         st.info("No devices selected for display.")
         return
 
-    # fixed monthly scale: never more than 31 days
     y_max = 31
 
-    zero_df = plot_df[plot_df["StatusBand"] == "zero"].copy()
-    yellow_df = plot_df[plot_df["StatusBand"] == "near-threshold"].copy()
-    red_df = plot_df[plot_df["StatusBand"] == "exposed"].copy()
+    for device in visible_devices:
+        device_df = plot_df[plot_df["Device"] == device].copy()
+        if device_df.empty:
+            continue
 
-    x_axis = alt.X(
-        "MonthIndex:Q",
-        scale=alt.Scale(domain=[0.5, 12.5]),
-        axis=alt.Axis(
-            title="Month",
-            values=list(range(1, 13)),
-            labelExpr="['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][datum.value-1]"
+        st.markdown(f"**{device}**")
+
+        zero_df = device_df[device_df["StatusBand"] == "zero"].copy()
+        yellow_df = device_df[device_df["StatusBand"] == "near-threshold"].copy()
+        red_df = device_df[device_df["StatusBand"] == "exposed"].copy()
+
+        x_axis = alt.X(
+            "MonthIndex:Q",
+            scale=alt.Scale(domain=[0.5, 12.5]),
+            axis=alt.Axis(
+                title="Month",
+                values=list(range(1, 13)),
+                labelExpr="['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][datum.value-1]"
+            )
         )
-    )
 
-    y_axis = alt.Y(
-        "EstimatedBlackoutDays:Q",
-        scale=alt.Scale(domain=[0, y_max]),
-        title="Estimated empty-battery days"
-    )
+        y_axis = alt.Y(
+            "EstimatedBlackoutDays:Q",
+            scale=alt.Scale(domain=[0, y_max]),
+            title="Estimated empty-battery days"
+        )
 
-    # same visual logic as annual graph: monthly colored bands
-    green_rect = alt.Chart(zero_df).mark_rect(
-        color="#16a34a",
-        opacity=0.12
-    ).encode(
-        x=alt.X("MonthStart:Q", scale=alt.Scale(domain=[0.5, 12.5])),
-        x2="MonthEnd:Q",
-        y=alt.value(0),
-        y2=alt.value(0.6),  # tiny green band at zero
-        tooltip=[
+        tooltip_fields = [
             alt.Tooltip("Device:N", title="Device"),
             alt.Tooltip("Month:N", title="Month"),
             alt.Tooltip("EstimatedBlackoutDays:Q", title="Estimated empty-battery days", format=".1f"),
             alt.Tooltip("EmptyBatteryPct:Q", title="Empty-battery exposure", format=".1f"),
             alt.Tooltip("MonthDays:Q", title="Days in month", format=".0f"),
             alt.Tooltip("Meaning:N", title="Interpretation"),
-        ],
-    )
+        ]
 
-    yellow_rect = alt.Chart(yellow_df).mark_rect(
-        color="#f59e0b",
-        opacity=0.18
-    ).encode(
-        x=alt.X("MonthStart:Q", scale=alt.Scale(domain=[0.5, 12.5])),
-        x2="MonthEnd:Q",
-        y=alt.value(0),
-        y2="EstimatedBlackoutDays:Q",
-        tooltip=[
-            alt.Tooltip("Device:N", title="Device"),
-            alt.Tooltip("Month:N", title="Month"),
-            alt.Tooltip("EstimatedBlackoutDays:Q", title="Estimated empty-battery days", format=".1f"),
-            alt.Tooltip("EmptyBatteryPct:Q", title="Empty-battery exposure", format=".1f"),
-            alt.Tooltip("MonthDays:Q", title="Days in month", format=".0f"),
-            alt.Tooltip("Meaning:N", title="Interpretation"),
-        ],
-    )
+        green_rect = alt.Chart(zero_df).mark_rect(
+            color="#16a34a",
+            opacity=0.12
+        ).encode(
+            x=alt.X("MonthStart:Q", scale=alt.Scale(domain=[0.5, 12.5])),
+            x2="MonthEnd:Q",
+            y=alt.value(0),
+            y2=alt.value(0.6),
+            tooltip=tooltip_fields,
+        )
 
-    red_rect = alt.Chart(red_df).mark_rect(
-        color="#dc2626",
-        opacity=0.15
-    ).encode(
-        x=alt.X("MonthStart:Q", scale=alt.Scale(domain=[0.5, 12.5])),
-        x2="MonthEnd:Q",
-        y=alt.value(0),
-        y2="EstimatedBlackoutDays:Q",
-        tooltip=[
-            alt.Tooltip("Device:N", title="Device"),
-            alt.Tooltip("Month:N", title="Month"),
-            alt.Tooltip("EstimatedBlackoutDays:Q", title="Estimated empty-battery days", format=".1f"),
-            alt.Tooltip("EmptyBatteryPct:Q", title="Empty-battery exposure", format=".1f"),
-            alt.Tooltip("MonthDays:Q", title="Days in month", format=".0f"),
-            alt.Tooltip("Meaning:N", title="Interpretation"),
-        ],
-    )
+        yellow_rect = alt.Chart(yellow_df).mark_rect(
+            color="#f59e0b",
+            opacity=0.18
+        ).encode(
+            x=alt.X("MonthStart:Q", scale=alt.Scale(domain=[0.5, 12.5])),
+            x2="MonthEnd:Q",
+            y=alt.value(0),
+            y2="EstimatedBlackoutDays:Q",
+            tooltip=tooltip_fields,
+        )
 
-    line_chart = alt.Chart(plot_df).mark_line(
-        point=True,
-        strokeWidth=2.8,
-        color="#5b7aa6"
-    ).encode(
-        x=x_axis,
-        y=y_axis,
-        tooltip=[
-            alt.Tooltip("Device:N", title="Device"),
-            alt.Tooltip("Month:N", title="Month"),
-            alt.Tooltip("EstimatedBlackoutDays:Q", title="Estimated empty-battery days", format=".1f"),
-            alt.Tooltip("EmptyBatteryPct:Q", title="Empty-battery exposure", format=".1f"),
-            alt.Tooltip("MonthDays:Q", title="Days in month", format=".0f"),
-            alt.Tooltip("Meaning:N", title="Interpretation"),
-        ],
-    )
+        red_rect = alt.Chart(red_df).mark_rect(
+            color="#dc2626",
+            opacity=0.15
+        ).encode(
+            x=alt.X("MonthStart:Q", scale=alt.Scale(domain=[0.5, 12.5])),
+            x2="MonthEnd:Q",
+            y=alt.value(0),
+            y2="EstimatedBlackoutDays:Q",
+            tooltip=tooltip_fields,
+        )
 
-    zero_line_df = pd.DataFrame({
-        "MonthIndex": list(range(1, 13)),
-        "Target": [0] * 12,
-    })
+        line_chart = alt.Chart(device_df).mark_line(
+            point=True,
+            strokeWidth=2.8,
+            color="#5b7aa6"
+        ).encode(
+            x=x_axis,
+            y=y_axis,
+            tooltip=tooltip_fields,
+        )
 
-    zero_line = alt.Chart(zero_line_df).mark_line(
-        color="#111827",
-        strokeDash=[10, 5],
-        strokeWidth=2.2
-    ).encode(
-        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0.5, 12.5])),
-        y=alt.Y("Target:Q", scale=alt.Scale(domain=[0, y_max])),
-    )
+        zero_line_df = pd.DataFrame({
+            "MonthIndex": list(range(1, 13)),
+            "Target": [0] * 12,
+        })
 
-    zero_label_df = pd.DataFrame({
-        "MonthIndex": [12],
-        "Target": [0],
-        "Text": ["Target = 0 empty-battery days/month"],
-    })
+        zero_line = alt.Chart(zero_line_df).mark_line(
+            color="#111827",
+            strokeDash=[10, 5],
+            strokeWidth=2.2
+        ).encode(
+            x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0.5, 12.5])),
+            y=alt.Y("Target:Q", scale=alt.Scale(domain=[0, y_max])),
+        )
 
-    zero_label = alt.Chart(zero_label_df).mark_text(
-        align="right",
-        dx=-8,
-        dy=-10,
-        fontSize=12,
-        fontWeight="bold",
-        color="#111827"
-    ).encode(
-        x="MonthIndex:Q",
-        y="Target:Q",
-        text="Text:N",
-    )
+        zero_label_df = pd.DataFrame({
+            "MonthIndex": [12],
+            "Target": [0],
+            "Text": ["Target = 0 empty-battery days/month"],
+        })
 
-    base_chart = (
-        red_rect
-        + yellow_rect
-        + green_rect
-        + line_chart
-        + zero_line
-        + zero_label
-    ).properties(
-        width=1100,
-        height=170
-    )
+        zero_label = alt.Chart(zero_label_df).mark_text(
+            align="right",
+            dx=-8,
+            dy=-10,
+            fontSize=12,
+            fontWeight="bold",
+            color="#111827"
+        ).encode(
+            x="MonthIndex:Q",
+            y="Target:Q",
+            text="Text:N",
+        )
 
-    # key fix: one separate row per device, same 0–31 day scale
-    chart = base_chart.facet(
-        row=alt.Row(
-            "Device:N",
-            title=None,
-            header=alt.Header(
-                labelFontSize=13,
-                labelFontWeight="bold",
-                labelColor="#344054",
-                labelOrient="left",
-            ),
-            sort=visible_devices,
-        ),
-        spacing=12
-    ).resolve_scale(
-        y="shared",
-        x="shared"
-    )
+        chart = (
+            red_rect
+            + yellow_rect
+            + green_rect
+            + line_chart
+            + zero_line
+            + zero_label
+        ).properties(
+            height=220
+        ).interactive()
 
-    st.altair_chart(chart, use_container_width=True)
+        st.altair_chart(chart, use_container_width=True)
 
     st.markdown(
         """

@@ -154,7 +154,7 @@ def longest_night_hours(lat_deg: float) -> float:
 
 def _device_label(device_id):
     d = DEVICES[device_id]
-    return f"{d['code']}"
+    return d["name"]
 
 
 def _engine_summary(device_id, engine_key, battery_mode):

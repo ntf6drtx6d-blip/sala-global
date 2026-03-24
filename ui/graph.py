@@ -147,7 +147,7 @@ def build_monthly_df(results: dict, required_hrs: float) -> pd.DataFrame:
     return pd.DataFrame(rows)
 def render_blackout_graph(results: dict, visible_devices: list[str]):
     st.markdown("## Monthly empty-battery days")
-    st.caption("Estimated number of days in each month when battery reserve reaches empty state.")
+    st.caption("Estimated days per month with battery at 0%.")
 
     blackout_df = build_blackout_df(results)
 
@@ -170,13 +170,12 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
 
         st.markdown(f"**{device}**")
 
-        # status for bar colouring
         device_df["Severity"] = device_df["EstimatedBlackoutDays"].apply(
             lambda d: "0 days"
             if d <= 0
-            else "Up to 1 day"
-            if d <= 1
-            else "More than 1 day"
+            else "Up to 3 days"
+            if d <= 3
+            else "More than 3 days"
         )
 
         x_axis = alt.X(
@@ -188,14 +187,14 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
         y_axis = alt.Y(
             "EstimatedBlackoutDays:Q",
             scale=alt.Scale(domain=[0, y_max]),
-            title="Estimated empty-battery days"
+            title="Days"
         )
 
         tooltip_fields = [
             alt.Tooltip("Device:N", title="Device"),
             alt.Tooltip("Month:N", title="Month"),
-            alt.Tooltip("EstimatedBlackoutDays:Q", title="Estimated empty-battery days", format=".1f"),
-            alt.Tooltip("EmptyBatteryPct:Q", title="Empty-battery exposure", format=".1f"),
+            alt.Tooltip("EstimatedBlackoutDays:Q", title="Days with battery at 0%", format=".1f"),
+            alt.Tooltip("EmptyBatteryPct:Q", title="Battery at 0% exposure", format=".1f"),
             alt.Tooltip("MonthDays:Q", title="Days in month", format=".0f"),
             alt.Tooltip("Meaning:N", title="Interpretation"),
         ]
@@ -209,8 +208,8 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
             color=alt.Color(
                 "Severity:N",
                 scale=alt.Scale(
-                    domain=["0 days", "Up to 1 day", "More than 1 day"],
-                    range=["#16a34a", "#f59e0b", "#dc2626"],
+                    domain=["0 days", "Up to 3 days", "More than 3 days"],
+                    range=["#e5e7eb", "#f59e0b", "#dc2626"],
                 ),
                 legend=None,
             ),
@@ -223,7 +222,11 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
             color="#5b7aa6"
         ).encode(
             x=x_axis,
-            y=y_axis,
+            y=alt.Y(
+                "EstimatedBlackoutDays:Q",
+                scale=alt.Scale(domain=[0, y_max]),
+                title="Days"
+            ),
             tooltip=tooltip_fields,
         )
 
@@ -244,7 +247,7 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
         zero_label_df = pd.DataFrame({
             "Month": ["Dec"],
             "Target": [0],
-            "Text": ["Target = 0 days/month"],
+            "Text": ["Target = 0 days"],
         })
 
         zero_label = alt.Chart(zero_label_df).mark_text(
@@ -269,17 +272,16 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
     st.markdown(
         """
         <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:8px;font-size:0.95rem;color:#475467;">
-            <div><span style="display:inline-block;width:14px;height:14px;background:#16a34a;opacity:0.7;border-radius:3px;margin-right:6px;"></span>0 days in month</div>
-            <div><span style="display:inline-block;width:14px;height:14px;background:#f59e0b;opacity:0.7;border-radius:3px;margin-right:6px;"></span>Up to 1 day in month</div>
-            <div><span style="display:inline-block;width:14px;height:14px;background:#dc2626;opacity:0.7;border-radius:3px;margin-right:6px;"></span>More than 1 day in month</div>
+            <div><span style="display:inline-block;width:14px;height:14px;background:#e5e7eb;border-radius:3px;margin-right:6px;border:1px solid #cbd5e1;"></span>0 days</div>
+            <div><span style="display:inline-block;width:14px;height:14px;background:#f59e0b;opacity:0.7;border-radius:3px;margin-right:6px;"></span>1–3 days</div>
+            <div><span style="display:inline-block;width:14px;height:14px;background:#dc2626;opacity:0.7;border-radius:3px;margin-right:6px;"></span>More than 3 days</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
     st.caption(
-        "Each selected device is shown on its own fixed 0–31 day monthly scale. "
-        "Estimated monthly values are derived from monthly empty-battery exposure and calendar month length."
+        "This chart shows in which months the battery is expected to reach 0%, and for how many days."
     )
 
 def render_graph():

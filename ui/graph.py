@@ -1,6 +1,3 @@
-# ui/graph.py
-# ACTION: REPLACE ENTIRE FILE
-
 import altair as alt
 import pandas as pd
 import streamlit as st
@@ -8,6 +5,8 @@ import streamlit as st
 
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 
 
 def short_device_label(full_name: str) -> str:
@@ -27,6 +26,61 @@ def calc_battery_reserve_hours(result_row: dict):
         return batt * 0.70 / power
     except Exception:
         return None
+
+
+def _extract_monthly_empty_battery_pct(result_row: dict):
+    """
+    Tries several possible keys for monthly empty-battery exposure.
+    Expected shape: 12 values, each meaning percent of month/day exposure.
+    """
+    candidates = [
+        result_row.get("monthly_empty_battery_pct"),
+        result_row.get("empty_battery_pct_by_month"),
+        result_row.get("monthly_blackout_pct"),
+        result_row.get("blackout_pct_by_month"),
+        result_row.get("monthly_empty_pct"),
+    ]
+
+    for candidate in candidates:
+        if isinstance(candidate, (list, tuple)) and len(candidate) == 12:
+            try:
+                return [float(x) for x in candidate]
+            except Exception:
+                pass
+
+    return None
+
+
+def _monthly_blackout_days_from_pct(monthly_pct):
+    return [
+        round((pct / 100.0) * days, 1)
+        for pct, days in zip(monthly_pct, MONTH_DAYS)
+    ]
+
+
+def build_blackout_df(results: dict) -> pd.DataFrame:
+    rows = []
+
+    for device_name, r in results.items():
+        label = short_device_label(device_name)
+        monthly_pct = _extract_monthly_empty_battery_pct(r)
+
+        if not monthly_pct:
+            continue
+
+        monthly_days = _monthly_blackout_days_from_pct(monthly_pct)
+
+        for i, month in enumerate(MONTHS):
+            rows.append({
+                "Month": month,
+                "MonthIndex": i + 1,
+                "Device": label,
+                "EmptyBatteryPct": float(monthly_pct[i]),
+                "EstimatedBlackoutDays": float(monthly_days[i]),
+                "MonthDays": MONTH_DAYS[i],
+            })
+
+    return pd.DataFrame(rows)
 
 
 def build_monthly_df(results: dict, required_hrs: float) -> pd.DataFrame:
@@ -76,10 +130,80 @@ def build_monthly_df(results: dict, required_hrs: float) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def render_graph():
-    st.markdown("## Annual operating profile")
-    st.caption("12-month solar performance from January to December.")
+def render_blackout_graph(results: dict, visible_devices: list[str]):
+    st.markdown("## Monthly empty-battery exposure")
+    st.caption("Estimated blackout exposure and empty-battery percentage by month.")
 
+    blackout_df = build_blackout_df(results)
+
+    if blackout_df.empty:
+        st.info("Monthly empty-battery data is not available in the current simulation output.")
+        return
+
+    plot_df = blackout_df[blackout_df["Device"].isin(visible_devices)].copy()
+
+    if plot_df.empty:
+        st.info("No devices selected for display.")
+        return
+
+    x_axis = alt.X(
+        "MonthIndex:Q",
+        scale=alt.Scale(domain=[0.5, 12.5]),
+        axis=alt.Axis(
+            title="Month",
+            values=list(range(1, 13)),
+            labelExpr="['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][datum.value-1]"
+        )
+    )
+
+    bars = alt.Chart(plot_df).mark_bar(opacity=0.75).encode(
+        x=x_axis,
+        y=alt.Y("EstimatedBlackoutDays:Q", title="Estimated blackout days"),
+        color=alt.Color(
+            "Device:N",
+            title="Selected devices",
+            scale=alt.Scale(scheme="tableau10"),
+            legend=alt.Legend(orient="top-right"),
+        ),
+        tooltip=[
+            alt.Tooltip("Device:N", title="Device"),
+            alt.Tooltip("Month:N", title="Month"),
+            alt.Tooltip("EstimatedBlackoutDays:Q", title="Estimated blackout days", format=".1f"),
+            alt.Tooltip("EmptyBatteryPct:Q", title="Empty-battery exposure", format=".1f"),
+            alt.Tooltip("MonthDays:Q", title="Days in month", format=".0f"),
+        ],
+    )
+
+    pct_line = alt.Chart(plot_df).mark_line(
+        point=True,
+        strokeWidth=2.2,
+        color="#111827"
+    ).encode(
+        x=x_axis,
+        y=alt.Y("EmptyBatteryPct:Q", title="Empty-battery exposure (%)"),
+        detail="Device:N",
+        tooltip=[
+            alt.Tooltip("Device:N", title="Device"),
+            alt.Tooltip("Month:N", title="Month"),
+            alt.Tooltip("EmptyBatteryPct:Q", title="Empty-battery exposure", format=".1f"),
+            alt.Tooltip("EstimatedBlackoutDays:Q", title="Estimated blackout days", format=".1f"),
+        ],
+    )
+
+    blackout_chart = alt.layer(bars, pct_line).resolve_scale(
+        y="independent"
+    ).properties(
+        height=340
+    ).interactive()
+
+    st.altair_chart(blackout_chart, use_container_width=True)
+
+    st.caption(
+        "Estimated blackout days are derived from monthly empty-battery exposure and calendar month length."
+    )
+
+
+def render_graph():
     results = st.session_state.get("results", {})
     if not results:
         return
@@ -88,13 +212,20 @@ def render_graph():
     chart_df = build_monthly_df(results, required_hours)
     device_labels = list(chart_df["Device"].unique())
 
+    # shared device filter for both graphs
     visible_devices = st.multiselect(
         "Devices shown on graph",
         device_labels,
         default=device_labels,
-        help="Untick devices to hide them from the graph.",
+        help="Untick devices to hide them from the graphs.",
         key="graph_devices_filter",
     )
+
+    # -------- NEW GRAPH ABOVE --------
+    render_blackout_graph(results, visible_devices)
+
+    st.markdown("## Annual operating profile")
+    st.caption("12-month solar performance from January to December.")
 
     plot_df = chart_df[chart_df["Device"].isin(visible_devices)].copy()
 
@@ -122,7 +253,6 @@ def render_graph():
         title="Achieved operating hours per day"
     )
 
-    # Green monthly band = requirement met
     green_rect = alt.Chart(green_df).mark_rect(
         color="#16a34a",
         opacity=0.15
@@ -146,7 +276,6 @@ def render_graph():
         detail="Device:N",
     )
 
-    # Yellow monthly band = small shortfall
     yellow_rect = alt.Chart(yellow_df).mark_rect(
         color="#f59e0b",
         opacity=0.18
@@ -158,7 +287,6 @@ def render_graph():
         detail="Device:N",
     )
 
-    # Red monthly band = below requirement
     red_rect = alt.Chart(red_df).mark_rect(
         color="#dc2626",
         opacity=0.15
@@ -170,7 +298,6 @@ def render_graph():
         detail="Device:N",
     )
 
-    # Device line
     line_chart = alt.Chart(plot_df).mark_line(
         point=True,
         strokeWidth=2.8
@@ -194,7 +321,6 @@ def render_graph():
         ],
     )
 
-    # Required line
     req_df = pd.DataFrame({
         "MonthIndex": list(range(1, 13)),
         "Required": [required_hours] * 12,
@@ -212,7 +338,6 @@ def render_graph():
         ],
     )
 
-    # Required line label
     label_df = pd.DataFrame({
         "MonthIndex": [12],
         "Required": [required_hours],

@@ -16,10 +16,6 @@ def short_device_label(full_name: str) -> str:
 
 
 def calc_battery_reserve_hours(result_row: dict):
-    """
-    Battery-only reserve estimate.
-    Assumes usable battery energy = 70% of nominal battery capacity.
-    """
     try:
         batt = float(result_row["batt"])
         power = max(float(result_row["power"]), 0.01)
@@ -29,10 +25,6 @@ def calc_battery_reserve_hours(result_row: dict):
 
 
 def _extract_monthly_empty_battery_pct(result_row: dict):
-    """
-    Tries several possible keys for monthly empty-battery exposure.
-    Expected: 12 values.
-    """
     candidates = [
         result_row.get("monthly_empty_battery_pct"),
         result_row.get("empty_battery_pct_by_month"),
@@ -75,7 +67,7 @@ def build_blackout_df(results: dict) -> pd.DataFrame:
 
             if days_val <= 0:
                 status_band = "zero"
-            elif days_val <= 1:
+            elif days_val <= 3:
                 status_band = "near-threshold"
             else:
                 status_band = "exposed"
@@ -83,16 +75,14 @@ def build_blackout_df(results: dict) -> pd.DataFrame:
             rows.append({
                 "Month": month,
                 "MonthIndex": i + 1,
-                "MonthStart": i + 0.55,
-                "MonthEnd": i + 1.45,
                 "Device": label,
                 "EmptyBatteryPct": float(monthly_pct[i]),
                 "EstimatedBlackoutDays": days_val,
                 "MonthDays": MONTH_DAYS[i],
                 "StatusBand": status_band,
                 "Meaning": (
-                    f"Estimated empty-battery days in {month}: {days_val:.1f}. "
-                    f"Empty-battery exposure: {float(monthly_pct[i]):.1f}% of the month. "
+                    f"Estimated days with battery at 0% in {month}: {days_val:.1f}. "
+                    f"Battery at 0% exposure: {float(monthly_pct[i]):.1f}% of the month. "
                     f"Calendar month length: {MONTH_DAYS[i]} days."
                 ),
             })
@@ -145,6 +135,8 @@ def build_monthly_df(results: dict, required_hrs: float) -> pd.DataFrame:
             })
 
     return pd.DataFrame(rows)
+
+
 def render_blackout_graph(results: dict, visible_devices: list[str]):
     st.markdown("## Monthly empty-battery days")
     st.caption("Estimated days per month with battery at 0%.")
@@ -173,7 +165,7 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
         device_df["Severity"] = device_df["EstimatedBlackoutDays"].apply(
             lambda d: "0 days"
             if d <= 0
-            else "Up to 3 days"
+            else "1–3 days"
             if d <= 3
             else "More than 3 days"
         )
@@ -208,7 +200,7 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
             color=alt.Color(
                 "Severity:N",
                 scale=alt.Scale(
-                    domain=["0 days", "Up to 3 days", "More than 3 days"],
+                    domain=["0 days", "1–3 days", "More than 3 days"],
                     range=["#e5e7eb", "#f59e0b", "#dc2626"],
                 ),
                 legend=None,
@@ -284,6 +276,7 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
         "This chart shows in which months the battery is expected to reach 0%, and for how many days."
     )
 
+
 def render_graph():
     results = st.session_state.get("results", {})
     if not results:
@@ -301,7 +294,6 @@ def render_graph():
         key="graph_devices_filter",
     )
 
-    # NEW GRAPH ABOVE
     render_blackout_graph(results, visible_devices)
 
     st.markdown("## Annual operating profile")
@@ -465,3 +457,9 @@ def render_graph():
         "Hover any point to compare required hours, achieved hours, gap versus requirement, and battery reserve. "
         "Battery reserve means battery-only fallback capability without solar input."
     )
+
+It seems all ok  just replace 
+0 days -> no color
+1-3 yellow
+3+ red
+and replace that text in caption below it with other/better/less technical one. and  Estimated number of days in each month when battery reserve reaches empty state.also there on top before the graph. Or just give me exact lines to chagne and into what. +#+#+#+#+#+assistant to=commentary.canmore.create_textdoc  天天中彩票一等奖?

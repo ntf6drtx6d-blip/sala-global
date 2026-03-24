@@ -139,7 +139,7 @@ def build_monthly_df(results: dict, required_hrs: float) -> pd.DataFrame:
 
 def render_blackout_graph(results: dict, visible_devices: list[str]):
     st.markdown("## Monthly empty-battery days")
-    st.caption("Estimated days per month with battery at 0%.")
+    st.caption("Shows in which months the battery is expected to reach 0%, and for how many days.")
 
     blackout_df = build_blackout_df(results)
 
@@ -167,7 +167,7 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
             if d <= 0
             else "1–3 days"
             if d <= 3
-            else "More than 3 days"
+            else "3+ days"
         )
 
         x_axis = alt.X(
@@ -185,8 +185,8 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
         tooltip_fields = [
             alt.Tooltip("Device:N", title="Device"),
             alt.Tooltip("Month:N", title="Month"),
-            alt.Tooltip("EstimatedBlackoutDays:Q", title="Days with battery at 0%", format=".1f"),
-            alt.Tooltip("EmptyBatteryPct:Q", title="Battery at 0% exposure", format=".1f"),
+            alt.Tooltip("EstimatedBlackoutDays:Q", title="Days with empty battery", format=".1f"),
+            alt.Tooltip("EmptyBatteryPct:Q", title="Share of month with empty battery", format=".1f"),
             alt.Tooltip("MonthDays:Q", title="Days in month", format=".0f"),
             alt.Tooltip("Meaning:N", title="Interpretation"),
         ]
@@ -200,8 +200,8 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
             color=alt.Color(
                 "Severity:N",
                 scale=alt.Scale(
-                    domain=["0 days", "1–3 days", "More than 3 days"],
-                    range=["#e5e7eb", "#f59e0b", "#dc2626"],
+                    domain=["0 days", "1–3 days", "3+ days"],
+                    range=["#ffffff", "#f59e0b", "#dc2626"],
                 ),
                 legend=None,
             ),
@@ -264,16 +264,16 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
     st.markdown(
         """
         <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:8px;font-size:0.95rem;color:#475467;">
-            <div><span style="display:inline-block;width:14px;height:14px;background:#e5e7eb;border-radius:3px;margin-right:6px;border:1px solid #cbd5e1;"></span>0 days</div>
+            <div><span style="display:inline-block;width:14px;height:14px;background:#ffffff;border-radius:3px;margin-right:6px;border:1px solid #cbd5e1;"></span>0 days</div>
             <div><span style="display:inline-block;width:14px;height:14px;background:#f59e0b;opacity:0.7;border-radius:3px;margin-right:6px;"></span>1–3 days</div>
-            <div><span style="display:inline-block;width:14px;height:14px;background:#dc2626;opacity:0.7;border-radius:3px;margin-right:6px;"></span>More than 3 days</div>
+            <div><span style="display:inline-block;width:14px;height:14px;background:#dc2626;opacity:0.7;border-radius:3px;margin-right:6px;"></span>3+ days</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
     st.caption(
-        "This chart shows in which months the battery is expected to reach 0%, and for how many days."
+        "Use this chart to see in which months the battery is expected to be fully depleted."
     )
 
 

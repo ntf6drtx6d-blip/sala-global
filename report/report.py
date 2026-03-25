@@ -4,6 +4,7 @@ from reportlab.lib.pagesizes import A4
 from .data_builder import build_report_data
 from .pages.cover import build_cover
 from .pages.summary import build_summary
+from .assets.render_assets import generate_all_assets
 
 
 def _extract_selected_devices(results):
@@ -39,6 +40,15 @@ def make_pdf(
     )
 
     data["selected_devices"] = _extract_selected_devices(results)
+
+    # 👇 ВАЖЛИВО — генерація assets
+    map_path, monthly_chart_path, annual_chart_path = generate_all_assets(
+        loc, results, required_hours
+    )
+
+    data["map_image_path"] = map_path
+    data["monthly_chart_path"] = monthly_chart_path
+    data["annual_profile_chart_path"] = annual_chart_path
 
     doc = SimpleDocTemplate(
         out_path,

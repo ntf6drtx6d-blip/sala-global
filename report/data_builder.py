@@ -1,7 +1,6 @@
 from reportlab.platypus import SimpleDocTemplate
 from reportlab.lib.pagesizes import A4
 
-from .data_builder import build_report_data
 from .pages.cover import build_cover
 from .pages.summary import build_summary
 

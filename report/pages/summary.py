@@ -8,7 +8,6 @@ from reportlab.platypus import (
     KeepTogether,
 )
 from reportlab.lib import colors
-from reportlab.lib.units import mm
 
 from ..styles import (
     TITLE, BODY, SMALL, BOLD, BIG,

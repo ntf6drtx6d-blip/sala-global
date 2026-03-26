@@ -1,3 +1,4 @@
+print("UI GRAPH MODULE LOADED")
 import altair as alt
 import pandas as pd
 import streamlit as st

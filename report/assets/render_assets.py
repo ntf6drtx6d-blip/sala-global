@@ -4,74 +4,83 @@ import matplotlib.pyplot as plt
 
 
 # -------------------------
-# STATIC MAP
+# MAP (SAFE)
 # -------------------------
-def generate_static_map(lat, lon):
+def generate_static_map(lat, lon, zoom=12, size=(600, 400)):
     url = (
         f"https://staticmap.openstreetmap.de/staticmap.php"
-        f"?center={lat},{lon}&zoom=12&size=600x400"
+        f"?center={lat},{lon}&zoom={zoom}"
+        f"&size={size[0]}x{size[1]}"
         f"&markers={lat},{lon},red-pushpin"
     )
 
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
-    path = tmp.name
+    try:
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+        r = requests.get(url, timeout=3)
+        r.raise_for_status()
 
-    r = requests.get(url)
-    with open(path, "wb") as f:
-        f.write(r.content)
+        with open(tmp.name, "wb") as f:
+            f.write(r.content)
 
-    return path
+        return tmp.name
+
+    except Exception:
+        return None
 
 
 # -------------------------
-# MONTHLY CHART
+# MONTHLY EMPTY BATTERY
 # -------------------------
 def generate_monthly_chart(result):
-    data = result.get("monthly_empty_battery_days", [])
-    months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+    data = result.get("monthly_empty_battery_days")
 
     if not data:
         return None
 
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
-    path = tmp.name
+    months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
 
-    plt.figure(figsize=(8,3))
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+
+    plt.figure(figsize=(8, 3))
     plt.bar(months, data)
     plt.title("Monthly empty-battery days")
+    plt.ylabel("Days")
+    plt.xticks(rotation=45)
     plt.tight_layout()
-    plt.savefig(path)
+    plt.savefig(tmp.name)
     plt.close()
 
-    return path
+    return tmp.name
 
 
 # -------------------------
-# ANNUAL CHART
+# ANNUAL PROFILE
 # -------------------------
-def generate_annual_chart(result, required_hours):
-    data = result.get("monthly_achieved_hours", [])
-    months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+def generate_annual_profile_chart(result, required_hours):
+    achieved = result.get("monthly_achieved_hours")
 
-    if not data:
+    if not achieved:
         return None
 
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
-    path = tmp.name
+    months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
 
-    plt.figure(figsize=(8,3))
-    plt.plot(months, data, marker="o")
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+
+    plt.figure(figsize=(8, 3))
+    plt.plot(months, achieved, marker="o")
     plt.axhline(required_hours, linestyle="--")
     plt.title("Annual operating profile")
+    plt.ylabel("Hours/day")
+    plt.xticks(rotation=45)
     plt.tight_layout()
-    plt.savefig(path)
+    plt.savefig(tmp.name)
     plt.close()
 
-    return path
+    return tmp.name
 
 
 # -------------------------
-# MAIN
+# MAIN ENTRY
 # -------------------------
 def generate_all_assets(loc, results, required_hours):
     lat = loc.get("lat")
@@ -79,8 +88,21 @@ def generate_all_assets(loc, results, required_hours):
 
     first = list(results.values())[0]
 
-    map_path = generate_static_map(lat, lon)
-    monthly = generate_monthly_chart(first)
-    annual = generate_annual_chart(first, required_hours)
+    # MAP
+    try:
+        map_path = generate_static_map(lat, lon)
+    except:
+        map_path = None
+
+    # CHARTS
+    try:
+        monthly = generate_monthly_chart(first)
+    except:
+        monthly = None
+
+    try:
+        annual = generate_annual_profile_chart(first, required_hours)
+    except:
+        annual = None
 
     return map_path, monthly, annual

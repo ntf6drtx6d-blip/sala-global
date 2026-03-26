@@ -1,5 +1,3 @@
-print("SUMMARY FILE LOADING")
-
 from reportlab.platypus import (
     Paragraph,
     Spacer,
@@ -49,7 +47,11 @@ def _image_or_placeholder(path, width, height, label):
         except Exception:
             pass
 
-    box = Table([[Paragraph(label, SMALL)]], colWidths=[width], rowHeights=[height])
+    box = Table(
+        [[Paragraph(label, SMALL)]],
+        colWidths=[width],
+        rowHeights=[height],
+    )
     box.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F4F7F5")),
         ("BOX", (0, 0), (-1, -1), 1, LINE),
@@ -57,6 +59,17 @@ def _image_or_placeholder(path, width, height, label):
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]))
     return box
+
+
+def _stacked_table(items, width, style=None, row_heights=None):
+    table = Table(
+        [[item] for item in items],
+        colWidths=[width],
+        rowHeights=row_heights,
+    )
+    if style:
+        table.setStyle(TableStyle(style))
+    return table
 
 
 def _build_left_card(data):
@@ -67,27 +80,26 @@ def _build_left_card(data):
         "Map preview"
     )
 
-    table = Table(
-        [[
+    table = _stacked_table(
+        [
             Paragraph("Study point", SMALL),
             Paragraph(f"<b>{_safe(data.get('airport_name'))}</b>", BODY),
             Spacer(1, 6),
             map_block,
             Spacer(1, 6),
             Paragraph(_safe(data.get("coordinates")), SMALL),
-        ]],
-        colWidths=[LEFT_COL],
+        ],
+        LEFT_COL,
+        style=[
+            ("BACKGROUND", (0, 0), (-1, -1), WHITE),
+            ("BOX", (0, 0), (-1, -1), 1, LINE),
+            ("LEFTPADDING", (0, 0), (-1, -1), 14),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 14),
+            ("TOPPADDING", (0, 0), (-1, -1), 14),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 14),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ],
     )
-
-    table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), WHITE),
-        ("BOX", (0, 0), (-1, -1), 1, LINE),
-        ("LEFTPADDING", (0, 0), (-1, -1), 14),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 14),
-        ("TOPPADDING", (0, 0), (-1, -1), 14),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 14),
-    ]))
-
     return table
 
 
@@ -97,93 +109,99 @@ def _build_conclusion(data):
     bg = GREEN_SOFT if pass_state else RED_SOFT
     border = GREEN_BORDER if pass_state else RED_BORDER
 
-    table = Table(
-        [[
+    table = _stacked_table(
+        [
             Paragraph("Overall conclusion", SMALL),
             Paragraph(_safe(data.get("overall_conclusion_title")), BOLD),
             Paragraph(_safe(data.get("overall_conclusion_text")), BODY),
-        ]],
-        colWidths=[RIGHT_COL],
+        ],
+        RIGHT_COL,
+        style=[
+            ("BACKGROUND", (0, 0), (-1, -1), bg),
+            ("BOX", (0, 0), (-1, -1), 1, border),
+            ("LEFTPADDING", (0, 0), (-1, -1), 14),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 14),
+            ("TOPPADDING", (0, 0), (-1, -1), 14),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 14),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ],
     )
-
-    table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), bg),
-        ("BOX", (0, 0), (-1, -1), 1, border),
-        ("LEFTPADDING", (0, 0), (-1, -1), 14),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 14),
-        ("TOPPADDING", (0, 0), (-1, -1), 14),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 14),
-    ]))
-
     return table
 
 
 def _build_kpis(data):
-    kpi_col = int(RIGHT_COL / 2 - 6)
+    kpi_col = int((RIGHT_COL - 12) / 2)
 
-    kpi1 = Table(
-        [[
+    kpi1 = _stacked_table(
+        [
             Paragraph("Daily requirement", SMALL),
             Paragraph(_safe(data.get("required_operation")), BIG),
-        ]],
-        colWidths=[kpi_col],
+        ],
+        kpi_col,
+        style=[
+            ("BACKGROUND", (0, 0), (-1, -1), BLUE_SOFT),
+            ("BOX", (0, 0), (-1, -1), 1, BLUE_BORDER),
+            ("LEFTPADDING", (0, 0), (-1, -1), 12),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+            ("TOPPADDING", (0, 0), (-1, -1), 12),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+        ],
     )
 
-    kpi1.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), BLUE_SOFT),
-        ("BOX", (0, 0), (-1, -1), 1, BLUE_BORDER),
-        ("LEFTPADDING", (0, 0), (-1, -1), 12),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 12),
-        ("TOPPADDING", (0, 0), (-1, -1), 12),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
-    ]))
-
-    kpi2 = Table(
-        [[
+    kpi2 = _stacked_table(
+        [
             Paragraph("Worst blackout risk", SMALL),
             Paragraph(_safe(data.get("worst_blackout_risk")), BIG),
-        ]],
-        colWidths=[kpi_col],
+            Paragraph(_safe(data.get("worst_blackout_pct"), ""), SMALL),
+        ],
+        kpi_col,
+        style=[
+            ("BACKGROUND", (0, 0), (-1, -1), WHITE),
+            ("BOX", (0, 0), (-1, -1), 1, LINE),
+            ("LEFTPADDING", (0, 0), (-1, -1), 12),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+            ("TOPPADDING", (0, 0), (-1, -1), 12),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+        ],
     )
 
-    kpi2.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), WHITE),
-        ("BOX", (0, 0), (-1, -1), 1, LINE),
-        ("LEFTPADDING", (0, 0), (-1, -1), 12),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 12),
-        ("TOPPADDING", (0, 0), (-1, -1), 12),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
-    ]))
-
-    wrapper = Table([[kpi1, kpi2]], colWidths=[kpi_col, kpi_col])
-
+    wrapper = Table(
+        [[kpi1, kpi2]],
+        colWidths=[kpi_col, kpi_col],
+    )
     wrapper.setStyle(TableStyle([
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
     ]))
-
     return wrapper
 
 
 def _build_performance(data):
-    table = Table(
-        [[
-            Paragraph("Device", SMALL),
-            Paragraph(_safe(data.get("device_name")), BOLD),
-            Paragraph(_safe(data.get("achievable_worst_month")), SMALL),
-            Paragraph(_safe(data.get("battery_reserve")), SMALL),
-        ]],
-        colWidths=[RIGHT_COL],
+    device_name = _safe(data.get("device_name"))
+    worst_month = _safe(data.get("achievable_worst_month"))
+    reserve = _safe(data.get("battery_reserve"))
+
+    table = _stacked_table(
+        [
+            Paragraph("Selected device", SMALL),
+            Paragraph(device_name, BOLD),
+            Paragraph(f"Worst month performance: {worst_month}", SMALL),
+            Paragraph(f"Battery-only reserve: {reserve}", SMALL),
+        ],
+        RIGHT_COL,
+        style=[
+            ("BACKGROUND", (0, 0), (-1, -1), WHITE),
+            ("BOX", (0, 0), (-1, -1), 1, LINE),
+            ("LEFTPADDING", (0, 0), (-1, -1), 10),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+            ("TOPPADDING", (0, 0), (-1, -1), 10),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ],
     )
-
-    table.setStyle(TableStyle([
-        ("BOX", (0, 0), (-1, -1), 1, LINE),
-        ("LEFTPADDING", (0, 0), (-1, -1), 10),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-        ("TOPPADDING", (0, 0), (-1, -1), 10),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
-    ]))
-
     return table
 
 
@@ -195,23 +213,23 @@ def _build_chart(title, image_path):
         "Chart"
     )
 
-    table = Table(
-        [[
+    table = _stacked_table(
+        [
             Paragraph(title, BOLD),
             Spacer(1, 6),
             chart,
-        ]],
-        colWidths=[FULL_CHART_WIDTH],
+        ],
+        FULL_CHART_WIDTH,
+        style=[
+            ("BACKGROUND", (0, 0), (-1, -1), WHITE),
+            ("BOX", (0, 0), (-1, -1), 1, LINE),
+            ("LEFTPADDING", (0, 0), (-1, -1), 12),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+            ("TOPPADDING", (0, 0), (-1, -1), 12),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ],
     )
-
-    table.setStyle(TableStyle([
-        ("BOX", (0, 0), (-1, -1), 1, LINE),
-        ("LEFTPADDING", (0, 0), (-1, -1), 12),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 12),
-        ("TOPPADDING", (0, 0), (-1, -1), 12),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
-    ]))
-
     return table
 
 
@@ -225,25 +243,34 @@ def build_summary(data):
 
     left = _build_left_card(data)
 
-    right = Table(
+    right = _stacked_table(
         [
-            [_build_conclusion(data)],
-            [Spacer(1, 8)],
-            [_build_kpis(data)],
-            [Spacer(1, 8)],
-            [_build_performance(data)],
+            _build_conclusion(data),
+            Spacer(1, 8),
+            _build_kpis(data),
+            Spacer(1, 8),
+            _build_performance(data),
         ],
-        colWidths=[RIGHT_COL],
+        RIGHT_COL,
+        style=[
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ],
     )
 
-    right.setStyle(TableStyle([
+    main = Table(
+        [[left, right]],
+        colWidths=[LEFT_COL, RIGHT_COL],
+    )
+    main.setStyle(TableStyle([
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-    ]))
-
-    main = Table([[left, right]], colWidths=[LEFT_COL, RIGHT_COL])
-
-    main.setStyle(TableStyle([
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("RIGHTPADDING", (0, 0), (0, 0), GAP),
     ]))
 
@@ -253,7 +280,5 @@ def build_summary(data):
     story.append(_build_chart("Monthly empty-battery days", data.get("monthly_chart_path")))
     story.append(Spacer(1, 12))
     story.append(_build_chart("Annual operating profile", data.get("annual_profile_chart_path")))
-
-    story.append(PageBreak())
 
     return story

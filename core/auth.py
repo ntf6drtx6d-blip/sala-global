@@ -1,5 +1,3 @@
-# core/auth.py
-
 import os
 import hmac
 import base64
@@ -54,6 +52,7 @@ def init_auth_state():
         st.session_state.auth_user_id = None
         st.session_state.auth_email = None
         st.session_state.auth_role = None
+        st.session_state.auth_full_name = None
 
 
 def is_logged_in():
@@ -69,6 +68,7 @@ def logout():
     st.session_state.auth_user_id = None
     st.session_state.auth_email = None
     st.session_state.auth_role = None
+    st.session_state.auth_full_name = None
     st.rerun()
 
 
@@ -88,6 +88,7 @@ def login_user(email: str, password: str) -> bool:
     st.session_state.auth_user_id = user["id"]
     st.session_state.auth_email = user["email"]
     st.session_state.auth_role = user["role"]
+    st.session_state.auth_full_name = user["full_name"]
 
     update_last_login(user["id"])
     return True

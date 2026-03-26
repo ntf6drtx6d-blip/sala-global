@@ -1,3 +1,4 @@
+print("SUMMARY FILE LOADING")
 from reportlab.platypus import (
     Paragraph,
     Spacer,

@@ -29,9 +29,6 @@ CHART_HEIGHT = 165
 FULL_CHART_WIDTH = PAGE_WIDTH
 
 
-# -------------------------
-# HELPERS
-# -------------------------
 def _safe(value, default="-"):
     if value is None:
         return default
@@ -62,9 +59,6 @@ def _image_or_placeholder(path, width, height, label):
     return box
 
 
-# -------------------------
-# LEFT CARD
-# -------------------------
 def _build_left_card(data):
     map_block = _image_or_placeholder(
         data.get("map_image_path"),
@@ -97,9 +91,6 @@ def _build_left_card(data):
     return table
 
 
-# -------------------------
-# CONCLUSION
-# -------------------------
 def _build_conclusion(data):
     pass_state = _overall_is_pass(data)
 
@@ -127,17 +118,14 @@ def _build_conclusion(data):
     return table
 
 
-# -------------------------
-# KPIs
-# -------------------------
 def _build_kpis(data):
-    kpi_col = RIGHT_COL / 2 - 6
+    kpi_col = int(RIGHT_COL / 2 - 6)
 
     kpi1 = Table(
         [[
             Paragraph("Daily requirement", SMALL),
             Paragraph(_safe(data.get("required_operation")), BIG),
-        ]]],
+        ]],
         colWidths=[kpi_col],
     )
 
@@ -154,7 +142,7 @@ def _build_kpis(data):
         [[
             Paragraph("Worst blackout risk", SMALL),
             Paragraph(_safe(data.get("worst_blackout_risk")), BIG),
-        ]]],
+        ]],
         colWidths=[kpi_col],
     )
 
@@ -177,9 +165,6 @@ def _build_kpis(data):
     return wrapper
 
 
-# -------------------------
-# PERFORMANCE
-# -------------------------
 def _build_performance(data):
     table = Table(
         [[
@@ -187,7 +172,7 @@ def _build_performance(data):
             Paragraph(_safe(data.get("device_name")), BOLD),
             Paragraph(_safe(data.get("achievable_worst_month")), SMALL),
             Paragraph(_safe(data.get("battery_reserve")), SMALL),
-        ]]],
+        ]],
         colWidths=[RIGHT_COL],
     )
 
@@ -202,9 +187,6 @@ def _build_performance(data):
     return table
 
 
-# -------------------------
-# CHART
-# -------------------------
 def _build_chart(title, image_path):
     chart = _image_or_placeholder(
         image_path,
@@ -217,7 +199,7 @@ def _build_chart(title, image_path):
         [[
             Paragraph(title, BOLD),
             Spacer(1, 6),
-            chart
+            chart,
         ]],
         colWidths=[FULL_CHART_WIDTH],
     )
@@ -233,9 +215,6 @@ def _build_chart(title, image_path):
     return table
 
 
-# -------------------------
-# MAIN
-# -------------------------
 def build_summary(data):
     story = []
 

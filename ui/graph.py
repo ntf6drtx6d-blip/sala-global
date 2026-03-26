@@ -1,4 +1,5 @@
 print("UI GRAPH MODULE LOADED")
+
 import altair as alt
 import pandas as pd
 import streamlit as st
@@ -314,7 +315,7 @@ def render_graph():
 
     x_axis = alt.X(
         "MonthIndex:Q",
-        scale=alt.Scale(domain=[0.5, 12.5]),
+        scale=alt.Scale(domain=[0, 12.5]),
         axis=alt.Axis(
             title="Month",
             values=list(range(1, 13)),
@@ -348,7 +349,7 @@ def render_graph():
     ).encode(
         x=alt.X(
             "MonthStart:Q",
-            scale=alt.Scale(domain=[0.5, 12.5]),
+            scale=alt.Scale(domain=[0, 12.5]),
             axis=alt.Axis(
                 title="Month",
                 values=list(range(1, 13)),
@@ -370,7 +371,7 @@ def render_graph():
         color="#f59e0b",
         opacity=0.18
     ).encode(
-        x=alt.X("MonthStart:Q", scale=alt.Scale(domain=[0.5, 12.5])),
+        x=alt.X("MonthStart:Q", scale=alt.Scale(domain=[0, 12.5])),
         x2="MonthEnd:Q",
         y=alt.Y("Hours:Q", scale=alt.Scale(domain=[0, 24])),
         y2="RequiredHours:Q",
@@ -381,7 +382,7 @@ def render_graph():
         color="#dc2626",
         opacity=0.15
     ).encode(
-        x=alt.X("MonthStart:Q", scale=alt.Scale(domain=[0.5, 12.5])),
+        x=alt.X("MonthStart:Q", scale=alt.Scale(domain=[0, 12.5])),
         x2="MonthEnd:Q",
         y=alt.Y("Hours:Q", scale=alt.Scale(domain=[0, 24])),
         y2="RequiredHours:Q",
@@ -421,16 +422,15 @@ def render_graph():
         strokeDash=[10, 5],
         strokeWidth=3.0
     ).encode(
-        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0.5, 12.5])),
+        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0, 12.5])),
         y=alt.Y("Required:Q", scale=alt.Scale(domain=[0, 24])),
         tooltip=[
             alt.Tooltip("Required:Q", title="Required hours", format=".1f")
         ],
     )
 
-    # real zero line so dashed requirement is not confused with zero
     zero_df = pd.DataFrame({
-        "MonthIndex": [0.5, 12.5],
+        "MonthIndex": [0, 12.5],
         "Zero": [0, 0],
     })
 
@@ -438,13 +438,12 @@ def render_graph():
         color="#475467",
         strokeWidth=1.6
     ).encode(
-        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0.5, 12.5])),
+        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0, 12.5])),
         y=alt.Y("Zero:Q", scale=alt.Scale(domain=[0, 24])),
     )
 
-    # vertical connector from zero to requirement near Y-axis
     req_connector_df = pd.DataFrame({
-        "x": [0.58, 0.58],
+        "x": [0.2, 0.2],
         "y": [0, required_hours],
     })
 
@@ -452,13 +451,12 @@ def render_graph():
         color="#111827",
         strokeWidth=2.2
     ).encode(
-        x=alt.X("x:Q", scale=alt.Scale(domain=[0.5, 12.5])),
+        x=alt.X("x:Q", scale=alt.Scale(domain=[0, 12.5])),
         y=alt.Y("y:Q", scale=alt.Scale(domain=[0, 24])),
     )
 
-    # anchored label near Y-axis
     req_label_df = pd.DataFrame({
-        "MonthIndex": [0.9],
+        "MonthIndex": [0.35],
         "Required": [required_hours],
         "Text": [f"{required_hours:.1f} hrs/day required"],
     })
@@ -471,14 +469,13 @@ def render_graph():
         fontWeight="bold",
         color="#111827"
     ).encode(
-        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0.5, 12.5])),
+        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0, 12.5])),
         y=alt.Y("Required:Q", scale=alt.Scale(domain=[0, 24])),
         text="Text:N",
     )
 
-    # airport operation marker
     req_icon_df = pd.DataFrame({
-        "MonthIndex": [0.72],
+        "MonthIndex": [0.2],
         "Required": [required_hours],
         "Icon": ["✈"],
     })
@@ -491,14 +488,13 @@ def render_graph():
         fontSize=15,
         color="#111827"
     ).encode(
-        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0.5, 12.5])),
+        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0, 12.5])),
         y=alt.Y("Required:Q", scale=alt.Scale(domain=[0, 24])),
         text="Icon:N",
     )
 
-    # explicit zero label
     zero_label_df = pd.DataFrame({
-        "MonthIndex": [0.9],
+        "MonthIndex": [0.35],
         "Zero": [0],
         "Text": ["0 hrs/day"],
     })
@@ -510,7 +506,7 @@ def render_graph():
         fontSize=11,
         color="#475467"
     ).encode(
-        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0.5, 12.5])),
+        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0, 12.5])),
         y=alt.Y("Zero:Q", scale=alt.Scale(domain=[0, 24])),
         text="Text:N",
     )
@@ -526,7 +522,7 @@ def render_graph():
         fontSize=11,
         color="#344054"
     ).encode(
-        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0.5, 12.5])),
+        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0, 12.5])),
         y=alt.Y("Hours:Q", scale=alt.Scale(domain=[0, 24])),
         text="Text:N",
     )
@@ -552,7 +548,8 @@ def render_graph():
         gridOpacity=0.8,
     ).configure_view(
         stroke="#D0D5DD",
-        strokeWidth=1.2
+        strokeWidth=1.2,
+        clip=False
     )
 
     st.altair_chart(chart, use_container_width=True)

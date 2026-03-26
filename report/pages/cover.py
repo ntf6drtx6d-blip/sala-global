@@ -1,23 +1,7 @@
-from reportlab.platypus import (
-    Paragraph,
-    Spacer,
-    Table,
-    TableStyle,
-    PageBreak,
-)
-from reportlab.lib import colors
-
-from ..styles import (
-    TITLE, BODY, SMALL, BOLD, BIG,
-    LINE, WHITE,
-    BLUE_SOFT, BLUE_BORDER,
-    GREEN_SOFT, GREEN_BORDER,
-    RED_SOFT, RED_BORDER,
-)
-
+from reportlab.platypus import Paragraph, Spacer, Table, TableStyle, PageBreak
+from ..styles import TITLE, BODY, SMALL, BOLD, BIG, LINE, WHITE, GREEN_SOFT, GREEN_BORDER, RED_SOFT, RED_BORDER, BLUE_SOFT, BLUE_BORDER
 
 PAGE_WIDTH = 510
-
 
 def _safe(value, default="-"):
     if value is None:
@@ -25,21 +9,18 @@ def _safe(value, default="-"):
     text = str(value).strip()
     return text if text else default
 
-
 def _status_style(accent):
     if accent == "green":
-        return GREEN_SOFT, GREEN_BORDER, "System meets operational requirement"
+        return GREEN_SOFT, GREEN_BORDER, "Feasibility confirmed"
     if accent == "red":
-        return RED_SOFT, RED_BORDER, "System does not meet operational requirement"
-    return BLUE_SOFT, BLUE_BORDER, "System partially meets operational requirement"
+        return RED_SOFT, RED_BORDER, "Feasibility not confirmed"
+    return BLUE_SOFT, BLUE_BORDER, "Feasibility requires review"
 
-
-def _stacked(items, width, style=None):
-    table = Table([[item] for item in items], colWidths=[width])
+def _stack(items, width, style=None):
+    t = Table([[x] for x in items], colWidths=[width])
     if style:
-        table.setStyle(TableStyle(style))
-    return table
-
+        t.setStyle(TableStyle(style))
+    return t
 
 def build_cover(data):
     story = []
@@ -56,15 +37,14 @@ def build_cover(data):
     status_bg, status_border, status_text = _status_style(accent)
 
     story.append(Spacer(1, 36))
-
     story.append(Paragraph("SALA Standardized Feasibility Study", SMALL))
-    story.append(Spacer(1, 10))
+    story.append(Spacer(1, 8))
     story.append(Paragraph("Solar AGL", TITLE))
-    story.append(Spacer(1, 30))
+    story.append(Spacer(1, 28))
 
-    intro = _stacked(
+    intro = _stack(
         [
-            Paragraph("Project location", SMALL),
+            Paragraph("Study location", SMALL),
             Paragraph(f"<b>{airport_name}</b>", BIG),
             Paragraph(country, BODY),
         ],
@@ -81,7 +61,7 @@ def build_cover(data):
     story.append(intro)
     story.append(Spacer(1, 16))
 
-    meta_left = _stacked(
+    left = _stack(
         [
             Paragraph("Document number", SMALL),
             Paragraph(report_id, BOLD),
@@ -100,7 +80,7 @@ def build_cover(data):
         ],
     )
 
-    meta_right = _stacked(
+    right = _stack(
         [
             Paragraph("Report date", SMALL),
             Paragraph(report_date, BOLD),
@@ -119,24 +99,22 @@ def build_cover(data):
         ],
     )
 
-    meta = Table([[meta_left, meta_right]], colWidths=[248, 248])
+    meta = Table([[left, right]], colWidths=[248, 248])
     meta.setStyle(TableStyle([
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
         ("TOPPADDING", (0, 0), (-1, -1), 0),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
     ]))
     story.append(meta)
     story.append(Spacer(1, 16))
 
-    status_block = _stacked(
+    result = _stack(
         [
             Paragraph("Study result", SMALL),
             Paragraph(status_text, BIG),
             Paragraph(
-                "This report presents the outcome of the standardized solar feasibility study "
-                "for the selected airfield lighting operating profile.",
+                "This report confirms whether the selected solar airfield lighting configuration can support the required operating profile year-round under PVGIS-based off-grid simulation.",
                 BODY,
             ),
         ],
@@ -150,17 +128,14 @@ def build_cover(data):
             ("BOTTOMPADDING", (0, 0), (-1, -1), 18),
         ],
     )
-    story.append(status_block)
+    story.append(result)
     story.append(Spacer(1, 16))
 
-    methodology_block = _stacked(
+    methodology = _stack(
         [
             Paragraph("Methodology basis", SMALL),
             Paragraph("PVGIS-based off-grid simulation", BOLD),
-            Paragraph(
-                "European Commission, Joint Research Centre",
-                BODY,
-            ),
+            Paragraph("European Commission, Joint Research Centre", BODY),
             Spacer(1, 6),
             Paragraph(methodology_note, BODY),
         ],
@@ -174,7 +149,7 @@ def build_cover(data):
             ("BOTTOMPADDING", (0, 0), (-1, -1), 18),
         ],
     )
-    story.append(methodology_block)
+    story.append(methodology)
 
     story.append(PageBreak())
     return story

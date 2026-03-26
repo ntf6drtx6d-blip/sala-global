@@ -101,7 +101,9 @@ def _day_length_hours(lat_deg: float, decl_deg: float) -> float:
     decl = math.radians(decl_deg)
     zenith = math.radians(90.833)
 
-    cos_h = (math.cos(zenith) - math.sin(lat) * math.sin(decl)) / (math.cos(lat) * math.cos(decl))
+    cos_h = (math.cos(zenith) - math.sin(lat) * math.sin(decl)) / (
+        math.cos(lat) * math.cos(decl)
+    )
 
     if cos_h <= -1:
         return 24.0
@@ -198,6 +200,7 @@ def render_setup(disabled=False):
             st.write("")
             if st.button("Find airport", use_container_width=True, disabled=disabled):
                 query = airport_query.strip()
+
                 if not query:
                     st.session_state.search_message = "Please enter an airport name."
                     st.rerun()
@@ -211,28 +214,39 @@ def render_setup(disabled=False):
 
                 try:
                     result = search_airport(query)
-                    if result:
-                        st.session_state.lat = result["lat"]
-                        st.session_state.lon = result["lon"]
-                        st.session_state.airport_label = query or result["label"]
-                        st.session_state.airport_query = query or result["label"]
-                        st.session_state.airport_country = result.get("country", "-")
-                        st.session_state.search_message = f"Found: {result['display_name']}"
-                        st.session_state.study_point_confirmed = True
-                        st.session_state.last_airport_query = normalized_query
-                        st.session_state.map_click_info = (
-                            f"Study point set to {st.session_state.airport_label} "
-                            f"({result['lat']:.6f}, {result['lon']:.6f})"
+
+                    if not result:
+                        st.session_state.search_message = f"No result found for '{query}'."
+                        st.rerun()
+
+                    if result.get("error") == "RATE_LIMIT":
+                        st.session_state.search_message = (
+                            "Search is temporarily rate-limited by the map service. "
+                            "Please wait a moment and try again."
                         )
-                        if st.session_state.get("operating_profile_mode") == "Dusk to dawn":
-                            _apply_operating_profile()
-                        _refresh_study_ready()
                         st.rerun()
-                    else:
-                        st.session_state.search_message = "Airport not found."
-                        st.rerun()
+
+                    st.session_state.airport_label = query or result["label"]
+                    st.session_state.airport_query = query or result["label"]
+                    st.session_state.lat = result["lat"]
+                    st.session_state.lon = result["lon"]
+                    st.session_state.airport_country = result.get("country", "-")
+                    st.session_state.study_point_confirmed = True
+                    st.session_state.last_airport_query = normalized_query
+                    st.session_state.search_message = f"Found: {result['display_name']}"
+                    st.session_state.map_click_info = (
+                        f"Study point set to {st.session_state.airport_label} "
+                        f"({result['lat']:.6f}, {result['lon']:.6f})"
+                    )
+
+                    if st.session_state.get("operating_profile_mode") == "Dusk to dawn":
+                        _apply_operating_profile()
+
+                    _refresh_study_ready()
+                    st.rerun()
+
                 except Exception as e:
-                    if "429" in str(e):
+                    if "RATE_LIMIT_429" in str(e) or "429" in str(e):
                         st.session_state.search_message = (
                             "Search is temporarily rate-limited by the map service. "
                             "Please wait a moment and try again, or use Advanced coordinates."

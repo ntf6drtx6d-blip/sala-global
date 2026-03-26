@@ -1,124 +1,180 @@
-from reportlab.platypus import Paragraph, Spacer, Table, TableStyle, PageBreak
+from reportlab.platypus import (
+    Paragraph,
+    Spacer,
+    Table,
+    TableStyle,
+    PageBreak,
+)
 from reportlab.lib import colors
 
-from ..styles import TITLE, BODY, SMALL, BOLD, LINE, SOFT_BG, WHITE
+from ..styles import (
+    TITLE, BODY, SMALL, BOLD, BIG,
+    LINE, WHITE,
+    BLUE_SOFT, BLUE_BORDER,
+    GREEN_SOFT, GREEN_BORDER,
+    RED_SOFT, RED_BORDER,
+)
 
 
 PAGE_WIDTH = 510
-LABEL_COL = 110
-VALUE_COL = PAGE_WIDTH - LABEL_COL
 
 
-def _format_selected_devices(data):
-    devices = data.get("selected_devices", [])
-    if not devices:
-        return Paragraph("Not specified", BODY)
+def _safe(value, default="-"):
+    if value is None:
+        return default
+    text = str(value).strip()
+    return text if text else default
 
-    if len(devices) <= 4:
-        text = "<br/>".join(devices)
-    else:
-        text = "<br/>".join(devices[:4]) + f"<br/>+ {len(devices) - 4} more"
 
-    return Paragraph(text, BODY)
+def _status_style(accent):
+    if accent == "green":
+        return GREEN_SOFT, GREEN_BORDER, "System meets operational requirement"
+    if accent == "red":
+        return RED_SOFT, RED_BORDER, "System does not meet operational requirement"
+    return BLUE_SOFT, BLUE_BORDER, "System partially meets operational requirement"
+
+
+def _stacked(items, width, style=None):
+    table = Table([[item] for item in items], colWidths=[width])
+    if style:
+        table.setStyle(TableStyle(style))
+    return table
 
 
 def build_cover(data):
     story = []
 
+    airport_name = _safe(data.get("airport_name"))
+    report_date = _safe(data.get("date"))
+    report_id = _safe(data.get("report_id"))
+    revision = _safe(data.get("revision"))
+    country = _safe(data.get("country"))
+    prepared_under = _safe(data.get("prepared_under"))
+    methodology_note = _safe(data.get("methodology_note"))
+    accent = data.get("accent", "blue")
+
+    status_bg, status_border, status_text = _status_style(accent)
+
+    story.append(Spacer(1, 36))
+
     story.append(Paragraph("SALA Standardized Feasibility Study", SMALL))
-    story.append(Spacer(1, 4))
-
-    story.append(Paragraph("Solar Airfield Lighting System", TITLE))
     story.append(Spacer(1, 10))
+    story.append(Paragraph("Solar AGL", TITLE))
+    story.append(Spacer(1, 30))
 
-    story.append(Paragraph(
-        "Feasibility assessment for the selected solar AGL configuration.",
-        BODY,
-    ))
-    story.append(Spacer(1, 20))
+    intro = _stacked(
+        [
+            Paragraph("Project location", SMALL),
+            Paragraph(f"<b>{airport_name}</b>", BIG),
+            Paragraph(country, BODY),
+        ],
+        PAGE_WIDTH,
+        style=[
+            ("BACKGROUND", (0, 0), (-1, -1), WHITE),
+            ("BOX", (0, 0), (-1, -1), 1, LINE),
+            ("LEFTPADDING", (0, 0), (-1, -1), 18),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 18),
+            ("TOPPADDING", (0, 0), (-1, -1), 18),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 18),
+        ],
+    )
+    story.append(intro)
+    story.append(Spacer(1, 16))
 
-    airport_block = Paragraph(
-        f'<b>{data["airport_name"]}</b>',
-        BODY
+    meta_left = _stacked(
+        [
+            Paragraph("Document number", SMALL),
+            Paragraph(report_id, BOLD),
+            Spacer(1, 8),
+            Paragraph("Revision", SMALL),
+            Paragraph(revision, BOLD),
+        ],
+        248,
+        style=[
+            ("BACKGROUND", (0, 0), (-1, -1), WHITE),
+            ("BOX", (0, 0), (-1, -1), 1, LINE),
+            ("LEFTPADDING", (0, 0), (-1, -1), 14),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 14),
+            ("TOPPADDING", (0, 0), (-1, -1), 14),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 14),
+        ],
     )
 
-    devices_block = _format_selected_devices(data)
+    meta_right = _stacked(
+        [
+            Paragraph("Report date", SMALL),
+            Paragraph(report_date, BOLD),
+            Spacer(1, 8),
+            Paragraph("Prepared under", SMALL),
+            Paragraph(prepared_under, BOLD),
+        ],
+        248,
+        style=[
+            ("BACKGROUND", (0, 0), (-1, -1), WHITE),
+            ("BOX", (0, 0), (-1, -1), 1, LINE),
+            ("LEFTPADDING", (0, 0), (-1, -1), 14),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 14),
+            ("TOPPADDING", (0, 0), (-1, -1), 14),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 14),
+        ],
+    )
 
-    info_data = [
-        ["Report ID", Paragraph(data["report_id"], BODY)],
-        ["Date", Paragraph(data["date"], BODY)],
-        ["Airport", airport_block],
-        ["Selected device set", devices_block],
-    ]
-
-    info_table = Table(info_data, colWidths=[LABEL_COL, VALUE_COL])
-    info_table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), SOFT_BG),
-        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#F1F5F9")),
-        ("BOX", (0, 0), (-1, -1), 1, LINE),
-        ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E7ECF2")),
+    meta = Table([[meta_left, meta_right]], colWidths=[248, 248])
+    meta.setStyle(TableStyle([
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 12),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 12),
-        ("TOPPADDING", (0, 0), (-1, -1), 10),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
     ]))
-    story.append(info_table)
-    story.append(Spacer(1, 18))
+    story.append(meta)
+    story.append(Spacer(1, 16))
 
-    methodology_title = Table(
-        [[Paragraph("SALA Verification Methodology", BOLD)]],
-        colWidths=[PAGE_WIDTH],
+    status_block = _stacked(
+        [
+            Paragraph("Study result", SMALL),
+            Paragraph(status_text, BIG),
+            Paragraph(
+                "This report presents the outcome of the standardized solar feasibility study "
+                "for the selected airfield lighting operating profile.",
+                BODY,
+            ),
+        ],
+        PAGE_WIDTH,
+        style=[
+            ("BACKGROUND", (0, 0), (-1, -1), status_bg),
+            ("BOX", (0, 0), (-1, -1), 1, status_border),
+            ("LEFTPADDING", (0, 0), (-1, -1), 18),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 18),
+            ("TOPPADDING", (0, 0), (-1, -1), 18),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 18),
+        ],
     )
-    methodology_title.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), WHITE),
-        ("BOX", (0, 0), (-1, -1), 1, LINE),
-        ("LEFTPADDING", (0, 0), (-1, -1), 12),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 12),
-        ("TOPPADDING", (0, 0), (-1, -1), 10),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
-    ]))
-    story.append(methodology_title)
-    story.append(Spacer(1, 8))
+    story.append(status_block)
+    story.append(Spacer(1, 16))
 
-    methodology_body = Table(
-        [[Paragraph(
-            """
-            Prepared under the <b>SALA Solar AGL Design Manual</b>.<br/><br/>
-            Based on <b>PVGIS</b> off-grid simulation and independent solar data from the
-            <b>Joint Research Centre (JRC), European Commission</b>.
-            """,
-            BODY
-        )]],
-        colWidths=[PAGE_WIDTH],
+    methodology_block = _stacked(
+        [
+            Paragraph("Methodology basis", SMALL),
+            Paragraph("PVGIS-based off-grid simulation", BOLD),
+            Paragraph(
+                "European Commission, Joint Research Centre",
+                BODY,
+            ),
+            Spacer(1, 6),
+            Paragraph(methodology_note, BODY),
+        ],
+        PAGE_WIDTH,
+        style=[
+            ("BACKGROUND", (0, 0), (-1, -1), WHITE),
+            ("BOX", (0, 0), (-1, -1), 1, LINE),
+            ("LEFTPADDING", (0, 0), (-1, -1), 18),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 18),
+            ("TOPPADDING", (0, 0), (-1, -1), 18),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 18),
+        ],
     )
-    methodology_body.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), WHITE),
-        ("BOX", (0, 0), (-1, -1), 1, LINE),
-        ("LEFTPADDING", (0, 0), (-1, -1), 12),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 12),
-        ("TOPPADDING", (0, 0), (-1, -1), 10),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
-    ]))
-    story.append(methodology_body)
-    story.append(Spacer(1, 12))
-
-    trust_strip = Table(
-        [[Paragraph(
-            "Independent basis: PVGIS — Joint Research Centre (JRC), European Commission.",
-            SMALL
-        )]],
-        colWidths=[PAGE_WIDTH],
-    )
-    trust_strip.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), WHITE),
-        ("BOX", (0, 0), (-1, -1), 1, LINE),
-        ("LEFTPADDING", (0, 0), (-1, -1), 12),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 12),
-        ("TOPPADDING", (0, 0), (-1, -1), 8),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-    ]))
-    story.append(trust_strip)
+    story.append(methodology_block)
 
     story.append(PageBreak())
     return story

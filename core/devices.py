@@ -11,7 +11,6 @@ SOLAR_ENGINES = {
         "tilt_options": [33],
         "fixed": True,
     },
-    
     "se_mini": {
         "key": "se_mini",
         "name": "Solar Engine Mini",
@@ -81,7 +80,7 @@ DEVICES = {
         "system_type": "external_engine",
         "default_power": 5.0,
         "default_engine": "se_mini",
-        "compatible_engines": ["se_mini", "se_compact", "se_max"],
+        "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_max"],
     },
     5: {
         "code": "PAPI",
@@ -89,7 +88,7 @@ DEVICES = {
         "system_type": "external_engine",
         "default_power": 320.0,
         "default_engine": "se_max",
-        "compatible_engines": ["se_mini", "se_compact", "se_max"],
+        "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_max"],
     },
     6: {
         "code": "A-PAPI",
@@ -97,7 +96,7 @@ DEVICES = {
         "system_type": "external_engine",
         "default_power": 160.0,
         "default_engine": "se_max",
-        "compatible_engines": ["se_mini", "se_compact", "se_max"],
+        "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_max"],
     },
     7: {
         "code": "RGL",
@@ -105,7 +104,7 @@ DEVICES = {
         "system_type": "external_engine",
         "default_power": 3.0,
         "default_engine": "se_mini",
-        "compatible_engines": ["se_mini", "se_compact", "se_max"],
+        "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_max"],
     },
     8: {
         "code": "WDI",
@@ -113,7 +112,7 @@ DEVICES = {
         "system_type": "external_engine",
         "default_power": 10.0,
         "default_engine": "se_mini",
-        "compatible_engines": ["se_mini", "se_compact", "se_max"],
+        "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_max"],
     },
     9: {
         "code": "SIGN-L",
@@ -121,7 +120,7 @@ DEVICES = {
         "system_type": "external_engine",
         "default_power": 35.0,
         "default_engine": "se_compact",
-        "compatible_engines": ["se_mini", "se_compact", "se_max"],
+        "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_max"],
     },
     10: {
         "code": "SIGN-M",
@@ -129,7 +128,7 @@ DEVICES = {
         "system_type": "external_engine",
         "default_power": 22.0,
         "default_engine": "se_compact",
-        "compatible_engines": ["se_mini", "se_compact", "se_max"],
+        "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_max"],
     },
     11: {
         "code": "SIGN-S",
@@ -137,6 +136,6 @@ DEVICES = {
         "system_type": "external_engine",
         "default_power": 15.0,
         "default_engine": "se_compact",
-        "compatible_engines": ["se_mini", "se_compact", "se_max"],
+        "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_max"],
     },
 }

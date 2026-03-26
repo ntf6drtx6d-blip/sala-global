@@ -1,4 +1,5 @@
 print("SUMMARY FILE LOADING")
+
 from reportlab.platypus import (
     Paragraph,
     Spacer,
@@ -7,12 +8,11 @@ from reportlab.platypus import (
     PageBreak,
     Image,
 )
-
 from reportlab.lib import colors
 
 from ..styles import (
     TITLE, BODY, SMALL, BOLD, BIG,
-    LINE, WHITE, SOFT_BG,
+    LINE, WHITE,
     BLUE_SOFT, BLUE_BORDER,
     RED_SOFT, RED_BORDER,
     GREEN_SOFT, GREEN_BORDER,
@@ -37,11 +37,6 @@ def _safe(value, default="—"):
         return default
     text = str(value).strip()
     return text if text else default
-
-
-def _risk_is_pass(data):
-    risk = str(data.get("worst_blackout_risk", "")).lower()
-    return risk.startswith("0")
 
 
 def _overall_is_pass(data):
@@ -78,7 +73,7 @@ def _build_left_card(data):
         "Map preview"
     )
 
-    return Table(
+    table = Table(
         [[
             Paragraph("Study point", SMALL),
             Paragraph(f"<b>{_safe(data.get('airport_name'))}</b>", BODY),
@@ -86,17 +81,20 @@ def _build_left_card(data):
             map_block,
             Spacer(1, 6),
             Paragraph(_safe(data.get("coordinates")), SMALL),
-        ]]],
+        ]],
         colWidths=[LEFT_COL],
-        style=[
-            ("BACKGROUND", (0, 0), (-1, -1), WHITE),
-            ("BOX", (0, 0), (-1, -1), 1, LINE),
-            ("LEFTPADDING", (0, 0), (-1, -1), 14),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 14),
-            ("TOPPADDING", (0, 0), (-1, -1), 14),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 14),
-        ],
     )
+
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), WHITE),
+        ("BOX", (0, 0), (-1, -1), 1, LINE),
+        ("LEFTPADDING", (0, 0), (-1, -1), 14),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 14),
+        ("TOPPADDING", (0, 0), (-1, -1), 14),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 14),
+    ]))
+
+    return table
 
 
 # -------------------------
@@ -108,22 +106,25 @@ def _build_conclusion(data):
     bg = GREEN_SOFT if pass_state else RED_SOFT
     border = GREEN_BORDER if pass_state else RED_BORDER
 
-    return Table(
+    table = Table(
         [[
             Paragraph("Overall conclusion", SMALL),
             Paragraph(_safe(data.get("overall_conclusion_title")), BOLD),
             Paragraph(_safe(data.get("overall_conclusion_text")), BODY),
-        ]]],
+        ]],
         colWidths=[RIGHT_COL],
-        style=[
-            ("BACKGROUND", (0, 0), (-1, -1), bg),
-            ("BOX", (0, 0), (-1, -1), 1, border),
-            ("LEFTPADDING", (0, 0), (-1, -1), 14),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 14),
-            ("TOPPADDING", (0, 0), (-1, -1), 14),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 14),
-        ],
     )
+
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), bg),
+        ("BOX", (0, 0), (-1, -1), 1, border),
+        ("LEFTPADDING", (0, 0), (-1, -1), 14),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 14),
+        ("TOPPADDING", (0, 0), (-1, -1), 14),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 14),
+    ]))
+
+    return table
 
 
 # -------------------------
@@ -140,6 +141,15 @@ def _build_kpis(data):
         colWidths=[kpi_col],
     )
 
+    kpi1.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), BLUE_SOFT),
+        ("BOX", (0, 0), (-1, -1), 1, BLUE_BORDER),
+        ("LEFTPADDING", (0, 0), (-1, -1), 12),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+        ("TOPPADDING", (0, 0), (-1, -1), 12),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+    ]))
+
     kpi2 = Table(
         [[
             Paragraph("Worst blackout risk", SMALL),
@@ -148,14 +158,30 @@ def _build_kpis(data):
         colWidths=[kpi_col],
     )
 
-    return Table([[kpi1, kpi2]], colWidths=[kpi_col, kpi_col])
+    kpi2.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), WHITE),
+        ("BOX", (0, 0), (-1, -1), 1, LINE),
+        ("LEFTPADDING", (0, 0), (-1, -1), 12),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+        ("TOPPADDING", (0, 0), (-1, -1), 12),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+    ]))
+
+    wrapper = Table([[kpi1, kpi2]], colWidths=[kpi_col, kpi_col])
+
+    wrapper.setStyle(TableStyle([
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+    ]))
+
+    return wrapper
 
 
 # -------------------------
 # PERFORMANCE STRIP
 # -------------------------
 def _build_performance(data):
-    return Table(
+    table = Table(
         [[
             Paragraph("Device", SMALL),
             Paragraph(_safe(data.get("device_name")), BOLD),
@@ -163,14 +189,17 @@ def _build_performance(data):
             Paragraph(_safe(data.get("battery_reserve")), SMALL),
         ]]],
         colWidths=[RIGHT_COL],
-        style=[
-            ("BOX", (0, 0), (-1, -1), 1, LINE),
-            ("LEFTPADDING", (0, 0), (-1, -1), 10),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-            ("TOPPADDING", (0, 0), (-1, -1), 10),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
-        ],
     )
+
+    table.setStyle(TableStyle([
+        ("BOX", (0, 0), (-1, -1), 1, LINE),
+        ("LEFTPADDING", (0, 0), (-1, -1), 10),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+        ("TOPPADDING", (0, 0), (-1, -1), 10),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+    ]))
+
+    return table
 
 
 # -------------------------
@@ -184,17 +213,24 @@ def _build_chart(title, image_path):
         "Chart"
     )
 
-    return Table(
-        [[Paragraph(title, BOLD), Spacer(1, 6), chart]],
+    table = Table(
+        [[
+            Paragraph(title, BOLD),
+            Spacer(1, 6),
+            chart
+        ]],
         colWidths=[FULL_CHART_WIDTH],
-        style=[
-            ("BOX", (0, 0), (-1, -1), 1, LINE),
-            ("LEFTPADDING", (0, 0), (-1, -1), 12),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 12),
-            ("TOPPADDING", (0, 0), (-1, -1), 12),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
-        ],
     )
+
+    table.setStyle(TableStyle([
+        ("BOX", (0, 0), (-1, -1), 1, LINE),
+        ("LEFTPADDING", (0, 0), (-1, -1), 12),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+        ("TOPPADDING", (0, 0), (-1, -1), 12),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+    ]))
+
+    return table
 
 
 # -------------------------
@@ -209,6 +245,7 @@ def build_summary(data):
     story.append(Spacer(1, 16))
 
     left = _build_left_card(data)
+
     right = Table(
         [
             [_build_conclusion(data)],
@@ -220,7 +257,18 @@ def build_summary(data):
         colWidths=[RIGHT_COL],
     )
 
-    story.append(Table([[left, right]], colWidths=[LEFT_COL, RIGHT_COL]))
+    right.setStyle(TableStyle([
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+    ]))
+
+    main = Table([[left, right]], colWidths=[LEFT_COL, RIGHT_COL])
+
+    main.setStyle(TableStyle([
+        ("RIGHTPADDING", (0, 0), (0, 0), GAP),
+    ]))
+
+    story.append(main)
     story.append(Spacer(1, 16))
 
     story.append(_build_chart("Monthly empty-battery days", data.get("monthly_chart_path")))

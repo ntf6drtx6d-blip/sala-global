@@ -1,6 +1,17 @@
 # devices.py
 
 SOLAR_ENGINES = {
+    "se_micro": {
+        "key": "se_micro",
+        "name": "Solar Engine Micro",
+        "short_name": "SE MICRO",
+        "pv": 25,
+        "batt": 216,
+        "batt_ext": None,
+        "tilt_options": [33],
+        "fixed": True,
+    },
+    
     "se_mini": {
         "key": "se_mini",
         "name": "Solar Engine Mini",

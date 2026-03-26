@@ -32,7 +32,7 @@ FULL_CHART_WIDTH = PAGE_WIDTH
 # -------------------------
 # HELPERS
 # -------------------------
-def _safe(value, default="—"):
+def _safe(value, default="-"):
     if value is None:
         return default
     text = str(value).strip()
@@ -178,7 +178,7 @@ def _build_kpis(data):
 
 
 # -------------------------
-# PERFORMANCE STRIP
+# PERFORMANCE
 # -------------------------
 def _build_performance(data):
     table = Table(
@@ -203,7 +203,7 @@ def _build_performance(data):
 
 
 # -------------------------
-# CHART BLOCK
+# CHART
 # -------------------------
 def _build_chart(title, image_path):
     chart = _image_or_placeholder(

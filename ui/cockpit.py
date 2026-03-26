@@ -1,6 +1,3 @@
-# ui/cockpit.py
-# ACTION: REPLACE ENTIRE FILE
-
 import os
 import time
 import tempfile
@@ -61,12 +58,12 @@ def pvgis_short_card():
     )
 
 def reset_study():
-    # preserve authentication/session identity
     auth_keys = {
         "auth_ok": st.session_state.get("auth_ok", False),
         "auth_user_id": st.session_state.get("auth_user_id"),
         "auth_email": st.session_state.get("auth_email"),
         "auth_role": st.session_state.get("auth_role"),
+        "auth_full_name": st.session_state.get("auth_full_name"),
     }
 
     keep = {
@@ -95,15 +92,11 @@ def reset_study():
         "study_saved_for_current_result": False,
     }
 
-    # clear everything
     for key in list(st.session_state.keys()):
         del st.session_state[key]
 
-    # restore auth
     for k, v in auth_keys.items():
         st.session_state[k] = v
-
-    # restore clean study state
     for k, v in keep.items():
         st.session_state[k] = v
 
@@ -151,7 +144,7 @@ def _run_simulation(progress_callback=None):
         "lat": st.session_state.lat,
         "lon": st.session_state.lon,
         "label": st.session_state.airport_label or f"{st.session_state.lat:.4f}, {st.session_state.lon:.4f}",
-        "country": "",
+        "country": st.session_state.get("airport_country", ""),
     }
 
     started = time.time()
@@ -203,7 +196,7 @@ def _run_simulation(progress_callback=None):
             "",
             st.session_state.airport_label,
             datetime.now().strftime("%Y-%m-%d %H:%M"),
-            None,
+            st.session_state.get("auth_full_name") or st.session_state.get("auth_email") or "SALA user",
         )
         with open(tmp.name, "rb") as f:
             st.session_state.pdf_bytes = f.read()
@@ -219,112 +212,3 @@ def _run_simulation(progress_callback=None):
         progress_callback(100, "Completed")
 
     st.rerun()
-
-
-def render_cockpit():
-    if "running" not in st.session_state:
-        st.session_state.running = False
-    if "run_stage" not in st.session_state:
-        st.session_state.run_stage = "Ready"
-    if "run_log" not in st.session_state:
-        st.session_state.run_log = []
-    if "study_ready" not in st.session_state:
-        st.session_state.study_ready = False
-
-    with st.sidebar:
-        st.markdown("## Feasibility dashboard")
-
-        st.markdown("**Airport**")
-        st.write(st.session_state.get("airport_label", "") or "Not selected")
-
-        st.markdown("**Operating profile**")
-        st.write(st.session_state.get("operating_profile_mode", "Custom hours per day"))
-
-        st.markdown("**Applied daily operation**")
-        st.write(f"{float(st.session_state.get('required_hours', 12.0)):.1f} hrs/day")
-
-        st.markdown("**Selected devices**")
-        selected_ids = st.session_state.get("selected_ids", [])
-        if selected_ids:
-            for did in selected_ids:
-                st.write(f"• {short_device_label_from_id(did)}")
-        else:
-            st.write("No devices selected")
-
-        st.markdown("---")
-        st.markdown("### Simulation")
-
-        ready = bool(st.session_state.get("study_ready", False))
-        has_results = st.session_state.get("results") is not None
-
-        if st.session_state.running:
-            st.markdown("**Simulation in progress**")
-            st.caption(st.session_state.run_stage)
-
-        elif not has_results:
-            if st.button(
-                "Run simulation",
-                type="primary",
-                use_container_width=True,
-                disabled=not ready,
-                key="sidebar_run_simulation",
-            ):
-                st.session_state.running = True
-                st.session_state.run_stage = "Preparing simulation"
-                st.session_state.trigger_run = True
-                st.rerun()
-
-            if not ready:
-                st.caption("To start the study, select an airport or study point and at least one device.")
-
-        else:
-            if st.button(
-                "Run updated simulation",
-                type="primary",
-                use_container_width=True,
-                disabled=not ready,
-                key="sidebar_run_updated_simulation",
-            ):
-                st.session_state.running = True
-                st.session_state.run_stage = "Preparing simulation"
-                st.session_state.trigger_run = True
-                st.rerun()
-
-            st.caption("You can adjust the same location or devices and run the study again.")
-
-            st.markdown("---")
-            st.success("Simulation completed")
-            if st.session_state.overall == "PASS":
-                st.markdown("**Feasibility result:** PASS")
-            else:
-                st.markdown("**Feasibility result:** FAIL")
-
-            if st.session_state.elapsed is not None:
-                st.write(f"Run time: {format_seconds(st.session_state.elapsed)}")
-
-        if st.session_state.running and st.session_state.run_log:
-            st.markdown("---")
-            st.markdown("### Live status")
-            st.markdown(
-                '<div style="border:1px solid #e5eaf1;border-radius:12px;padding:10px 12px;background:#fbfcfe;">'
-                + "<br/>".join(st.session_state.run_log[-5:])
-                + "</div>",
-                unsafe_allow_html=True,
-            )
-
-        st.markdown("---")
-
-        if os.path.exists(EU_LOGO_PATH):
-            st.image(EU_LOGO_PATH, width=110)
-
-        pvgis_short_card()
-
-        with st.expander("About PVGIS-SARAH3", expanded=False):
-            st.write(
-                "PVGIS-SARAH3 is a satellite-based solar radiation dataset used in PVGIS. "
-                "It covers Europe, Africa, most of Asia, and parts of South America."
-            )
-            st.write(
-                "SALA uses this independent dataset and the European Commission JRC PVGIS engine "
-                "to build the feasibility assessment."
-            )

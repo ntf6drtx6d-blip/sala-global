@@ -1,16 +1,11 @@
-# ui/setup.py
-# ACTION: REPLACE ENTIRE FILE
-
 import math
 import streamlit as st
 import folium
-import requests
 from streamlit_folium import st_folium
 
 from core.devices import DEVICES, SOLAR_ENGINES
+from core.geocoding import search_airport
 
-
-# ---------------- INITIAL LOCAL STATE ----------------
 
 def _init_setup_defaults():
     if "setup_initialized" not in st.session_state:
@@ -42,6 +37,10 @@ def _init_setup_defaults():
             st.session_state.search_message = ""
         if "map_click_info" not in st.session_state:
             st.session_state.map_click_info = ""
+        if "last_airport_query" not in st.session_state:
+            st.session_state.last_airport_query = ""
+        if "airport_country" not in st.session_state:
+            st.session_state.airport_country = "-"
 
     _refresh_study_ready()
 
@@ -64,33 +63,6 @@ def _refresh_study_ready():
         len(selected_ids) > 0 and study_point_confirmed and mode_ready
     )
 
-
-# ---------------- GEO ----------------
-
-def geocode_airport(query):
-    if not query or not query.strip():
-        return None
-
-    url = "https://nominatim.openstreetmap.org/search"
-    params = {"q": query, "format": "jsonv2", "limit": 1}
-    headers = {"User-Agent": "SALA-Simulator/1.0"}
-
-    resp = requests.get(url, params=params, headers=headers, timeout=20)
-    resp.raise_for_status()
-    data = resp.json()
-
-    if not data:
-        return None
-
-    top = data[0]
-    return {
-        "lat": float(top["lat"]),
-        "lon": float(top["lon"]),
-        "display_name": top.get("display_name", query),
-    }
-
-
-# ---------------- MAP ----------------
 
 def create_map(lat, lon, label):
     fmap = folium.Map(
@@ -124,8 +96,6 @@ def create_map(lat, lon, label):
     return fmap
 
 
-# ---------------- ASTRONOMY / DUSK-TO-DAWN ----------------
-
 def _day_length_hours(lat_deg: float, decl_deg: float) -> float:
     lat = math.radians(lat_deg)
     decl = math.radians(decl_deg)
@@ -149,8 +119,6 @@ def longest_night_hours(lat_deg: float) -> float:
     night = 24.0 - day
     return max(0.0, min(24.0, night))
 
-
-# ---------------- HELPERS ----------------
 
 def _device_label(device_id):
     d = DEVICES[device_id]
@@ -204,8 +172,6 @@ def _apply_operating_profile():
     _refresh_study_ready()
 
 
-# ---------------- MAIN UI ----------------
-
 def render_setup(disabled=False):
     _init_setup_defaults()
 
@@ -213,9 +179,6 @@ def render_setup(disabled=False):
 
     left, right = st.columns([1.05, 0.95], gap="large")
 
-    # =========================================================
-    # LEFT: INPUT FLOW
-    # =========================================================
     with left:
         st.markdown("### 1. Location")
 
@@ -226,22 +189,41 @@ def render_setup(disabled=False):
                 "Airport name",
                 value=st.session_state.get("airport_query", ""),
                 placeholder="e.g. Madrid Barajas Airport",
-                key="airport_query_input"
+                key="airport_query_input",
+                disabled=disabled,
             )
 
         with airport_row_2:
             st.write("")
             st.write("")
-            if st.button("Find airport", use_container_width=True):
+            if st.button("Find airport", use_container_width=True, disabled=disabled):
+                query = airport_query.strip()
+                if not query:
+                    st.session_state.search_message = "Please enter an airport name."
+                    st.rerun()
+
+                normalized_query = " ".join(query.lower().split())
+                last_query = st.session_state.get("last_airport_query")
+
+                if last_query == normalized_query and st.session_state.get("study_point_confirmed"):
+                    st.session_state.search_message = "This airport is already loaded."
+                    st.rerun()
+
                 try:
-                    result = geocode_airport(airport_query)
+                    result = search_airport(query)
                     if result:
                         st.session_state.lat = result["lat"]
                         st.session_state.lon = result["lon"]
-                        st.session_state.airport_label = airport_query.strip() or result["display_name"]
-                        st.session_state.airport_query = airport_query.strip() or result["display_name"]
+                        st.session_state.airport_label = query or result["label"]
+                        st.session_state.airport_query = query or result["label"]
+                        st.session_state.airport_country = result.get("country", "-")
                         st.session_state.search_message = f"Found: {result['display_name']}"
                         st.session_state.study_point_confirmed = True
+                        st.session_state.last_airport_query = normalized_query
+                        st.session_state.map_click_info = (
+                            f"Study point set to {st.session_state.airport_label} "
+                            f"({result['lat']:.6f}, {result['lon']:.6f})"
+                        )
                         if st.session_state.get("operating_profile_mode") == "Dusk to dawn":
                             _apply_operating_profile()
                         _refresh_study_ready()
@@ -250,7 +232,13 @@ def render_setup(disabled=False):
                         st.session_state.search_message = "Airport not found."
                         st.rerun()
                 except Exception as e:
-                    st.session_state.search_message = f"Search error: {e}"
+                    if "429" in str(e):
+                        st.session_state.search_message = (
+                            "Search is temporarily rate-limited by the map service. "
+                            "Please wait a moment and try again, or use Advanced coordinates."
+                        )
+                    else:
+                        st.session_state.search_message = f"Search error: {e}"
                     st.rerun()
 
         if st.session_state.search_message:
@@ -269,6 +257,7 @@ def render_setup(disabled=False):
                     max_value=90.0,
                     value=float(st.session_state.lat),
                     format="%.6f",
+                    disabled=disabled,
                 )
 
             with c2:
@@ -278,6 +267,7 @@ def render_setup(disabled=False):
                     max_value=180.0,
                     value=float(st.session_state.lon),
                     format="%.6f",
+                    disabled=disabled,
                 )
 
             coords_changed = (
@@ -291,6 +281,7 @@ def render_setup(disabled=False):
             if coords_changed:
                 st.session_state.study_point_confirmed = True
                 st.session_state.map_click_info = f"Point selected: {new_lat:.6f}, {new_lon:.6f}"
+                st.session_state.search_message = ""
                 if st.session_state.get("operating_profile_mode") == "Dusk to dawn":
                     _apply_operating_profile()
                 _refresh_study_ready()
@@ -309,6 +300,7 @@ def render_setup(disabled=False):
             horizontal=True,
             index=mode_options.index(current_mode),
             key="operating_profile_mode_radio",
+            disabled=disabled,
         )
 
         if st.session_state.get("operating_profile_mode") != mode:
@@ -328,6 +320,7 @@ def render_setup(disabled=False):
                 step=0.5,
                 help="Total hours per day the lights are expected to operate.",
                 key="required_custom_hours_input",
+                disabled=disabled,
             )
             st.session_state.required_hours = required_custom
             st.caption("Total hours per day the lights are expected to operate.")
@@ -359,14 +352,12 @@ def render_setup(disabled=False):
             list(device_options.keys()),
             default=_default_multiselect_labels(),
             key="selected_devices_multiselect",
+            disabled=disabled,
         )
 
         selected_ids = [device_options[label] for label in selected_labels]
         st.session_state.selected_ids = selected_ids
 
-    # =========================================================
-    # RIGHT: MAP
-    # =========================================================
     with right:
         st.markdown("### Study point")
 
@@ -385,7 +376,7 @@ def render_setup(disabled=False):
         )
 
         clicked = map_data.get("last_clicked") if isinstance(map_data, dict) else None
-        if clicked:
+        if clicked and not disabled:
             clicked_lat = float(clicked["lat"])
             clicked_lon = float(clicked["lng"])
 
@@ -397,6 +388,7 @@ def render_setup(disabled=False):
                 st.session_state.lon = clicked_lon
                 st.session_state.study_point_confirmed = True
                 st.session_state.map_click_info = f"Point selected: {clicked_lat:.6f}, {clicked_lon:.6f}"
+                st.session_state.search_message = ""
                 if st.session_state.get("operating_profile_mode") == "Dusk to dawn":
                     _apply_operating_profile()
                 _refresh_study_ready()
@@ -412,9 +404,6 @@ def render_setup(disabled=False):
         else:
             st.caption("Select an airport or click on the map to define the study point.")
 
-    # =========================================================
-    # DEVICE CONFIGURATION BELOW
-    # =========================================================
     st.markdown("### 4. Configure selected devices")
 
     per_device_config = {}
@@ -441,6 +430,7 @@ def render_setup(disabled=False):
                     value=float(default_power),
                     step=0.01,
                     key=f"power_{did}",
+                    disabled=disabled,
                 )
 
                 if system_type == "external_engine":
@@ -453,6 +443,7 @@ def render_setup(disabled=False):
                         compatible,
                         index=compatible.index(engine_key),
                         key=f"engine_{did}",
+                        disabled=disabled,
                         format_func=lambda x: f"{SOLAR_ENGINES[x]['short_name']} — {SOLAR_ENGINES[x]['name']}",
                     )
 
@@ -465,6 +456,7 @@ def render_setup(disabled=False):
                             horizontal=True,
                             index=0 if battery_mode == "Std" else 1,
                             key=f"battery_mode_{did}",
+                            disabled=disabled,
                         )
                     else:
                         battery_mode = "Std"

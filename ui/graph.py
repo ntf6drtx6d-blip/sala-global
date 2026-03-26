@@ -317,14 +317,28 @@ def render_graph():
         axis=alt.Axis(
             title="Month",
             values=list(range(1, 13)),
-            labelExpr="['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][datum.value-1]"
+            labelExpr="['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][datum.value-1]",
+            labelAngle=0,
+            domain=True,
+            domainWidth=2,
+            tickWidth=2,
+            tickSize=6,
+            labelPadding=8,
         )
     )
 
     y_axis = alt.Y(
         "Hours:Q",
         scale=alt.Scale(domain=[0, 24]),
-        title="Achieved operating hours per day"
+        axis=alt.Axis(
+            title="Achieved operating hours per day",
+            domain=True,
+            domainWidth=2,
+            tickWidth=2,
+            tickSize=6,
+            grid=True,
+            labelPadding=6,
+        ),
     )
 
     green_rect = alt.Chart(green_df).mark_rect(
@@ -337,7 +351,8 @@ def render_graph():
             axis=alt.Axis(
                 title="Month",
                 values=list(range(1, 13)),
-                labelExpr="['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][datum.value-1]"
+                labelExpr="['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][datum.value-1]",
+                labelAngle=0,
             )
         ),
         x2="MonthEnd:Q",
@@ -412,35 +427,132 @@ def render_graph():
         ],
     )
 
-    label_df = pd.DataFrame({
-        "MonthIndex": [12],
-        "Required": [required_hours],
-        "Text": [f"Required daily operation = {required_hours:.1f} hrs/day"],
+    # real zero line so dashed requirement is not confused with zero
+    zero_df = pd.DataFrame({
+        "MonthIndex": [0.5, 12.5],
+        "Zero": [0, 0],
     })
 
-    label_chart = alt.Chart(label_df).mark_text(
-        align="right",
-        dx=-8,
-        dy=-10,
+    zero_line = alt.Chart(zero_df).mark_line(
+        color="#475467",
+        strokeWidth=1.6
+    ).encode(
+        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0.5, 12.5])),
+        y=alt.Y("Zero:Q", scale=alt.Scale(domain=[0, 24])),
+    )
+
+    # vertical connector from zero to requirement near Y-axis
+    req_connector_df = pd.DataFrame({
+        "x": [0.58, 0.58],
+        "y": [0, required_hours],
+    })
+
+    req_connector = alt.Chart(req_connector_df).mark_line(
+        color="#111827",
+        strokeWidth=2.2
+    ).encode(
+        x=alt.X("x:Q", scale=alt.Scale(domain=[0.5, 12.5])),
+        y=alt.Y("y:Q", scale=alt.Scale(domain=[0, 24])),
+    )
+
+    # anchored label near Y-axis
+    req_label_df = pd.DataFrame({
+        "MonthIndex": [0.9],
+        "Required": [required_hours],
+        "Text": [f"{required_hours:.1f} hrs/day required"],
+    })
+
+    req_label = alt.Chart(req_label_df).mark_text(
+        align="left",
+        dx=8,
+        dy=-8,
         fontSize=12,
         fontWeight="bold",
         color="#111827"
     ).encode(
-        x="MonthIndex:Q",
-        y="Required:Q",
+        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0.5, 12.5])),
+        y=alt.Y("Required:Q", scale=alt.Scale(domain=[0, 24])),
+        text="Text:N",
+    )
+
+    # airport operation marker
+    req_icon_df = pd.DataFrame({
+        "MonthIndex": [0.72],
+        "Required": [required_hours],
+        "Icon": ["✈"],
+    })
+
+    req_icon = alt.Chart(req_icon_df).mark_text(
+        align="center",
+        baseline="middle",
+        dx=0,
+        dy=-18,
+        fontSize=15,
+        color="#111827"
+    ).encode(
+        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0.5, 12.5])),
+        y=alt.Y("Required:Q", scale=alt.Scale(domain=[0, 24])),
+        text="Icon:N",
+    )
+
+    # explicit zero label
+    zero_label_df = pd.DataFrame({
+        "MonthIndex": [0.9],
+        "Zero": [0],
+        "Text": ["0 hrs/day"],
+    })
+
+    zero_label = alt.Chart(zero_label_df).mark_text(
+        align="left",
+        dx=8,
+        dy=12,
+        fontSize=11,
+        color="#475467"
+    ).encode(
+        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0.5, 12.5])),
+        y=alt.Y("Zero:Q", scale=alt.Scale(domain=[0, 24])),
+        text="Text:N",
+    )
+
+    chart_note_df = pd.DataFrame({
+        "MonthIndex": [6.5],
+        "Hours": [23.2],
+        "Text": ["Dashed line = required airport lighting operation"],
+    })
+
+    chart_note = alt.Chart(chart_note_df).mark_text(
+        align="center",
+        fontSize=11,
+        color="#344054"
+    ).encode(
+        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0.5, 12.5])),
+        y=alt.Y("Hours:Q", scale=alt.Scale(domain=[0, 24])),
         text="Text:N",
     )
 
     chart = (
-        red_rect
+        green_rect
         + yellow_rect
-        + green_rect
-        + line_chart
+        + red_rect
+        + zero_line
+        + req_connector
         + req_line
-        + label_chart
+        + line_chart
+        + req_icon
+        + req_label
+        + zero_label
+        + chart_note
     ).properties(
         height=500
-    ).interactive()
+    ).interactive().configure_axis(
+        labelFontSize=12,
+        titleFontSize=13,
+        gridColor="#E5E7EB",
+        gridOpacity=0.8,
+    ).configure_view(
+        stroke="#D0D5DD",
+        strokeWidth=1.2
+    )
 
     st.altair_chart(chart, use_container_width=True)
 

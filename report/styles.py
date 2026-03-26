@@ -3,10 +3,11 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 
 styles = getSampleStyleSheet()
 
-NAVY = colors.HexColor("#0F172A")
-TEXT = colors.HexColor("#344054")
-MUTED = colors.HexColor("#667085")
-LINE = colors.HexColor("#DDE3EA")
+NAVY = colors.HexColor("#102A43")
+TEXT = colors.HexColor("#243B53")
+MUTED = colors.HexColor("#5B7083")
+LINE = colors.HexColor("#D9E2EC")
+GRID = colors.HexColor("#E5EAF0")
 
 BLUE = colors.HexColor("#1F4FBF")
 BLUE_SOFT = colors.HexColor("#EEF4FF")
@@ -40,6 +41,16 @@ SUBTITLE = ParagraphStyle(
     fontName="Helvetica-Bold",
     fontSize=14,
     leading=18,
+    textColor=NAVY,
+    spaceAfter=0,
+)
+
+SECTION = ParagraphStyle(
+    "SECTION",
+    parent=styles["Heading2"],
+    fontName="Helvetica-Bold",
+    fontSize=16,
+    leading=20,
     textColor=NAVY,
     spaceAfter=0,
 )
@@ -84,12 +95,12 @@ BIG = ParagraphStyle(
     spaceAfter=0,
 )
 
-BIG_BLUE = ParagraphStyle(
-    "BIG",
+HERO = ParagraphStyle(
+    "HERO",
     parent=styles["BodyText"],
     fontName="Helvetica-Bold",
-    fontSize=14,
-    leading=16,
+    fontSize=28,
+    leading=32,
     textColor=NAVY,
     spaceAfter=0,
 )

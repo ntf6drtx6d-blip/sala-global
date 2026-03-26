@@ -1,14 +1,13 @@
+import os
 import tempfile
 import requests
 import matplotlib.pyplot as plt
+
 
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 
-# -------------------------
-# MAP
-# -------------------------
 def generate_static_map(lat, lon, zoom=11, size=(700, 500)):
     url = (
         f"https://staticmap.openstreetmap.de/staticmap.php"
@@ -19,7 +18,7 @@ def generate_static_map(lat, lon, zoom=11, size=(700, 500)):
 
     try:
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
-        r = requests.get(url, timeout=4)
+        r = requests.get(url, timeout=4, headers={"User-Agent": "SALA-Feasibility-Study/1.0"})
         r.raise_for_status()
 
         with open(tmp.name, "wb") as f:
@@ -54,9 +53,6 @@ def generate_fallback_map(lat, lon):
     return tmp.name
 
 
-# -------------------------
-# MONTHLY EMPTY BATTERY DAYS
-# -------------------------
 def generate_monthly_chart(result):
     data = result.get("empty_battery_days_by_month")
 
@@ -66,47 +62,44 @@ def generate_monthly_chart(result):
     values = [float(x) for x in data]
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
 
-    fig, ax = plt.subplots(figsize=(5.6, 3.2))
-
-    bars = ax.bar(MONTHS, values)
+    fig, ax = plt.subplots(figsize=(7.0, 3.6))
+    bars = ax.bar(MONTHS, values, color="#DCE8DF", edgecolor="#DCE8DF")
 
     for i, v in enumerate(values):
-        if v == 0:
-            bars[i].set_alpha(0.35)
+        if v <= 0:
+            bars[i].set_color("#EEF4FF")
+            bars[i].set_edgecolor("#D6E4FF")
         elif v <= 3:
-            bars[i].set_alpha(0.6)
+            bars[i].set_color("#FFF7DB")
+            bars[i].set_edgecolor("#F5C451")
         else:
-            bars[i].set_alpha(0.9)
+            bars[i].set_color("#FEF3F2")
+            bars[i].set_edgecolor("#F7C7C1")
 
-    ax.axhline(0, linewidth=1)
+    ax.axhline(0, linewidth=1, color="#344054")
     ax.set_title("Monthly empty-battery days", loc="left", pad=12, fontsize=16, fontweight="bold")
     ax.text(
         0.0,
         1.03,
-        "Shows in which months the battery is expected to reach 0%, and for how many days.",
+        "Expected days per month with battery at 0%.",
         transform=ax.transAxes,
         fontsize=10,
         va="bottom",
+        color="#5B7083",
     )
-    ax.set_ylabel("Days per month")
+    ax.set_ylabel("Days")
     ax.set_xlabel("Month")
     ax.set_ylim(0, 31)
-
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.spines["left"].set_linewidth(1.5)
     ax.spines["bottom"].set_linewidth(1.2)
-
     fig.tight_layout()
     fig.savefig(tmp.name, dpi=180, bbox_inches="tight")
     plt.close(fig)
-
     return tmp.name
 
 
-# -------------------------
-# ANNUAL OPERATING PROFILE
-# -------------------------
 def generate_annual_profile_chart(result, required_hours):
     achieved = result.get("hours")
 
@@ -115,27 +108,15 @@ def generate_annual_profile_chart(result, required_hours):
 
     achieved = [float(x) for x in achieved]
     required_hours = float(required_hours)
-
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
 
-    fig, ax = plt.subplots(figsize=(8.8, 3.9))
+    fig, ax = plt.subplots(figsize=(7.8, 3.8))
 
-    # soft bars behind line
-    ax.bar(MONTHS, achieved, alpha=0.18, width=0.9)
-
-    # actual achieved profile
-    ax.plot(MONTHS, achieved, marker="o", linewidth=2.4)
-
-    # required line
-    ax.axhline(required_hours, linestyle="--", linewidth=2.2)
-
-    # true zero line
-    ax.axhline(0, linewidth=1)
-
-    # visually connect required line to Y axis so it is not read as zero baseline
-    ax.plot([-0.45, -0.45], [0, required_hours], linewidth=2.2)
-
-    # label requirement next to y-axis
+    ax.bar(MONTHS, achieved, alpha=0.18, width=0.9, color="#16A34A")
+    ax.plot(MONTHS, achieved, marker="o", linewidth=2.4, color="#5B7AA6")
+    ax.axhline(required_hours, linestyle="--", linewidth=2.2, color="#111827")
+    ax.axhline(0, linewidth=1, color="#475467")
+    ax.plot([-0.45, -0.45], [0, required_hours], linewidth=2.2, color="#111827")
     ax.text(
         -0.62,
         required_hours,
@@ -144,9 +125,8 @@ def generate_annual_profile_chart(result, required_hours):
         ha="right",
         fontsize=10,
         fontweight="bold",
+        color="#111827",
     )
-
-    # airplane cue
     ax.text(
         -0.62,
         required_hours + 0.45,
@@ -154,10 +134,11 @@ def generate_annual_profile_chart(result, required_hours):
         va="center",
         ha="right",
         fontsize=12,
+        color="#111827",
     )
 
-    # explanatory note
     ymax = max(max(achieved), required_hours) + 2
+    ax.set_title("Annual operating profile", loc="left", pad=12, fontsize=16, fontweight="bold")
     ax.text(
         0.0,
         1.03,
@@ -165,28 +146,15 @@ def generate_annual_profile_chart(result, required_hours):
         transform=ax.transAxes,
         fontsize=10,
         va="bottom",
+        color="#5B7083",
     )
-
-    ax.set_title("Annual operating profile", loc="left", pad=12, fontsize=16, fontweight="bold")
-    ax.text(
-        0.0,
-        1.09,
-        "12-month solar performance from January to December.",
-        transform=ax.transAxes,
-        fontsize=10,
-        va="bottom",
-    )
-
-    ax.set_ylabel("Achieved operating hours per day")
+    ax.set_ylabel("Operating hours/day")
     ax.set_xlabel("Month")
     ax.set_ylim(0, ymax)
-
-    # make axes visually stronger
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.spines["left"].set_linewidth(2)
     ax.spines["bottom"].set_linewidth(1.5)
-
     fig.tight_layout()
     fig.savefig(tmp.name, dpi=180, bbox_inches="tight")
     plt.close(fig)
@@ -194,9 +162,6 @@ def generate_annual_profile_chart(result, required_hours):
     return tmp.name
 
 
-# -------------------------
-# MAIN ENTRY
-# -------------------------
 def generate_all_assets(loc, results, required_hours):
     lat = loc.get("lat")
     lon = loc.get("lon")
@@ -204,7 +169,10 @@ def generate_all_assets(loc, results, required_hours):
     if not results:
         return None, None, None
 
-    first = list(results.values())[0]
+    worst = max(
+        results.values(),
+        key=lambda r: float(r.get("overall_empty_battery_pct", 0) or 0)
+    )
 
     try:
         map_path = generate_static_map(lat, lon)
@@ -212,12 +180,12 @@ def generate_all_assets(loc, results, required_hours):
         map_path = generate_fallback_map(lat, lon)
 
     try:
-        monthly = generate_monthly_chart(first)
+        monthly = generate_monthly_chart(worst)
     except Exception:
         monthly = None
 
     try:
-        annual = generate_annual_profile_chart(first, required_hours)
+        annual = generate_annual_profile_chart(worst, required_hours)
     except Exception:
         annual = None
 

@@ -1,12 +1,11 @@
 from reportlab.platypus import SimpleDocTemplate
 
 from .data_builder import build_report_data
-from .pages.cover import build_cover
-from .pages.summary import build_summary
-from .pages.details import build_details
-from .pages.methodology import build_methodology
 from .assets.render_assets import generate_all_assets
-
+from .pages.cover import build_cover
+from .pages.executive_summary import build_executive_summary
+from .pages.technical_results import build_technical_results
+from .pages.methodology import build_methodology
 
 def make_pdf(
     out_path,
@@ -38,18 +37,12 @@ def make_pdf(
     data["monthly_chart_path"] = monthly
     data["annual_profile_chart_path"] = annual
 
-    doc = SimpleDocTemplate(
-        out_path,
-        leftMargin=42,
-        rightMargin=42,
-        topMargin=28,
-        bottomMargin=24,
-    )
+    doc = SimpleDocTemplate(out_path, leftMargin=42, rightMargin=42, topMargin=28, bottomMargin=24)
 
     story = []
     story += build_cover(data)
-    story += build_summary(data)
-    story += build_details(data)
+    story += build_executive_summary(data)
+    story += build_technical_results(data)
     story += build_methodology(data)
 
     doc.build(story)

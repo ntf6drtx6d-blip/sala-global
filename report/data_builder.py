@@ -1,9 +1,7 @@
 from datetime import datetime
 
-
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-
 
 def _to_float(value, default=None):
     try:
@@ -13,112 +11,46 @@ def _to_float(value, default=None):
     except Exception:
         return default
 
-
-def _annual_empty_battery_stats(results: dict):
-    pcts = []
-    for _, r in results.items():
-        pct = _to_float(r.get("overall_empty_battery_pct"))
-        if pct is not None:
-            pcts.append(pct)
-
-    if not pcts:
-        return None, None
-
-    worst_pct = max(pcts)
-    worst_days = round(365 * worst_pct / 100.0)
-    return worst_days, worst_pct
-
-
-def _pick_worst_device(results: dict):
+def _pick_worst_device(results):
     worst_key = None
     worst = None
-    worst_pct = -1
+    worst_gap = None
     for key, r in results.items():
-        pct = _to_float(r.get("overall_empty_battery_pct"), -1)
-        if pct > worst_pct:
-            worst_pct = pct
+        hours = r.get("hours") or []
+        if not hours:
+            continue
+        weakest = min([float(x) for x in hours])
+        if worst_gap is None or weakest < worst_gap:
+            worst_gap = weakest
             worst_key = key
             worst = r
     return worst_key, (worst or {})
 
-
-def _pick_best_device(results: dict):
-    best_key = None
-    best = None
-    best_pct = 1e9
-    for key, r in results.items():
-        pct = _to_float(r.get("overall_empty_battery_pct"), 1e9)
-        if pct < best_pct:
-            best_pct = pct
-            best_key = key
-            best = r
-    return best_key, (best or {})
-
-
-def _overall_state(results: dict):
-    if not results:
-        return "unknown"
-    statuses = [r.get("status") for r in results.values()]
-    if all(s == "PASS" for s in statuses):
-        return "all_pass"
-    if all(s == "FAIL" for s in statuses):
-        return "none_pass"
-    return "mixed"
-
-
-def _reserve_hours(device: dict):
-    try:
-        batt = float(device.get("batt", 0))
-        power = max(float(device.get("power", 0.01)), 0.01)
-        reserve = batt * 0.70 / power
-        return reserve
-    except Exception:
-        return None
-
-
-def _format_hours(value):
-    val = _to_float(value)
-    if val is None:
-        return "-"
-    if float(val).is_integer():
-        return f"{int(val)} hrs/day"
-    return f"{val:.1f} hrs/day"
-
-
-def _format_reserve(device: dict):
-    reserve = _reserve_hours(device)
-    if reserve is None:
-        return "-"
-    total_minutes = round(reserve * 60)
-    hours = total_minutes // 60
-    minutes = total_minutes % 60
-    return f"{hours}h {minutes:02d}m"
-
-
-def _month_name_of_min(device: dict):
+def _pick_strongest_month(device):
     hours = device.get("hours") or []
     if not hours:
-        return "-"
-    idx = min(range(len(hours)), key=lambda i: hours[i])
-    return MONTHS[idx]
+        return "-", None
+    idx = max(range(len(hours)), key=lambda i: float(hours[i]))
+    return MONTHS[idx], float(hours[idx])
 
+def _pick_weakest_month(device):
+    hours = device.get("hours") or []
+    if not hours:
+        return "-", None
+    idx = min(range(len(hours)), key=lambda i: float(hours[i]))
+    return MONTHS[idx], float(hours[idx])
 
-def _summary_message(state: str):
-    if state == "all_pass":
-        return (
-            "The selected configuration remains above the required operating profile "
-            "throughout the year and does not show annual blackout exposure."
-        )
-    if state == "mixed":
-        return (
-            "At least one selected configuration falls below the required operating profile "
-            "under worst-case solar conditions and should be reviewed."
-        )
-    return (
-        "The selected configuration does not support the required operating profile "
-        "year-round and shows blackout exposure."
-    )
-
+def _annual_empty_battery_stats(results):
+    pcts = []
+    for r in results.values():
+        pct = _to_float(r.get("overall_empty_battery_pct"))
+        if pct is not None:
+            pcts.append(pct)
+    if not pcts:
+        return None, None
+    worst_pct = max(pcts)
+    worst_days = round(365 * worst_pct / 100.0)
+    return worst_days, worst_pct
 
 def build_report_data(
     loc,
@@ -132,64 +64,49 @@ def build_report_data(
     prepared_by=None,
 ):
     airport_name = airport_label or loc.get("label", "Study point")
-    country = loc.get("country") or "-"
-    coordinates = f"{float(loc.get('lat', 0)):.6f}, {float(loc.get('lon', 0)):.6f}"
-
-    worst_days, worst_pct = _annual_empty_battery_stats(results)
-    state = _overall_state(results)
+    coordinates = f"{float(loc.get('lat', 0)):.5f}, {float(loc.get('lon', 0)):.5f}"
     worst_name, worst_device = _pick_worst_device(results)
-    best_name, best_device = _pick_best_device(results)
+    weak_month, weak_hours = _pick_weakest_month(worst_device)
+    strong_month, strong_hours = _pick_strongest_month(worst_device)
+    worst_days, worst_pct = _annual_empty_battery_stats(results)
 
-    worst_hours = worst_device.get("hours") or []
-    lowest_hours = min(worst_hours) if worst_hours else None
+    gap = None if weak_hours is None else weak_hours - float(required_hours)
+    fail = gap is None or gap < 0
 
-    if state == "all_pass":
-        accent = "green"
-        conclusion_title = "System meets the required operating profile."
-        conclusion_text = "The system supports operation year-round."
-    elif state == "mixed":
-        accent = "gold"
-        conclusion_title = "System partially meets the required operating profile."
-        conclusion_text = "At least one selected device remains below requirement."
-    else:
-        accent = "red"
-        conclusion_title = "System does not meet the required operating profile."
-        conclusion_text = "The system does not support operation year-round."
-
-    revision_text = f"Rev {int(revision_no):02d}" if revision_no else "Rev 01"
+    cover_statement = (
+        f"The analysed solar AGL configuration does not meet the required operating profile of "
+        f"{float(required_hours):.0f} hours/day throughout the year. "
+        f"The weakest case falls short by {abs(gap):.1f} hours/day. "
+        f"Additional PV, battery capacity or reduced load is recommended."
+        if fail else
+        f"The analysed solar AGL configuration meets the required operating profile of "
+        f"{float(required_hours):.0f} hours/day throughout the year. "
+        f"The weakest case remains above requirement by {gap:.1f} hours/day."
+    )
 
     return {
-        "report_id": document_no or f"SALA-SFS-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-        "revision": revision_text,
+        "report_id": document_no or f"SALA-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
         "date": report_date or datetime.now().strftime("%Y-%m-%d %H:%M"),
         "airport_name": airport_name,
-        "country": country,
         "coordinates": coordinates,
+        "required_operation": f"{float(required_hours):.0f} hrs/day",
         "prepared_by": prepared_by or "SALA user",
-        "prepared_under": "SALA Standardized Feasibility Methodology",
-        "methodology_note": (
-            "Prepared using PVGIS developed by the Joint Research Centre (JRC), "
-            "European Commission, and organized using SALA's standardized off-grid feasibility logic."
-        ),
-        "required_operation": _format_hours(required_hours),
-        "worst_blackout_risk": f"{worst_days} days/year" if worst_days is not None else "-",
-        "worst_blackout_pct": f"{worst_pct:.1f}% of the year" if worst_pct is not None else "-",
-        "overall_conclusion_title": conclusion_title,
-        "overall_conclusion_text": conclusion_text,
-        "executive_summary": _summary_message(state),
-        "accent": accent,
-        "device_name": worst_device.get("name") or worst_name or "-",
-        "engine_name": worst_device.get("engine") or "-",
-        "achievable_worst_month": _format_hours(lowest_hours),
-        "battery_reserve": _format_reserve(worst_device),
-        "worst_month_name": _month_name_of_min(worst_device),
-        "worst_month_hours": _format_hours(lowest_hours),
-        "best_device_name": best_device.get("name") or best_name or "-",
-        "best_device_blackout_pct": f"{_to_float(best_device.get('overall_empty_battery_pct'), 0):.1f}%",
-        "selected_device_count": len(results),
-        "overall_result": overall or "-",
-        "map_image_path": None,
-        "monthly_chart_path": None,
+        "cover_verdict": "NOT TECHNICALLY FEASIBLE" if fail else "TECHNICALLY FEASIBLE",
+        "cover_statement": cover_statement,
+        "overall_result_label": "NOT TECHNICALLY FEASIBLE" if fail else "TECHNICALLY FEASIBLE",
+        "overall_result_value": "FAIL" if fail else "PASS",
+        "gap_vs_requirement": f"{abs(gap):.0f} hrs" if gap is not None else "-",
+        "weakest_month_short": weak_month,
+        "strongest_month_short": strong_month,
+        "executive_summary": cover_statement,
+        "accent": "red" if fail else "green",
+        "base_tilt": _safe_or("-", worst_device.get("tilt")),
+        "azimuth_mode": "Automatic",
         "annual_profile_chart_path": None,
+        "monthly_chart_path": None,
+        "map_image_path": None,
         "pvgis_meta": worst_device.get("pvgis_meta", {}),
     }
+
+def _safe_or(default, value):
+    return default if value in (None, "") else str(value)

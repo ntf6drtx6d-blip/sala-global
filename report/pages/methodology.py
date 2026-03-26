@@ -1,8 +1,7 @@
 from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
-from ..styles import SECTION, BODY, SMALL, BOLD, LINE, WHITE
+from ..styles import SECTION, BODY, SMALL, BOLD, LINE, BLUE_SOFT
 
 PAGE_WIDTH = 510
-
 
 def _safe(value, default="-"):
     if value is None:
@@ -10,72 +9,28 @@ def _safe(value, default="-"):
     text = str(value).strip()
     return text if text else default
 
-
-def _stack(items, width, style=None):
-    t = Table([[x] for x in items], colWidths=[width])
-    if style:
-        t.setStyle(TableStyle(style))
-    return t
-
-
 def build_methodology(data):
     meta = data.get("pvgis_meta", {})
-
     story = []
-    story.append(Paragraph("Methodology", SECTION))
+    story.append(Paragraph("3. Methodology", SECTION))
     story.append(Spacer(1, 12))
 
-    block1 = _stack(
-        [
-            Paragraph("Methodological basis", SMALL),
-            Paragraph(
-                "This report is prepared using PVGIS developed by the Joint Research Centre (JRC), European Commission.",
-                BOLD,
-            ),
-            Spacer(1, 6),
-            Paragraph(
-                _safe(data.get("methodology_note")),
-                BODY,
-            ),
-        ],
-        PAGE_WIDTH,
-        style=[
-            ("BACKGROUND", (0, 0), (-1, -1), WHITE),
-            ("BOX", (0, 0), (-1, -1), 1, LINE),
-            ("LEFTPADDING", (0, 0), (-1, -1), 16),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 16),
-            ("TOPPADDING", (0, 0), (-1, -1), 16),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 16),
-        ],
-    )
-    story.append(block1)
-    story.append(Spacer(1, 12))
-
-    dataset = _safe(meta.get("dataset"))
-    explanation = _safe(meta.get("explanation"))
-    pvcalc_url = _safe(meta.get("pvcalc_url_example"))
-    shs_url = _safe(meta.get("shs_url_example"))
-
-    block2 = _stack(
-        [
-            Paragraph("PVGIS dataset and calculation logic", SMALL),
-            Paragraph(f"Dataset: {dataset}", BOLD),
-            Spacer(1, 4),
-            Paragraph(explanation, BODY),
-            Spacer(1, 8),
-            Paragraph("Illustrative PVGIS request endpoints used in the study logic:", SMALL),
-            Paragraph(f"PVcalc: {pvcalc_url}", BODY),
-            Paragraph(f"SHScalc: {shs_url}", BODY),
-        ],
-        PAGE_WIDTH,
-        style=[
-            ("BACKGROUND", (0, 0), (-1, -1), WHITE),
-            ("BOX", (0, 0), (-1, -1), 1, LINE),
-            ("LEFTPADDING", (0, 0), (-1, -1), 16),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 16),
-            ("TOPPADDING", (0, 0), (-1, -1), 16),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 16),
-        ],
-    )
-    story.append(block2)
+    rows = [
+        [Paragraph("<b>Core method</b>", SMALL), Paragraph("PVGIS off-grid autonomy assessment", BODY)],
+        [Paragraph("<b>Decision rule</b>", SMALL), Paragraph("Weakest month compared with required daily operating profile", BODY)],
+        [Paragraph("<b>Dataset</b>", SMALL), Paragraph(_safe(meta.get("dataset"), "PVGIS SARAH / ERA5 where applicable"), BODY)],
+        [Paragraph("<b>Location basis</b>", SMALL), Paragraph(_safe(data.get("coordinates")), BODY)],
+        [Paragraph("<b>Requirement</b>", SMALL), Paragraph(_safe(data.get("required_operation")), BODY)],
+        [Paragraph("<b>Interpretation</b>", SMALL), Paragraph("If the weakest month stays below the required operating profile, the configuration is not technically feasible for the selected use case.", BODY)],
+    ]
+    tbl = Table(rows, colWidths=[120, 390])
+    tbl.setStyle(TableStyle([
+        ("GRID",(0,0),(-1,-1),0.7,LINE),
+        ("BACKGROUND",(0,0),(0,-1),BLUE_SOFT),
+        ("LEFTPADDING",(0,0),(-1,-1),8),
+        ("RIGHTPADDING",(0,0),(-1,-1),8),
+        ("TOPPADDING",(0,0),(-1,-1),8),
+        ("BOTTOMPADDING",(0,0),(-1,-1),8),
+    ]))
+    story.append(tbl)
     return story

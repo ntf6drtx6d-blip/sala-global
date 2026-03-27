@@ -65,8 +65,8 @@ DEVICES = {
         "fixed": True,
     },
     3: {
-        "code": "SP-301SLI",
-        "name": "STD SP-301SLI",
+        "code": "SP-301SL",
+        "name": "STD SP-301SL",
         "system_type": "builtin",
         "default_power": 1.4,
         "pv": 5,

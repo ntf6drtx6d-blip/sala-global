@@ -33,6 +33,7 @@ def init_state():
         "required_hours": 12.0,
         "operating_profile_mode": "Custom hours per day",
         "selected_ids": [],
+        "selected_simulation_keys": [],
         "per_device_config": {},
         "results": None,
         "overall": None,
@@ -78,7 +79,7 @@ def bootstrap_admin_user():
 
 
 def refresh_study_ready_from_state():
-    selected_ids = st.session_state.get("selected_ids", [])
+    selected_ids = st.session_state.get("selected_simulation_keys") or st.session_state.get("selected_ids", [])
     study_point_confirmed = bool(st.session_state.get("study_point_confirmed", False))
     mode = st.session_state.get("operating_profile_mode")
     required_hours = st.session_state.get("required_hours")
@@ -489,7 +490,7 @@ def maybe_save_current_study():
         lon=float(st.session_state.get("lon", 0)),
         required_hours=float(st.session_state.get("required_hours", 0)),
         operating_profile_mode=st.session_state.get("operating_profile_mode", ""),
-        selected_devices=st.session_state.get("selected_ids", []),
+        selected_devices=st.session_state.get("selected_simulation_keys") or st.session_state.get("selected_ids", []),
         per_device_config=st.session_state.get("per_device_config", {}),
         overall_result=overall_result,
         worst_blackout_days=days,
@@ -508,7 +509,17 @@ def _extract_energy_flow_payload(results, required_hours, overall, selected_ids)
 
     selected_device_name = "Selected configuration"
     if selected_ids:
-        selected_device_name = ", ".join(str(x) for x in selected_ids)
+        first_id = selected_ids[0]
+        if isinstance(first_id, str) and "||" in first_id:
+            try:
+                device_id_str, lamp_variant = first_id.split("||", 1)
+                device_id = int(device_id_str)
+                from core.devices import DEVICES
+                selected_device_name = f"{DEVICES[device_id]['name']} / {lamp_variant}"
+            except Exception:
+                selected_device_name = str(first_id)
+        else:
+            selected_device_name = ", ".join(str(x) for x in selected_ids)
 
     worst_blackout_risk = "N/A"
     lowest_reserve_pct = 0
@@ -730,7 +741,7 @@ def render_calculator_app():
                 results=st.session_state.get("results"),
                 required_hours=st.session_state.get("required_hours", 12),
                 overall=st.session_state.get("overall", "N/A"),
-                selected_ids=st.session_state.get("selected_ids", []),
+                selected_ids=st.session_state.get("selected_simulation_keys") or st.session_state.get("selected_ids", []),
             )
 
             render_energy_flow(

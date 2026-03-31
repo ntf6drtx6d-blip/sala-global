@@ -74,6 +74,7 @@ def reset_study():
         "required_hours": 12.0,
         "operating_profile_mode": "Custom hours per day",
         "selected_ids": [],
+        "selected_simulation_keys": [],
         "per_device_config": {},
         "search_message": "",
         "map_click_info": "",
@@ -169,7 +170,7 @@ def _run_simulation(progress_callback=None):
     results, overall, worst_name, worst_gap, slope = simulate_for_devices(
         loc=loc,
         required_hrs=st.session_state.required_hours,
-        selected_ids=st.session_state.selected_ids,
+        selected_ids=st.session_state.get("selected_simulation_keys") or st.session_state.selected_ids,
         per_device_config=st.session_state.per_device_config,
         az_override=None,
         progress_callback=simulation_progress,

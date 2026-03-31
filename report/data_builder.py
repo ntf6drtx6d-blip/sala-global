@@ -6,14 +6,22 @@ MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
 
 
 def _short_name(result_key: str, r: dict) -> str:
-    code = (r.get("device_code") or "").strip()
+    label = (r.get("name") or result_key or "").strip()
+    lamp_variant = (r.get("lamp_variant") or "").strip()
     engine = (r.get("engine") or "").strip()
+    if label:
+        if engine and engine != "BUILT-IN" and engine not in label:
+            return f"{label} + {engine}"
+        return label
+    code = (r.get("device_code") or "").strip()
+    if lamp_variant and code:
+        return f"{code} / {lamp_variant}"
     if code and engine and engine != "BUILT-IN":
         return f"{code} + {engine}"
     if code:
         return code
     if "—" in result_key:
-        return result_key.split("—", 1)[0].strip()
+        return result_key.split("—", 1)[-1].strip()
     return result_key.strip()
 
 

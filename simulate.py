@@ -4,6 +4,44 @@ import time
 from urllib.parse import urlencode
 
 from devices import DEVICES, SOLAR_ENGINES
+
+
+def _parse_device_identifier(device_identifier, per_device_config=None):
+    per_device_config = per_device_config or {}
+    user_cfg = per_device_config.get(device_identifier) or per_device_config.get(str(device_identifier), {})
+
+    lamp_variant = user_cfg.get("lamp_variant")
+    raw_id = user_cfg.get("device_id", device_identifier)
+
+    if isinstance(raw_id, str) and "||" in raw_id:
+        raw_id, parsed_variant = raw_id.split("||", 1)
+        lamp_variant = lamp_variant or parsed_variant
+
+    if isinstance(device_identifier, str) and "||" in device_identifier:
+        raw_id2, parsed_variant = device_identifier.split("||", 1)
+        raw_id = raw_id2
+        lamp_variant = lamp_variant or parsed_variant
+
+    try:
+        device_id = int(raw_id)
+    except Exception:
+        device_id = int(device_identifier)
+
+    return device_id, lamp_variant, user_cfg
+
+
+def _variant_short_label(lamp_variant):
+    mapping = {
+        "Runway edge light": "RWY edge",
+        "Runway threshold/end light": "THR/END",
+        "Taxiway edge light": "TWY edge",
+        "Approach light": "APP",
+        "Obstruction Type A LI light": "OBS LI",
+        "TLOF light": "TLOF",
+        "FATO light": "FATO",
+    }
+    return mapping.get(lamp_variant, lamp_variant) if lamp_variant else None
+
 from pvgis_client import pvcalc_monthly_wh_per_day, shs_monthly, load_cache, save_cache
 
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -33,16 +71,24 @@ def dataset_label():
 
 def resolve_device_config(device_id, per_device_config=None):
     per_device_config = per_device_config or {}
-    dspec = DEVICES[device_id]
-    user_cfg = per_device_config.get(device_id, {})
+    parsed_device_id, lamp_variant, user_cfg = _parse_device_identifier(device_id, per_device_config)
+    dspec = DEVICES[parsed_device_id]
 
-    power = float(user_cfg.get("power", dspec["default_power"]))
+    if lamp_variant and dspec.get("lamp_variants") and lamp_variant in dspec["lamp_variants"]:
+        default_power = float(dspec["lamp_variants"][lamp_variant]["power_w"])
+    else:
+        default_power = float(dspec["default_power"])
+
+    power = float(user_cfg.get("power", default_power))
+    variant_suffix = f" / {_variant_short_label(lamp_variant)}" if lamp_variant else ""
+    display_name = user_cfg.get("display_label") or f"{dspec['name']}{variant_suffix}"
 
     if dspec["system_type"] == "builtin":
         cfg = {
-            "device_id": device_id,
+            "device_id": parsed_device_id,
             "device_code": dspec["code"],
-            "device_name": dspec["name"],
+            "device_name": display_name,
+            "lamp_variant": lamp_variant,
             "system_type": "builtin",
             "engine_key": None,
             "engine_name": "BUILT-IN",
@@ -66,9 +112,10 @@ def resolve_device_config(device_id, per_device_config=None):
     batt = float(eng["batt_ext"]) if (battery_mode == "Ext" and eng.get("batt_ext")) else float(eng["batt"])
 
     cfg = {
-        "device_id": device_id,
+        "device_id": parsed_device_id,
         "device_code": dspec["code"],
-        "device_name": dspec["name"],
+        "device_name": display_name,
+        "lamp_variant": lamp_variant,
         "system_type": "external_engine",
         "engine_key": engine_key,
         "engine_name": eng["short_name"],
@@ -256,7 +303,7 @@ def simulate_for_devices(
 
         pvgis_meta = build_pvgis_meta(lat, lon, resolved, tilt, azim)
 
-        result_key = f"{resolved['device_code']} — {resolved['device_name']}"
+        result_key = resolved['device_name']
 
         results[result_key] = {
             "device_id": did,
@@ -276,6 +323,7 @@ def simulate_for_devices(
             "min_margin": min_margin,
             "fail_months": fail_months,
             "power": resolved["power"],
+            "lamp_variant": resolved.get("lamp_variant"),
             "monthly_energy_wh": monthly_energy_wh,
             "pvgis_meta": pvgis_meta,
         }

@@ -17,8 +17,12 @@ def _init_setup_defaults():
             st.session_state.airport_query = ""
         if "selected_ids" not in st.session_state:
             st.session_state.selected_ids = []
+        if "selected_simulation_keys" not in st.session_state:
+            st.session_state.selected_simulation_keys = []
         if "per_device_config" not in st.session_state:
             st.session_state.per_device_config = {}
+        if "selected_lamp_types" not in st.session_state:
+            st.session_state.selected_lamp_types = {}
 
         if "required_hours" not in st.session_state:
             st.session_state.required_hours = 12.0
@@ -46,7 +50,7 @@ def _init_setup_defaults():
 
 
 def _refresh_study_ready():
-    selected_ids = st.session_state.get("selected_ids", [])
+    selected_ids = st.session_state.get("selected_simulation_keys") or st.session_state.get("selected_ids", [])
     study_point_confirmed = bool(st.session_state.get("study_point_confirmed", False))
     mode = st.session_state.get("operating_profile_mode")
     required_hours = st.session_state.get("required_hours")
@@ -155,6 +159,42 @@ def _default_multiselect_labels():
         if did in DEVICES:
             labels.append(_device_label(did))
     return labels
+
+
+def _variant_short_label(lamp_type: str) -> str:
+    mapping = {
+        "Runway edge light": "RWY edge",
+        "Runway threshold/end light": "THR/END",
+        "Taxiway edge light": "TWY edge",
+        "Approach light": "APP",
+        "Obstruction Type A LI light": "OBS LI",
+        "TLOF light": "TLOF",
+        "FATO light": "FATO",
+    }
+    return mapping.get(lamp_type, lamp_type)
+
+
+def _simulation_key(device_id, lamp_variant=None):
+    return f"{device_id}||{lamp_variant}" if lamp_variant else str(device_id)
+
+
+def _simulation_label(device_id, lamp_variant=None):
+    base = _device_label(device_id)
+    return f"{base} / {_variant_short_label(lamp_variant)}" if lamp_variant else base
+
+
+def _default_lamp_selection(device_id):
+    dspec = DEVICES[device_id]
+    variants = list(dspec.get("lamp_variants", {}).keys())
+    if not variants:
+        return []
+    preferred = {
+        1: ["Runway edge light", "Runway threshold/end light", "Approach light"],
+        2: ["Runway edge light", "Runway threshold/end light", "Approach light"],
+        3: ["Taxiway edge light", "Runway edge light"],
+    }.get(device_id, [])
+    selected = [x for x in preferred if x in variants]
+    return selected or variants[:1]
 
 
 def _apply_operating_profile():
@@ -418,91 +458,151 @@ def render_setup(disabled=False):
         else:
             st.caption("Select an airport or click on the map to define the study point.")
 
+
     st.markdown("### 4. Configure selected devices")
 
     per_device_config = {}
+    selected_simulation_keys = []
 
     if not selected_ids:
         st.caption("Select at least one device to configure.")
         st.session_state.per_device_config = {}
+        st.session_state.selected_simulation_keys = []
+        st.session_state.selected_lamp_types = {}
         _refresh_study_ready()
     else:
+        current_lamp_map = st.session_state.get("selected_lamp_types", {})
+        current_lamp_map = {k: v for k, v in current_lamp_map.items() if k in selected_ids}
+        st.session_state.selected_lamp_types = current_lamp_map
+
         for did in selected_ids:
             dspec = DEVICES[did]
             system_type = dspec["system_type"]
+            variants = list(dspec.get("lamp_variants", {}).keys())
 
-            with st.expander(_device_label(did), expanded=False):
-                saved_cfg = st.session_state.get("per_device_config", {}).get(did, {})
+            if variants and did not in st.session_state["selected_lamp_types"]:
+                st.session_state["selected_lamp_types"][did] = _default_lamp_selection(did)
 
-                default_power = float(saved_cfg.get("power", dspec["default_power"]))
-                engine_key = saved_cfg.get("engine_key", dspec.get("default_engine"))
-                battery_mode = saved_cfg.get("battery_mode", "Std")
+            if variants:
+                with st.expander(f"{_device_label(did)} — lamp types", expanded=False):
+                    c1, c2 = st.columns([1, 1])
+                    with c1:
+                        if st.button("Select all", key=f"select_all_variants_{did}", disabled=disabled):
+                            st.session_state["selected_lamp_types"][did] = variants
+                    with c2:
+                        if st.button("Clear", key=f"clear_variants_{did}", disabled=disabled):
+                            st.session_state["selected_lamp_types"][did] = []
 
-                power = st.number_input(
-                    "Power (W)",
-                    min_value=0.01,
-                    value=float(default_power),
-                    step=0.01,
-                    key=f"power_{did}",
-                    disabled=disabled,
-                )
-
-                if system_type == "external_engine":
-                    compatible = dspec["compatible_engines"]
-                    if engine_key not in compatible:
-                        engine_key = dspec["default_engine"]
-
-                    engine_key = st.selectbox(
-                        "Solar Engine",
-                        compatible,
-                        index=compatible.index(engine_key),
-                        key=f"engine_{did}",
-                        disabled=disabled,
-                        format_func=lambda x: f"{SOLAR_ENGINES[x]['short_name']} — {SOLAR_ENGINES[x]['name']}",
-                    )
-
-                    eng = SOLAR_ENGINES[engine_key]
-
-                    if eng.get("batt_ext"):
-                        battery_mode = st.radio(
-                            "Battery mode",
-                            ["Std", "Ext"],
-                            horizontal=True,
-                            index=0 if battery_mode == "Std" else 1,
-                            key=f"battery_mode_{did}",
+                    chosen = []
+                    for lamp_variant in variants:
+                        checked = lamp_variant in st.session_state["selected_lamp_types"].get(did, [])
+                        is_on = st.checkbox(
+                            f"{lamp_variant} — {float(dspec['lamp_variants'][lamp_variant]['power_w']):.2f} W",
+                            value=checked,
+                            key=f"variant_enabled_{did}_{lamp_variant}",
                             disabled=disabled,
                         )
+                        if is_on:
+                            chosen.append(lamp_variant)
+                    st.session_state["selected_lamp_types"][did] = chosen
+                    if chosen:
+                        st.caption("Each selected lamp type will be simulated separately.")
                     else:
-                        battery_mode = "Std"
-                        st.caption("Battery mode: Std only for this Solar Engine.")
+                        st.caption("No lamp type selected for this device family.")
+                    active_variants = chosen
+            else:
+                active_variants = [None]
+
+            for lamp_variant in active_variants:
+                sim_key = _simulation_key(did, lamp_variant)
+                selected_simulation_keys.append(sim_key)
+                saved_cfg = (
+                    st.session_state.get("per_device_config", {}).get(sim_key)
+                    or st.session_state.get("per_device_config", {}).get(str(did), {})
+                )
+
+                if lamp_variant and dspec.get("lamp_variants"):
+                    base_power = float(dspec["lamp_variants"][lamp_variant]["power_w"])
                 else:
-                    engine_key = None
-                    battery_mode = "Built-in"
-                    st.caption("This device uses built-in solar panel and battery.")
+                    base_power = float(dspec["default_power"])
 
-                summary = _engine_summary(did, engine_key, battery_mode)
+                default_power = float(saved_cfg.get("power", base_power))
+                engine_key = saved_cfg.get("engine_key", dspec.get("default_engine"))
+                battery_mode = saved_cfg.get("battery_mode", "Std")
+                display_label = _simulation_label(did, lamp_variant)
 
-                m1, m2, m3, m4 = st.columns(4)
+                with st.expander(display_label, expanded=False):
+                    if lamp_variant:
+                        st.caption(f"Selected lamp type: {lamp_variant}")
 
-                with m1:
-                    st.metric("Power", f"{float(power):.2f} W")
-                with m2:
-                    st.metric("Solar panel", f"{summary['pv']} W")
-                with m3:
-                    st.metric("Battery", f"{summary['batt']} Wh")
-                with m4:
-                    st.metric("Active source", summary["source_label"])
+                    power = st.number_input(
+                        "Power (W)",
+                        min_value=0.01,
+                        value=float(default_power),
+                        step=0.01,
+                        key=f"power_{sim_key}",
+                        disabled=disabled,
+                    )
 
-                if system_type == "external_engine":
-                    st.caption(f"Battery mode selected: {summary['battery_mode']}")
+                    if system_type == "external_engine":
+                        compatible = dspec["compatible_engines"]
+                        if engine_key not in compatible:
+                            engine_key = dspec["default_engine"]
 
-                per_device_config[did] = {
-                    "power": float(power),
-                    "engine_key": engine_key,
-                    "battery_mode": battery_mode if battery_mode in ["Std", "Ext"] else "Std",
-                }
+                        engine_key = st.selectbox(
+                            "Solar Engine",
+                            compatible,
+                            index=compatible.index(engine_key),
+                            key=f"engine_{sim_key}",
+                            disabled=disabled,
+                            format_func=lambda x: f"{SOLAR_ENGINES[x]['short_name']} — {SOLAR_ENGINES[x]['name']}",
+                        )
+
+                        eng = SOLAR_ENGINES[engine_key]
+
+                        if eng.get("batt_ext"):
+                            battery_mode = st.radio(
+                                "Battery mode",
+                                ["Std", "Ext"],
+                                horizontal=True,
+                                index=0 if battery_mode == "Std" else 1,
+                                key=f"battery_mode_{sim_key}",
+                                disabled=disabled,
+                            )
+                        else:
+                            battery_mode = "Std"
+                            st.caption("Battery mode: Std only for this Solar Engine.")
+                    else:
+                        engine_key = None
+                        battery_mode = "Built-in"
+                        st.caption("This device uses built-in solar panel and battery.")
+
+                    summary = _engine_summary(did, engine_key, battery_mode)
+
+                    m1, m2, m3, m4 = st.columns(4)
+                    with m1:
+                        st.metric("Power", f"{float(power):.2f} W")
+                    with m2:
+                        st.metric("Solar panel", f"{summary['pv']} W")
+                    with m3:
+                        st.metric("Battery", f"{summary['batt']} Wh")
+                    with m4:
+                        st.metric("Active source", summary["source_label"])
+
+                    if system_type == "external_engine":
+                        st.caption(f"Battery mode selected: {summary['battery_mode']}")
+
+                    per_device_config[sim_key] = {
+                        "device_id": did,
+                        "lamp_variant": lamp_variant,
+                        "display_label": display_label,
+                        "power": float(power),
+                        "engine_key": engine_key,
+                        "battery_mode": battery_mode if battery_mode in ["Std", "Ext"] else "Std",
+                    }
 
         st.session_state.per_device_config = per_device_config
+        st.session_state.selected_simulation_keys = selected_simulation_keys
         _refresh_study_ready()
 
     _refresh_study_ready()

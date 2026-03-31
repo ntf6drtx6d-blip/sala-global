@@ -20,15 +20,43 @@ def _safe_json_list(raw_value):
 
 def _device_label_from_id(device_id):
     try:
-        d = DEVICES[device_id]
+        d = DEVICES[int(device_id)]
         return d.get("code") or d.get("name") or str(device_id)
     except Exception:
         return str(device_id)
 
 
-def _device_labels_from_json(raw_value):
-    ids = _safe_json_list(raw_value)
-    labels = [_device_label_from_id(x) for x in ids]
+def _safe_json_dict(raw_value):
+    if not raw_value:
+        return {}
+    try:
+        value = json.loads(raw_value)
+        if isinstance(value, dict):
+            return value
+        return {}
+    except Exception:
+        return {}
+
+
+def _device_labels(row):
+    ids = _safe_json_list(row.get("selected_devices_json"))
+    cfg = _safe_json_dict(row.get("per_device_config_json"))
+    labels = []
+    for x in ids:
+        key = str(x)
+        item_cfg = cfg.get(key) or cfg.get(x) or {}
+        display = item_cfg.get("display_label")
+        if display:
+            labels.append(display)
+            continue
+        if isinstance(x, str) and "||" in x:
+            try:
+                did, lamp_variant = x.split("||", 1)
+                labels.append(f"{_device_label_from_id(did)} / {lamp_variant}")
+                continue
+            except Exception:
+                pass
+        labels.append(_device_label_from_id(x))
     return labels
 
 
@@ -42,7 +70,7 @@ def render_my_studies(user_id):
         return
 
     for row in rows:
-        labels = _device_labels_from_json(row["selected_devices_json"])
+        labels = _device_labels(row)
         devices_text = ", ".join(labels) if labels else "-"
 
         with st.container():

@@ -1,3 +1,4 @@
+
 from reportlab.platypus import SimpleDocTemplate
 from reportlab.lib.pagesizes import A4
 
@@ -13,14 +14,8 @@ def make_pdf(out_path, loc, required_hours, results, overall, *args):
 
     data = build_report_data(loc, required_hours, results, overall, user_name)
 
-    doc = SimpleDocTemplate(
-        out_path,
-        pagesize=A4,
-        leftMargin=40,
-        rightMargin=40,
-        topMargin=30,
-        bottomMargin=30,
-    )
+    doc = SimpleDocTemplate(out_path, pagesize=A4,
+        leftMargin=40, rightMargin=40, topMargin=30, bottomMargin=30)
 
     story = []
     story += build_cover(data)

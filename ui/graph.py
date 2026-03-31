@@ -45,6 +45,24 @@ def _extract_monthly_empty_battery_pct(result_row: dict):
     return None
 
 
+def _extract_monthly_empty_battery_days(result_row: dict):
+    candidates = [
+        result_row.get("empty_battery_days_by_month"),
+        result_row.get("monthly_empty_battery_days"),
+        result_row.get("monthly_blackout_days"),
+        result_row.get("blackout_days_by_month"),
+    ]
+
+    for candidate in candidates:
+        if isinstance(candidate, (list, tuple)) and len(candidate) == 12:
+            try:
+                return [float(x) for x in candidate]
+            except Exception:
+                pass
+
+    return None
+
+
 def _monthly_blackout_days_from_pct(monthly_pct):
     return [
         round((pct / 100.0) * days, 1)
@@ -57,12 +75,24 @@ def build_blackout_df(results: dict) -> pd.DataFrame:
 
     for device_name, r in results.items():
         label = short_device_label(device_name)
+
+        monthly_days = _extract_monthly_empty_battery_days(r)
         monthly_pct = _extract_monthly_empty_battery_pct(r)
 
-        if not monthly_pct:
+        if monthly_days is None and monthly_pct is not None:
+            monthly_days = _monthly_blackout_days_from_pct(monthly_pct)
+
+        if monthly_days is None:
             continue
 
-        monthly_days = _monthly_blackout_days_from_pct(monthly_pct)
+        if monthly_pct is None:
+            monthly_pct = []
+            for i, days_val in enumerate(monthly_days):
+                try:
+                    pct_val = (float(days_val) / float(MONTH_DAYS[i])) * 100.0
+                except Exception:
+                    pct_val = 0.0
+                monthly_pct.append(pct_val)
 
         for i, month in enumerate(MONTHS):
             days_val = float(monthly_days[i])
@@ -77,8 +107,6 @@ def build_blackout_df(results: dict) -> pd.DataFrame:
             rows.append({
                 "Month": month,
                 "MonthIndex": i + 1,
-                "MonthStart": i + 0.55,
-                "MonthEnd": i + 1.45,
                 "Device": label,
                 "EmptyBatteryPct": float(monthly_pct[i]),
                 "EstimatedBlackoutDays": days_val,
@@ -87,7 +115,6 @@ def build_blackout_df(results: dict) -> pd.DataFrame:
                 "Meaning": (
                     f"Estimated days with battery at 0% in {month}: {days_val:.1f}. "
                     f"Share of month with empty battery: {float(monthly_pct[i]):.1f}%. "
-                    f"Evaluated against the selected airport lighting requirement. "
                     f"Calendar month length: {MONTH_DAYS[i]} days."
                 ),
             })
@@ -102,8 +129,12 @@ def build_monthly_df(results: dict, required_hrs: float) -> pd.DataFrame:
         label = short_device_label(device_name)
         reserve = calc_battery_reserve_hours(r)
 
+        hours_series = r.get("hours", [])
+        if not isinstance(hours_series, (list, tuple)) or len(hours_series) != 12:
+            continue
+
         for i, month in enumerate(MONTHS):
-            hours = float(r["hours"][i])
+            hours = float(hours_series[i])
             required = float(required_hrs)
             gap = hours - required
 
@@ -143,20 +174,18 @@ def build_monthly_df(results: dict, required_hrs: float) -> pd.DataFrame:
 
 
 def render_blackout_graph(results: dict, visible_devices: list[str]):
-    required_hours = float(st.session_state.get("required_hours", 0))
-    try:
-        from ui.result_helpers import operating_window_example
-        window_text = operating_window_example(required_hours)
-    except Exception:
-        window_text = ""
-
     st.markdown("## Monthly 0% battery days by device")
-    st.caption(
-        f"Shows, for each selected device, how many days per month the battery is expected to reach 0% "
-        f"under the selected airport lighting requirement of {required_hours:.0f} hrs/day"
-        + (f" ({window_text})" if window_text else "")
-        + "."
-    )
+
+    required_hours = float(st.session_state.get("required_hours", 0))
+    if required_hours > 0:
+        st.caption(
+            f"Shows, for each selected device, how many days per month the battery is expected to reach 0% "
+            f"under the selected airport lighting requirement of {required_hours:.0f} hrs/day."
+        )
+    else:
+        st.caption(
+            "Shows, for each selected device, how many days per month the battery is expected to reach 0%."
+        )
 
     blackout_df = build_blackout_df(results)
 
@@ -170,33 +199,24 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
         st.info("No devices selected for display.")
         return
 
-    # Build custom x positions so bars sit tighter and lines run through the bar tops,
-    # similar to the Annual operating profile chart.
-    device_order = list(dict.fromkeys(visible_devices))
-    n_devices = max(len(device_order), 1)
-    total_group_width = 0.74
-    inner_gap = 0.035
-    bar_width = max((total_group_width - inner_gap * (n_devices - 1)) / n_devices, 0.10)
-    group_start = 0.5 - total_group_width / 2
+    # Show chart only if at least one selected device has >0 blackout day
+    if float(plot_df["EstimatedBlackoutDays"].max()) <= 0:
+        st.info("No selected device is expected to reach 0% battery in any month.")
+        return
 
-    x_start_map = {}
-    x_end_map = {}
-    x_center_map = {}
-    for idx, device in enumerate(device_order):
-        x_start = group_start + idx * (bar_width + inner_gap)
-        x_end = x_start + bar_width
-        x_center = (x_start + x_end) / 2
-        x_start_map[device] = x_start
-        x_end_map[device] = x_end
-        x_center_map[device] = x_center
+    y_max = max(31, float(plot_df["EstimatedBlackoutDays"].max()) + 2)
 
-    plot_df["MonthIndex"] = plot_df["Month"].map({m: i + 1 for i, m in enumerate(MONTHS)})
-    plot_df["XStart"] = plot_df.apply(lambda r: r["MonthIndex"] + x_start_map[r["Device"]], axis=1)
-    plot_df["XEnd"] = plot_df.apply(lambda r: r["MonthIndex"] + x_end_map[r["Device"]], axis=1)
-    plot_df["XCenter"] = plot_df.apply(lambda r: r["MonthIndex"] + x_center_map[r["Device"]], axis=1)
+    x_axis = alt.X(
+        "Month:N",
+        sort=MONTHS,
+        axis=alt.Axis(title="Month", labelAngle=0)
+    )
 
-    y_max = 31
-    color_scale = alt.Scale(scheme="tableau10", domain=device_order)
+    y_axis = alt.Y(
+        "EstimatedBlackoutDays:Q",
+        scale=alt.Scale(domain=[0, y_max]),
+        title="Days"
+    )
 
     tooltip_fields = [
         alt.Tooltip("Device:N", title="Device"),
@@ -207,118 +227,85 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
         alt.Tooltip("Meaning:N", title="Interpretation"),
     ]
 
-    x_axis = alt.X(
-        "XCenter:Q",
-        scale=alt.Scale(domain=[0.5, 12.5]),
-        axis=alt.Axis(
-            title="Month",
-            values=list(range(1, 13)),
-            labelExpr="['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][datum.value-1]",
-            labelAngle=0,
-            domain=True,
-            domainWidth=2,
-            tickWidth=2,
-            tickSize=6,
-            labelPadding=8,
-        ),
-    )
-
-    y_axis = alt.Y(
-        "EstimatedBlackoutDays:Q",
-        scale=alt.Scale(domain=[-0.8, y_max]),
-        axis=alt.Axis(
-            title="Days",
-            domain=True,
-            domainWidth=2,
-            tickWidth=2,
-            tickSize=6,
-            grid=True,
-            labelPadding=6,
-        ),
-    )
-
-    bars = alt.Chart(plot_df).mark_rect(opacity=0.28).encode(
-        x=alt.X("XStart:Q", scale=alt.Scale(domain=[0.5, 12.5]), axis=None),
-        x2="XEnd:Q",
-        y=alt.Y("EstimatedBlackoutDays:Q", scale=alt.Scale(domain=[-0.8, y_max]), title="Days"),
-        y2=alt.value(0),
+    bars = alt.Chart(plot_df).mark_bar(
+        opacity=0.45,
+        size=22
+    ).encode(
+        x=x_axis,
+        y=y_axis,
+        xOffset=alt.XOffset("Device:N"),
         color=alt.Color(
             "Device:N",
             title="Device",
-            scale=color_scale,
-            legend=alt.Legend(orient="bottom"),
+            scale=alt.Scale(scheme="tableau10"),
         ),
         tooltip=tooltip_fields,
     )
 
-    line_chart = alt.Chart(plot_df).mark_line(point=True, strokeWidth=2.8).encode(
+    line_chart = alt.Chart(plot_df).mark_line(
+        point=True,
+        strokeWidth=2.2
+    ).encode(
         x=x_axis,
         y=y_axis,
         color=alt.Color(
             "Device:N",
             title="Device",
-            scale=color_scale,
-            legend=alt.Legend(orient="bottom"),
+            scale=alt.Scale(scheme="tableau10"),
         ),
         detail="Device:N",
         tooltip=tooltip_fields,
     )
 
     zero_line_df = pd.DataFrame({
-        "MonthIndex": [0.5, 12.5],
-        "Target": [0, 0],
+        "Month": MONTHS,
+        "Target": [0] * 12,
     })
 
     zero_line = alt.Chart(zero_line_df).mark_line(
         color="#dc2626",
-        strokeDash=[10, 5],
-        strokeWidth=2.6,
+        strokeDash=[8, 4],
+        strokeWidth=2.0
     ).encode(
-        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0.5, 12.5])),
-        y=alt.Y("Target:Q", scale=alt.Scale(domain=[-0.8, y_max])),
+        x=alt.X("Month:N", sort=MONTHS),
+        y=alt.Y("Target:Q", scale=alt.Scale(domain=[0, y_max])),
     )
 
     zero_label_df = pd.DataFrame({
-        "MonthIndex": [12.35],
+        "Month": ["Dec"],
         "Target": [0],
         "Text": ["Target = 0 days"],
     })
 
     zero_label = alt.Chart(zero_label_df).mark_text(
         align="right",
-        dx=-4,
+        dx=-8,
         dy=-10,
-        fontSize=12,
+        fontSize=11,
         fontWeight="bold",
-        color="#dc2626",
+        color="#dc2626"
     ).encode(
-        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0.5, 12.5])),
-        y=alt.Y("Target:Q", scale=alt.Scale(domain=[-0.8, y_max])),
+        x=alt.X("Month:N", sort=MONTHS),
+        y=alt.Y("Target:Q", scale=alt.Scale(domain=[0, y_max])),
         text="Text:N",
     )
 
     chart = (
-        (bars + line_chart + zero_line + zero_label)
-        .properties(height=360)
-        .configure_view(strokeOpacity=0)
-        .configure_axis(
-            labelColor="#667085",
-            titleColor="#667085",
-            gridColor="#eaecf0",
-        )
-        .configure_legend(
-            orient="bottom",
-            titleColor="#475467",
-            labelColor="#475467",
-        )
-    )
+        bars
+        + line_chart
+        + zero_line
+        + zero_label
+    ).properties(
+        height=280
+    ).interactive()
 
     st.altair_chart(chart, use_container_width=True)
 
     st.caption(
-        f"Any value above 0 indicates expected full battery depletion on at least some days in that month "
-        f"under the selected airport lighting requirement of {required_hours:.0f} hrs/day."
+        "Any value above 0 indicates expected full battery depletion on at least some days in that month "
+        "under the selected airport lighting requirement."
     )
+
 
 def render_graph():
     results = st.session_state.get("results", {})
@@ -327,6 +314,11 @@ def render_graph():
 
     required_hours = float(st.session_state.get("required_hours", 0))
     chart_df = build_monthly_df(results, required_hours)
+
+    if chart_df.empty:
+        st.info("Graph data is not available in the current simulation output.")
+        return
+
     device_labels = list(chart_df["Device"].unique())
 
     visible_devices = st.multiselect(

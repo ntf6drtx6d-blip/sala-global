@@ -87,19 +87,23 @@ def render_required_time_card(hours_value: float, mode_text: str):
     )
 
 
-def render_blackout_card(days_value, pct_value):
+def render_blackout_card(days_value, pct_value, device_name, required_hours, mode_text, window_text):
     if days_value is None or pct_value is None:
         main = "N/A"
-        subtitle = "Worst-device blackout risk not available."
+        subtitle = "Worst-device 0% battery exposure not available."
         bg = "#ffffff"
         border = "#e6eaf0"
         color = "#1f2937"
     else:
-        main = f"{days_value} days/year"
+        device_line = f"Worst device: <b>{device_name}</b><br>" if device_name else ""
         subtitle = (
             f"{pct_value:.1f}% of the year<br>"
-            f"Highest blackout exposure found within the selected device set."
+            f"{device_line}"
+            f"Highest 0% battery exposure found within the selected device set under the selected airport lighting requirement of "
+            f"<b>{math.ceil(float(required_hours))} hrs/day</b> ({window_text})."
         )
+        main = f"{days_value} days/year"
+
         if int(days_value) == 0:
             bg = "#ecfdf3"
             border = "#abefc6"
@@ -110,7 +114,7 @@ def render_blackout_card(days_value, pct_value):
             color = "#b42318"
 
     render_kpi_card(
-        "Worst device blackout risk",
+        "Worst device 0% battery days",
         main,
         subtitle,
         bg=bg,
@@ -193,11 +197,12 @@ def render_result():
         return
 
     state = overall_state(results)
-    days, pct = annual_empty_battery_stats(results)
+    days, pct, worst_device_name = annual_empty_battery_stats(results)
 
     airport_name = st.session_state.get("airport_label", "") or "Selected study point"
     required_hours = float(st.session_state.get("required_hours", 0))
     mode_name = operating_mode_name()
+    window_text = operating_window_example(required_hours)
     lat = float(st.session_state.get("lat", 0))
     lon = float(st.session_state.get("lon", 0))
 
@@ -256,7 +261,14 @@ def render_result():
         with c1:
             render_required_time_card(required_hours, mode_name)
         with c2:
-            render_blackout_card(days, pct)
+            render_blackout_card(
+                days,
+                pct,
+                worst_device_name,
+                required_hours,
+                mode_name,
+                window_text,
+            )
 
         render_device_summary_line(results)
 

@@ -87,6 +87,7 @@ def build_blackout_df(results: dict) -> pd.DataFrame:
                 "Meaning": (
                     f"Estimated days with battery at 0% in {month}: {days_val:.1f}. "
                     f"Share of month with empty battery: {float(monthly_pct[i]):.1f}%. "
+                    f"Evaluated against the selected airport lighting requirement. "
                     f"Calendar month length: {MONTH_DAYS[i]} days."
                 ),
             })
@@ -142,8 +143,20 @@ def build_monthly_df(results: dict, required_hrs: float) -> pd.DataFrame:
 
 
 def render_blackout_graph(results: dict, visible_devices: list[str]):
-    st.markdown("## Monthly empty-battery days")
-    st.caption("Shows in which months the battery is expected to reach 0%, and for how many days.")
+    required_hours = float(st.session_state.get("required_hours", 0))
+    try:
+        from ui.result_helpers import operating_window_example
+        window_text = operating_window_example(required_hours)
+    except Exception:
+        window_text = ""
+
+    st.markdown("## Monthly 0% battery days by device")
+    st.caption(
+        f"Shows, for each selected device, how many days per month the battery is expected to reach 0% "
+        f"under the selected airport lighting requirement of {required_hours:.0f} hrs/day"
+        + (f" ({window_text})" if window_text else "")
+        + "."
+    )
 
     blackout_df = build_blackout_df(results)
 
@@ -157,127 +170,103 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
         st.info("No devices selected for display.")
         return
 
-    y_max = 31
-
-    for device in visible_devices:
-        device_df = plot_df[plot_df["Device"] == device].copy()
-        if device_df.empty:
-            continue
-
-        st.markdown(f"**{device}**")
-
-        device_df["Severity"] = device_df["EstimatedBlackoutDays"].apply(
-            lambda d: "0 days"
-            if d <= 0
-            else "1–3 days"
-            if d <= 3
-            else "3+ days"
-        )
-
-        x_axis = alt.X(
-            "Month:N",
-            sort=MONTHS,
-            axis=alt.Axis(title="Month", labelAngle=0)
-        )
-
-        y_axis = alt.Y(
-            "EstimatedBlackoutDays:Q",
-            scale=alt.Scale(domain=[0, y_max]),
-            title="Days"
-        )
-
-        tooltip_fields = [
-            alt.Tooltip("Device:N", title="Device"),
-            alt.Tooltip("Month:N", title="Month"),
-            alt.Tooltip("EstimatedBlackoutDays:Q", title="Days with empty battery", format=".1f"),
-            alt.Tooltip("EmptyBatteryPct:Q", title="Share of month with empty battery", format=".1f"),
-            alt.Tooltip("MonthDays:Q", title="Days in month", format=".0f"),
-            alt.Tooltip("Meaning:N", title="Interpretation"),
-        ]
-
-        bars = alt.Chart(device_df).mark_bar(
-            opacity=0.22,
-            size=42
-        ).encode(
-            x=x_axis,
-            y=y_axis,
-            color=alt.Color(
-                "Severity:N",
-                scale=alt.Scale(
-                    domain=["0 days", "1–3 days", "3+ days"],
-                    range=["#ffffff", "#f59e0b", "#dc2626"],
-                ),
-                legend=None,
-            ),
-            tooltip=tooltip_fields,
-        )
-
-        line_chart = alt.Chart(device_df).mark_line(
-            point=True,
-            strokeWidth=2.8,
-            color="#5b7aa6"
-        ).encode(
-            x=x_axis,
-            y=alt.Y(
-                "EstimatedBlackoutDays:Q",
-                scale=alt.Scale(domain=[0, y_max]),
-                title="Days"
-            ),
-            tooltip=tooltip_fields,
-        )
-
-        zero_line_df = pd.DataFrame({
-            "Month": MONTHS,
-            "Target": [0] * 12,
-        })
-
-        zero_line = alt.Chart(zero_line_df).mark_line(
-            color="#111827",
-            strokeDash=[10, 5],
-            strokeWidth=2.0
-        ).encode(
-            x=alt.X("Month:N", sort=MONTHS),
-            y=alt.Y("Target:Q", scale=alt.Scale(domain=[0, y_max])),
-        )
-
-        zero_label_df = pd.DataFrame({
-            "Month": ["Dec"],
-            "Target": [0],
-            "Text": ["Target = 0 days"],
-        })
-
-        zero_label = alt.Chart(zero_label_df).mark_text(
-            align="right",
-            dx=-8,
-            dy=-10,
-            fontSize=12,
-            fontWeight="bold",
-            color="#111827"
-        ).encode(
-            x=alt.X("Month:N", sort=MONTHS),
-            y=alt.Y("Target:Q", scale=alt.Scale(domain=[0, y_max])),
-            text="Text:N",
-        )
-
-        chart = (bars + line_chart + zero_line + zero_label).properties(
-            height=230
-        ).interactive()
-
-        st.altair_chart(chart, use_container_width=True)
-
-    st.markdown(
-        """
-        <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:8px;font-size:0.95rem;color:#475467;">
-            <div><span style="display:inline-block;width:14px;height:14px;background:#ffffff;border-radius:3px;margin-right:6px;border:1px solid #cbd5e1;"></span>0 days</div>
-            <div><span style="display:inline-block;width:14px;height:14px;background:#f59e0b;opacity:0.7;border-radius:3px;margin-right:6px;"></span>1–3 days</div>
-            <div><span style="display:inline-block;width:14px;height:14px;background:#dc2626;opacity:0.7;border-radius:3px;margin-right:6px;"></span>3+ days</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    plot_df["Severity"] = plot_df["EstimatedBlackoutDays"].apply(
+        lambda d: "0 days"
+        if d <= 0
+        else "1–3 days"
+        if d <= 3
+        else "3+ days"
     )
 
+    y_max = 31
+
+    tooltip_fields = [
+        alt.Tooltip("Device:N", title="Device"),
+        alt.Tooltip("Month:N", title="Month"),
+        alt.Tooltip("EstimatedBlackoutDays:Q", title="0% battery days", format=".1f"),
+        alt.Tooltip("EmptyBatteryPct:Q", title="Share of month with empty battery", format=".1f"),
+        alt.Tooltip("MonthDays:Q", title="Days in month", format=".0f"),
+        alt.Tooltip("Meaning:N", title="Interpretation"),
+    ]
+
+    bars = alt.Chart(plot_df).mark_bar(size=22).encode(
+        x=alt.X(
+            "Month:N",
+            sort=MONTHS,
+            axis=alt.Axis(title="Month", labelAngle=0),
+        ),
+        xOffset=alt.XOffset("Device:N"),
+        y=alt.Y(
+            "EstimatedBlackoutDays:Q",
+            scale=alt.Scale(domain=[0, y_max]),
+            title="Days",
+        ),
+        color=alt.Color(
+            "Device:N",
+            legend=alt.Legend(title="Device"),
+        ),
+        opacity=alt.condition(
+            alt.datum.EstimatedBlackoutDays > 0,
+            alt.value(0.9),
+            alt.value(0.35)
+        ),
+        tooltip=tooltip_fields,
+    )
+
+    zero_line_df = pd.DataFrame({
+        "Month": MONTHS,
+        "Target": [0] * 12,
+    })
+
+    zero_line = alt.Chart(zero_line_df).mark_line(
+        color="#111827",
+        strokeDash=[10, 5],
+        strokeWidth=2.0
+    ).encode(
+        x=alt.X("Month:N", sort=MONTHS),
+        y=alt.Y("Target:Q", scale=alt.Scale(domain=[0, y_max])),
+    )
+
+    zero_label_df = pd.DataFrame({
+        "Month": ["Dec"],
+        "Target": [0],
+        "Text": ["Target = 0 days"],
+    })
+
+    zero_label = alt.Chart(zero_label_df).mark_text(
+        align="right",
+        dx=-8,
+        dy=-10,
+        fontSize=12,
+        fontWeight="bold",
+        color="#111827"
+    ).encode(
+        x=alt.X("Month:N", sort=MONTHS),
+        y=alt.Y("Target:Q", scale=alt.Scale(domain=[0, y_max])),
+        text="Text:N",
+    )
+
+    chart = (
+        (bars + zero_line + zero_label)
+        .properties(height=360)
+        .configure_view(strokeOpacity=0)
+        .configure_axis(
+            labelColor="#667085",
+            titleColor="#667085",
+            gridColor="#eaecf0",
+        )
+        .configure_legend(
+            orient="bottom",
+            titleColor="#475467",
+            labelColor="#475467",
+        )
+    )
+
+    st.altair_chart(chart, use_container_width=True)
+
     st.caption(
-        "Use this chart to see in which months the battery is expected to be fully depleted."
+        f"Any value above 0 indicates expected full battery depletion on at least some days in that month "
+        f"under the selected airport lighting requirement of {required_hours:.0f} hrs/day."
     )
 
 

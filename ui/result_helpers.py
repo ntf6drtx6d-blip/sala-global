@@ -59,21 +59,27 @@ def short_device_label(full_name: str) -> str:
 
 
 def annual_empty_battery_stats(results: dict):
-    pcts = []
-    for _, r in results.items():
+    worst_name = None
+    worst_pct = None
+
+    for device_name, r in results.items():
         pct = r.get("overall_empty_battery_pct")
-        if pct is not None:
-            try:
-                pcts.append(float(pct))
-            except Exception:
-                pass
+        if pct is None:
+            continue
+        try:
+            pct = float(pct)
+        except Exception:
+            continue
 
-    if not pcts:
-        return None, None
+        if worst_pct is None or pct > worst_pct:
+            worst_pct = pct
+            worst_name = short_device_label(device_name)
 
-    worst_pct = max(pcts)
+    if worst_pct is None:
+        return None, None, None
+
     worst_days = round(365 * worst_pct / 100.0)
-    return worst_days, worst_pct
+    return worst_days, worst_pct, worst_name
 
 
 def count_device_statuses(results: dict):

@@ -471,7 +471,7 @@ def maybe_save_current_study():
     if not user_id:
         return
 
-    days, pct = annual_empty_battery_stats(results)
+    days, pct, _ = annual_empty_battery_stats(results)
     state_value = overall_state(results)
     overall_result = state_value.upper() if state_value else "UNKNOWN"
 

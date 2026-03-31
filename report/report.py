@@ -7,7 +7,10 @@ from .pages.executive_summary import build_summary
 from .pages.technical_results import build_technical
 from .pages.methodology import build_methodology
 
-def make_pdf(out_path, loc, required_hours, results, overall, user_name="User"):
+# KEEP OLD SIGNATURE (compat with ui/cockpit.py)
+def make_pdf(out_path, loc, required_hours, results, overall, *args):
+    user_name = args[-1] if args else "User"
+
     data = build_report_data(loc, required_hours, results, overall, user_name)
 
     doc = SimpleDocTemplate(

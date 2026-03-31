@@ -7,7 +7,8 @@ def build_report_data(loc, required_hours, results, overall, user_name):
 
     for _, r in results.items():
         name = r.get("device_code", "Device")
-        days = int(r.get("overall_empty_battery_pct", 0) * 3.65)
+        pct = float(r.get("overall_empty_battery_pct", 0))
+        days = int(pct * 3.65)
 
         if days == 0:
             status = "PASS"

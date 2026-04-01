@@ -1,4 +1,3 @@
-print("GRAPH VERSION NEW LOADED")
 print("UI GRAPH MODULE LOADED")
 
 import altair as alt
@@ -200,24 +199,11 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
         st.info("No devices selected for display.")
         return
 
-    # Show chart only if at least one selected device has >0 blackout day
     if float(plot_df["EstimatedBlackoutDays"].max()) <= 0:
         st.info("No selected device is expected to reach 0% battery in any month.")
         return
 
-    y_max = max(31, float(plot_df["EstimatedBlackoutDays"].max()) + 2)
-
-    x_axis = alt.X(
-        "Month:N",
-        sort=MONTHS,
-        axis=alt.Axis(title="Month", labelAngle=0)
-    )
-
-    y_axis = alt.Y(
-        "EstimatedBlackoutDays:Q",
-        scale=alt.Scale(domain=[0, y_max]),
-        title="Days"
-    )
+    y_max = max(5, float(plot_df["EstimatedBlackoutDays"].max()) + 2)
 
     tooltip_fields = [
         alt.Tooltip("Device:N", title="Device"),
@@ -229,11 +215,15 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
     ]
 
     bars = alt.Chart(plot_df).mark_bar(
-        opacity=0.45,
+        opacity=0.55,
         size=22
     ).encode(
-        x=x_axis,
-        y=y_axis,
+        x=alt.X("Month:N", sort=MONTHS, axis=alt.Axis(title="Month", labelAngle=0)),
+        y=alt.Y(
+            "EstimatedBlackoutDays:Q",
+            title="Days",
+            scale=alt.Scale(domain=[0, y_max])
+        ),
         xOffset=alt.XOffset("Device:N"),
         color=alt.Color(
             "Device:N",
@@ -247,8 +237,11 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
         point=True,
         strokeWidth=2.2
     ).encode(
-        x=x_axis,
-        y=y_axis,
+        x=alt.X("Month:N", sort=MONTHS),
+        y=alt.Y(
+            "EstimatedBlackoutDays:Q",
+            scale=alt.Scale(domain=[0, y_max])
+        ),
         color=alt.Color(
             "Device:N",
             title="Device",
@@ -347,17 +340,21 @@ def render_graph():
 
     x_axis = alt.X(
         "MonthIndex:Q",
-        scale=alt.Scale(domain=[0, 12.5]),
+        scale=alt.Scale(domain=[0.5, 12.5]),
         axis=alt.Axis(
             title="Month",
             values=list(range(1, 13)),
             labelExpr="['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][datum.value-1]",
             labelAngle=0,
             domain=True,
-            domainWidth=2,
+            domainWidth=2.5,
+            domainColor="#374151",
             tickWidth=2,
             tickSize=6,
+            tickColor="#9CA3AF",
             labelPadding=8,
+            labelColor="#6B7280",
+            titleColor="#374151",
         )
     )
 
@@ -368,10 +365,14 @@ def render_graph():
             title="Achieved operating hours per day",
             domain=True,
             domainWidth=2,
+            domainColor="#9CA3AF",
             tickWidth=2,
             tickSize=6,
+            tickColor="#9CA3AF",
             grid=True,
             labelPadding=6,
+            labelColor="#6B7280",
+            titleColor="#374151",
         ),
     )
 
@@ -381,12 +382,21 @@ def render_graph():
     ).encode(
         x=alt.X(
             "MonthStart:Q",
-            scale=alt.Scale(domain=[0, 12.5]),
+            scale=alt.Scale(domain=[0.5, 12.5]),
             axis=alt.Axis(
                 title="Month",
                 values=list(range(1, 13)),
                 labelExpr="['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][datum.value-1]",
                 labelAngle=0,
+                domain=True,
+                domainWidth=2.5,
+                domainColor="#374151",
+                tickWidth=2,
+                tickSize=6,
+                tickColor="#9CA3AF",
+                labelPadding=8,
+                labelColor="#6B7280",
+                titleColor="#374151",
             )
         ),
         x2="MonthEnd:Q",
@@ -403,7 +413,7 @@ def render_graph():
         color="#f59e0b",
         opacity=0.18
     ).encode(
-        x=alt.X("MonthStart:Q", scale=alt.Scale(domain=[0, 12.5])),
+        x=alt.X("MonthStart:Q", scale=alt.Scale(domain=[0.5, 12.5])),
         x2="MonthEnd:Q",
         y=alt.Y("Hours:Q", scale=alt.Scale(domain=[0, 24])),
         y2="RequiredHours:Q",
@@ -414,7 +424,7 @@ def render_graph():
         color="#dc2626",
         opacity=0.15
     ).encode(
-        x=alt.X("MonthStart:Q", scale=alt.Scale(domain=[0, 12.5])),
+        x=alt.X("MonthStart:Q", scale=alt.Scale(domain=[0.5, 12.5])),
         x2="MonthEnd:Q",
         y=alt.Y("Hours:Q", scale=alt.Scale(domain=[0, 24])),
         y2="RequiredHours:Q",
@@ -450,11 +460,11 @@ def render_graph():
     })
 
     req_line = alt.Chart(req_df).mark_line(
-        color="#111827",
-        strokeDash=[10, 5],
-        strokeWidth=3.0
+        color="#1f4fbf",
+        strokeDash=[6, 4],
+        strokeWidth=3.5
     ).encode(
-        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0, 12.5])),
+        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0.5, 12.5])),
         y=alt.Y("Required:Q", scale=alt.Scale(domain=[0, 24])),
         tooltip=[
             alt.Tooltip("Required:Q", title="Required hours", format=".1f")
@@ -462,35 +472,35 @@ def render_graph():
     )
 
     zero_df = pd.DataFrame({
-        "MonthIndex": [0, 12.5],
+        "MonthIndex": [0.5, 12.5],
         "Zero": [0, 0],
     })
 
     zero_line = alt.Chart(zero_df).mark_line(
-        color="#475467",
-        strokeWidth=1.6
+        color="#374151",
+        strokeWidth=2.5
     ).encode(
-        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0, 12.5])),
+        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0.5, 12.5])),
         y=alt.Y("Zero:Q", scale=alt.Scale(domain=[0, 24])),
     )
 
     req_connector_df = pd.DataFrame({
-        "x": [0.2, 0.2],
+        "x": [0.58, 0.58],
         "y": [0, required_hours],
     })
 
     req_connector = alt.Chart(req_connector_df).mark_line(
-        color="#111827",
+        color="#1f4fbf",
         strokeWidth=2.2
     ).encode(
-        x=alt.X("x:Q", scale=alt.Scale(domain=[0, 12.5])),
+        x=alt.X("x:Q", scale=alt.Scale(domain=[0.5, 12.5])),
         y=alt.Y("y:Q", scale=alt.Scale(domain=[0, 24])),
     )
 
     req_label_df = pd.DataFrame({
-        "MonthIndex": [0.35],
+        "MonthIndex": [0.9],
         "Required": [required_hours],
-        "Text": [f"{required_hours:.1f} hrs/day required"],
+        "Text": ["Required operation"],
     })
 
     req_label = alt.Chart(req_label_df).mark_text(
@@ -499,15 +509,34 @@ def render_graph():
         dy=-8,
         fontSize=12,
         fontWeight="bold",
-        color="#111827"
+        color="#1f4fbf"
     ).encode(
-        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0, 12.5])),
+        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0.5, 12.5])),
+        y=alt.Y("Required:Q", scale=alt.Scale(domain=[0, 24])),
+        text="Text:N",
+    )
+
+    req_value_label_df = pd.DataFrame({
+        "MonthIndex": [10.8],
+        "Required": [required_hours],
+        "Text": [f"{required_hours:.1f} hrs/day"],
+    })
+
+    req_value_label = alt.Chart(req_value_label_df).mark_text(
+        align="right",
+        dx=0,
+        dy=-8,
+        fontSize=11,
+        color="#1f4fbf",
+        fontWeight="bold",
+    ).encode(
+        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0.5, 12.5])),
         y=alt.Y("Required:Q", scale=alt.Scale(domain=[0, 24])),
         text="Text:N",
     )
 
     req_icon_df = pd.DataFrame({
-        "MonthIndex": [0.2],
+        "MonthIndex": [0.72],
         "Required": [required_hours],
         "Icon": ["✈"],
     })
@@ -518,15 +547,15 @@ def render_graph():
         dx=0,
         dy=-18,
         fontSize=15,
-        color="#111827"
+        color="#1f4fbf"
     ).encode(
-        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0, 12.5])),
+        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0.5, 12.5])),
         y=alt.Y("Required:Q", scale=alt.Scale(domain=[0, 24])),
         text="Icon:N",
     )
 
     zero_label_df = pd.DataFrame({
-        "MonthIndex": [0.35],
+        "MonthIndex": [0.8],
         "Zero": [0],
         "Text": ["0 hrs/day"],
     })
@@ -536,9 +565,9 @@ def render_graph():
         dx=8,
         dy=12,
         fontSize=11,
-        color="#475467"
+        color="#374151"
     ).encode(
-        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0, 12.5])),
+        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0.5, 12.5])),
         y=alt.Y("Zero:Q", scale=alt.Scale(domain=[0, 24])),
         text="Text:N",
     )
@@ -554,7 +583,7 @@ def render_graph():
         fontSize=11,
         color="#344054"
     ).encode(
-        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0, 12.5])),
+        x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0.5, 12.5])),
         y=alt.Y("Hours:Q", scale=alt.Scale(domain=[0, 24])),
         text="Text:N",
     )
@@ -569,6 +598,7 @@ def render_graph():
         + line_chart
         + req_icon
         + req_label
+        + req_value_label
         + zero_label
         + chart_note
     ).properties(
@@ -578,6 +608,11 @@ def render_graph():
         titleFontSize=13,
         gridColor="#E5E7EB",
         gridOpacity=0.8,
+        domainColor="#9CA3AF",
+        domainWidth=1.5,
+        tickColor="#9CA3AF",
+        labelColor="#6B7280",
+        titleColor="#374151",
     ).configure_view(
         stroke="#D0D5DD",
         strokeWidth=1.2,

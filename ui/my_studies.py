@@ -1,7 +1,9 @@
+# ui/my_studies.py
+
 import json
 import streamlit as st
 
-from core.db import get_user_studies
+from core.db import list_user_studies
 from core.devices import DEVICES
 
 
@@ -23,82 +25,36 @@ def _row_value(row, key, default=None):
         return default
 
 
-def _safe_json_list(value):
-    if value is None or value == "":
+def _safe_json_list(raw_value):
+    if raw_value is None or raw_value == "":
         return []
 
-    if isinstance(value, list):
-        return value
+    if isinstance(raw_value, list):
+        return raw_value
 
     try:
-        parsed = json.loads(value)
-        if isinstance(parsed, list):
-            return parsed
+        value = json.loads(raw_value)
+        if isinstance(value, list):
+            return value
         return []
     except Exception:
         return []
 
 
-def _safe_json_dict(value):
-    if value is None or value == "":
-        return {}
-
-    if isinstance(value, dict):
-        return value
-
+def _device_label_from_id(device_id):
     try:
-        parsed = json.loads(value)
-        if isinstance(parsed, dict):
-            return parsed
-        return {}
+        did = int(device_id)
+        d = DEVICES.get(did)
+        if d:
+            return d.get("code") or d.get("name") or str(did)
+        return str(did)
     except Exception:
-        return {}
+        return str(device_id)
 
 
-def _device_labels(row):
-    ids = _safe_json_list(_row_value(row, "selected_devices_json"))
-    if not ids:
-        return []
-
-    labels = []
-    for device_id in ids:
-        try:
-            did = int(device_id)
-            spec = DEVICES.get(did)
-            if spec:
-                labels.append(spec.get("code") or spec.get("name") or str(did))
-            else:
-                labels.append(str(did))
-        except Exception:
-            labels.append(str(device_id))
-
-    return labels
-
-
-def _format_devices(labels):
-    if not labels:
-        return "—"
-    return ", ".join(labels)
-
-
-def _format_blackout_days(row):
-    value = _row_value(row, "worst_blackout_days")
-    if value is None or value == "":
-        return "—"
-    try:
-        return f"{int(value)}"
-    except Exception:
-        return str(value)
-
-
-def _format_required_hours(row):
-    value = _row_value(row, "required_hours")
-    if value is None or value == "":
-        return "—"
-    try:
-        return f"{float(value):.1f}"
-    except Exception:
-        return str(value)
+def _device_labels_from_json(raw_value):
+    ids = _safe_json_list(raw_value)
+    return [_device_label_from_id(x) for x in ids]
 
 
 def _result_badge(result):
@@ -144,26 +100,47 @@ def render_my_studies(user_id):
         st.info("User is not logged in.")
         return
 
-    rows = get_user_studies(user_id)
+    rows = list_user_studies(user_id)
 
     if not rows:
-        st.info("No saved studies yet.")
+        st.info("No studies recorded yet.")
         return
 
     for idx, row in enumerate(rows):
-        airport_label = _row_value(row, "airport_label", "Study point")
-        overall_result = _row_value(row, "overall_result", "UNKNOWN")
-        required_hours = _format_required_hours(row)
-        worst_blackout_days = _format_blackout_days(row)
+        airport_label = _row_value(row, "airport_label", "Unnamed study")
         created_at = _row_value(row, "created_at", "—")
-        pdf_name = _row_value(row, "pdf_name", "study_report.pdf")
-        pdf_bytes = _row_value(row, "pdf_bytes")
         operating_profile_mode = _row_value(row, "operating_profile_mode", "—")
-        lat = _row_value(row, "lat", "—")
-        lon = _row_value(row, "lon", "—")
+        overall_result = _row_value(row, "overall_result", "UNKNOWN")
+        required_hours = _row_value(row, "required_hours", "—")
+        worst_blackout_days = _row_value(row, "worst_blackout_days", None)
+        worst_blackout_pct = _row_value(row, "worst_blackout_pct", None)
+        pdf_bytes = _row_value(row, "pdf_bytes", None)
+        pdf_name = _row_value(row, "pdf_name", "study_report.pdf")
+        row_id = _row_value(row, "id", idx)
 
-        device_labels = _device_labels(row)
-        result_summary = _safe_json_dict(_row_value(row, "result_summary_json"))
+        device_labels = _device_labels_from_json(_row_value(row, "selected_devices_json"))
+        devices_text = ", ".join(device_labels) if device_labels else "—"
+
+        if worst_blackout_days is None:
+            blackout_days_text = "—"
+        else:
+            try:
+                blackout_days_text = str(int(worst_blackout_days))
+            except Exception:
+                blackout_days_text = str(worst_blackout_days)
+
+        if worst_blackout_pct is None:
+            blackout_pct_text = "—"
+        else:
+            try:
+                blackout_pct_text = f"{float(worst_blackout_pct):.2f}%"
+            except Exception:
+                blackout_pct_text = str(worst_blackout_pct)
+
+        try:
+            required_hours_text = f"{float(required_hours):.1f}"
+        except Exception:
+            required_hours_text = str(required_hours)
 
         with st.container():
             st.markdown(
@@ -194,38 +171,34 @@ def render_my_studies(user_id):
                 unsafe_allow_html=True,
             )
 
-            c1, c2, c3 = st.columns([1.4, 1.2, 1.2], gap="large")
+            c1, c2, c3 = st.columns([2.1, 1.1, 1.2])
 
             with c1:
-                st.markdown("**Devices**")
-                st.write(_format_devices(device_labels))
-
-                st.markdown("**Operating profile**")
+                st.markdown("**Mode**")
                 st.write(operating_profile_mode)
 
+                st.markdown("**Devices**")
+                st.write(devices_text)
+
             with c2:
-                st.markdown("**Required hours/day**")
-                st.write(required_hours)
+                st.markdown("**Hours/day**")
+                st.write(required_hours_text)
 
                 st.markdown("**Worst blackout days**")
-                st.write(worst_blackout_days)
+                st.write(blackout_days_text)
 
             with c3:
-                st.markdown("**Study point**")
-                st.write(f"{lat}, {lon}")
+                st.markdown("**Worst blackout %**")
+                st.write(blackout_pct_text)
 
-                pass_state = result_summary.get("overall_state") or "—"
-                st.markdown("**Overall state**")
-                st.write(pass_state)
+                if pdf_bytes:
+                    st.download_button(
+                        "Download PDF",
+                        data=pdf_bytes,
+                        file_name=pdf_name or "study_report.pdf",
+                        mime="application/pdf",
+                        key=f"user_pdf_{row_id}",
+                        use_container_width=True,
+                    )
 
-            if pdf_bytes:
-                st.download_button(
-                    "📄 Download PDF",
-                    data=pdf_bytes,
-                    file_name=pdf_name,
-                    mime="application/pdf",
-                    key=f"download_pdf_{idx}",
-                    use_container_width=False,
-                )
-
-            st.markdown("<hr style='margin:18px 0 8px 0;'>", unsafe_allow_html=True)
+            st.markdown("---")

@@ -1,3 +1,4 @@
+print("GRAPH VERSION NEW LOADED")
 print("UI GRAPH MODULE LOADED")
 
 import altair as alt

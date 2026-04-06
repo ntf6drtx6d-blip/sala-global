@@ -28,7 +28,7 @@ EQUIV_TILT_DEG = 33.0
 EQUIV_ASPECT_DEG = 0.0
 
 HTTP_TIMEOUT = 45
-USER_AGENT = "SALA-Avlite-FS/1.1"
+USER_AGENT = "SALA-Avlite-FS/1.2"
 
 
 def _days_in_month_non_leap(month_index_1_based: int) -> int:
@@ -79,9 +79,6 @@ def resolve_avlite_config(device_id, per_device_config=None):
 
 
 def _sanitize_geometry(angle_deg, aspect_deg):
-    """
-    Keep fixed geometry intact; only avoid exact API edge values.
-    """
     angle = float(angle_deg)
     aspect = float(aspect_deg)
 
@@ -98,99 +95,10 @@ def _sanitize_geometry(angle_deg, aspect_deg):
     return angle, aspect
 
 
-def _find_monthly_12_values(obj):
-    """
-    Robustly search JSON for a list of 12 numeric monthly values.
-    Returns the first plausible 12-value list found.
-    """
-    if isinstance(obj, list):
-        # direct list of 12 numbers
-        if len(obj) == 12 and all(isinstance(x, (int, float)) for x in obj):
-            return [float(x) for x in obj]
-
-        # list of 12 dicts with month + value
-        if len(obj) == 12 and all(isinstance(x, dict) for x in obj):
-            # sort by month if present
-            month_keys = ["month", "m"]
-            value_keys = [
-                "H(i)_m", "H(i)", "Hm", "H_m", "value", "irradiation",
-                "global", "G_m", "G(i)_m", "G(i)"
-            ]
-            months = []
-            for row in obj:
-                m = None
-                for mk in month_keys:
-                    if mk in row and isinstance(row[mk], (int, float)):
-                        m = int(row[mk])
-                        break
-                v = None
-                for vk in value_keys:
-                    if vk in row and isinstance(row[vk], (int, float)):
-                        v = float(row[vk])
-                        break
-                if m is not None and v is not None and 1 <= m <= 12:
-                    months.append((m, v))
-            if len(months) == 12:
-                months.sort(key=lambda t: t[0])
-                return [v for _, v in months]
-
-        for item in obj:
-            found = _find_monthly_12_values(item)
-            if found is not None:
-                return found
-
-    elif isinstance(obj, dict):
-        # Preferred explicit keys
-        preferred_paths = [
-            ("outputs", "monthly", "fixed"),
-            ("outputs", "monthly"),
-            ("monthly",),
-            ("outputs",),
-        ]
-        for path in preferred_paths:
-            cur = obj
-            ok = True
-            for key in path:
-                if isinstance(cur, dict) and key in cur:
-                    cur = cur[key]
-                else:
-                    ok = False
-                    break
-            if ok:
-                found = _find_monthly_12_values(cur)
-                if found is not None:
-                    return found
-
-        # direct dict with month-like keys
-        month_dict_keys = ["1","2","3","4","5","6","7","8","9","10","11","12"]
-        if all(k in obj and isinstance(obj[k], (int, float, dict)) for k in month_dict_keys):
-            vals = []
-            for k in month_dict_keys:
-                v = obj[k]
-                if isinstance(v, (int, float)):
-                    vals.append(float(v))
-                elif isinstance(v, dict):
-                    sub = _find_monthly_12_values(v)
-                    if sub is not None and len(sub) == 12:
-                        return sub
-                    return None
-                else:
-                    return None
-            return vals
-
-        for value in obj.values():
-            found = _find_monthly_12_values(value)
-            if found is not None:
-                return found
-
-    return None
-
-
 def _extract_error_text(resp):
     try:
         data = resp.json()
         if isinstance(data, dict):
-            # PVGIS often returns message fields
             for key in ["message", "error", "msg", "detail"]:
                 if key in data:
                     return str(data[key])
@@ -200,12 +108,49 @@ def _extract_error_text(resp):
     return (resp.text or "")[:1000]
 
 
+def _extract_monthly_from_mrcalc_json(data):
+    """
+    Strict parser for MRcalc JSON.
+    Expected path:
+        outputs -> monthly -> fixed -> [12 rows]
+    Preferred monthly value key:
+        H(i)_m
+    """
+    try:
+        monthly = data["outputs"]["monthly"]["fixed"]
+
+        result = []
+        for idx, row in enumerate(monthly, start=1):
+            if not isinstance(row, dict):
+                raise ValueError(f"Month row {idx} is not a dict")
+
+            val = row.get("H(i)_m")
+            if val is None:
+                val = row.get("H(i)")
+            if val is None:
+                val = row.get("Hm")
+            if val is None:
+                val = row.get("value")
+
+            if val is None:
+                raise ValueError(f"Missing irradiation value in month row {idx}. Keys: {list(row.keys())}")
+
+            result.append(float(val))
+
+        if len(result) != 12:
+            raise ValueError(f"Expected 12 months, got {len(result)}")
+
+        return result
+
+    except Exception as e:
+        top_keys = list(data.keys()) if isinstance(data, dict) else str(type(data))
+        raise RuntimeError(
+            f"MRcalc JSON structure unexpected. Top-level keys: {top_keys}. Error: {e}"
+        ) from e
+
+
 @lru_cache(maxsize=2048)
 def _mrcalc_monthly_selected_plane(lat, lon, angle_deg, aspect_deg):
-    """
-    Returns 12 monthly values for selected-plane irradiation using MRcalc JSON.
-    Values are expected as monthly average daily irradiation on selected plane.
-    """
     angle_deg, aspect_deg = _sanitize_geometry(angle_deg, aspect_deg)
 
     last_err = None
@@ -225,6 +170,7 @@ def _mrcalc_monthly_selected_plane(lat, lon, angle_deg, aspect_deg):
             if db:
                 params["raddatabase"] = db
 
+            resp = None
             try:
                 resp = requests.get(
                     f"{base}/MRcalc",
@@ -234,12 +180,11 @@ def _mrcalc_monthly_selected_plane(lat, lon, angle_deg, aspect_deg):
                 )
                 resp.raise_for_status()
                 data = resp.json()
-                monthly = _find_monthly_12_values(data)
-                if monthly is None:
-                    raise RuntimeError(
-                        "Could not find 12 monthly values in MRcalc JSON. "
-                        f"Top-level keys: {list(data.keys()) if isinstance(data, dict) else type(data)}"
-                    )
+                monthly = _extract_monthly_from_mrcalc_json(data)
+
+                if not isinstance(monthly, list) or len(monthly) != 12:
+                    raise RuntimeError(f"MRcalc returned invalid monthly values: {monthly}")
+
                 return monthly, {
                     "base": base,
                     "raddatabase": db or "default",
@@ -247,7 +192,7 @@ def _mrcalc_monthly_selected_plane(lat, lon, angle_deg, aspect_deg):
                     "aspect": float(aspect_deg),
                 }
             except Exception as e:
-                if 'resp' in locals() and resp is not None:
+                if resp is not None:
                     err_text = _extract_error_text(resp)
                     last_err = f"{type(e).__name__}: {e}; response={err_text}"
                 else:
@@ -262,9 +207,6 @@ def _mrcalc_monthly_selected_plane(lat, lon, angle_deg, aspect_deg):
 
 
 def _panel_monthly_generation_wh_day(lat, lon, panel, pr=DEFAULT_PR):
-    """
-    generation_Wh_per_day = irradiation_kWh_m2_day * panel_wp * PR
-    """
     monthly_irr, meta = _mrcalc_monthly_selected_plane(
         float(lat), float(lon), float(panel["tilt"]), float(panel["aspect"])
     )

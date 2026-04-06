@@ -1,5 +1,5 @@
 # core/simulate.py
-# ACTION: REPLACE ENTIRE FILE
+# unified simulator: standard S4GA path + Avlite equivalent-panel path using same engine
 
 import os
 import time
@@ -7,7 +7,15 @@ import calendar
 from urllib.parse import urlencode
 
 from core.devices import DEVICES, SOLAR_ENGINES
-from core.avlite_fs import simulate_avlite_for_devices
+from core.avlite_fs import resolve_avlite_equivalent_config
+from pvgis_client import pvcalc_monthly_wh_per_day, shs_monthly, load_cache, save_cache
+
+MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+          "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
+def _days_in_month_non_leap(month_index_1_based: int) -> int:
+    return calendar.monthrange(2025, month_index_1_based)[1]
 
 
 def _parse_device_identifier(device_identifier, per_device_config=None):
@@ -45,15 +53,6 @@ def _variant_short_label(lamp_variant):
         "FATO light": "FATO",
     }
     return mapping.get(lamp_variant, lamp_variant) if lamp_variant else None
-
-from pvgis_client import pvcalc_monthly_wh_per_day, shs_monthly, load_cache, save_cache
-
-MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
-          "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-
-
-def _days_in_month_non_leap(month_index_1_based: int) -> int:
-    return calendar.monthrange(2025, month_index_1_based)[1]
 
 
 def lat_based_tilt(lat):
@@ -237,9 +236,6 @@ def max_wh_for_month_fast(lat, lon, pv_wp, batt_wh, tilt, aspect, mi):
 
 
 def get_empty_battery_stats_for_required_mode(lat, lon, resolved, required_hrs, tilt, aspect):
-    """
-    Uses the REAL PVGIS monthly f_e values for the selected operating mode.
-    """
     daily_wh = float(required_hrs) * max(float(resolved["power"]), 0.05)
 
     monthly = shs_monthly(
@@ -291,41 +287,31 @@ def simulate_for_devices(
     results = {}
     az_for_tilt = {}
 
-    avlite_ids = []
-    standard_ids = []
-
+    work_items = []
     for did in selected_ids:
         try:
             did_int = int(str(did).split("||", 1)[0])
         except Exception:
             did_int = int(did)
-
         dspec = DEVICES[did_int]
         if dspec.get("system_type") == "avlite_fixture":
-            avlite_ids.append(did)
+            resolved = resolve_avlite_equivalent_config(did, loc, per_device_config)
+            work_items.append(("avlite", did, resolved))
         else:
-            standard_ids.append(did)
+            resolved = resolve_device_config(did, per_device_config)
+            work_items.append(("standard", did, resolved))
 
-    if avlite_ids:
-        avlite_results, avlite_overall, avlite_worst = simulate_avlite_for_devices(
-            loc=loc,
-            required_hrs=required_hrs,
-            selected_ids=avlite_ids,
-            per_device_config=per_device_config,
-            progress_callback=progress_callback,
-        )
-        results.update(avlite_results)
-
-    total_steps = max(1, len(standard_ids) * 12) if standard_ids else 1
+    total_steps = max(1, len(work_items) * 12)
     completed_steps = 0
     started_at = time.time()
 
-    for did in standard_ids:
-        resolved = resolve_device_config(did, per_device_config)
+    for source_type, did, resolved in work_items:
         tilt_options = resolved["tilt_options"]
         tilt = tilt_options[0] if resolved["fixed"] else min(tilt_options, key=lambda x: abs(x - slope))
 
-        if az_override is not None:
+        if source_type == "avlite":
+            azim = float(resolved.get("equivalent_aspect", 0.0))
+        elif az_override is not None:
             azim = float(az_override)
         elif tilt in az_for_tilt:
             azim = az_for_tilt[tilt]
@@ -368,20 +354,21 @@ def simulate_for_devices(
         status = "PASS" if all(h >= required_hrs - 1e-6 for h in hours) else "FAIL"
         fail_months = [MONTHS[i] for i, h in enumerate(hours) if h + 1e-6 < required_hrs]
 
-        empty_battery_pct_by_month, empty_battery_days_by_month, overall_empty_battery_pct =             get_empty_battery_stats_for_required_mode(
-                lat=lat,
-                lon=lon,
-                resolved=resolved,
-                required_hrs=required_hrs,
-                tilt=tilt,
-                aspect=azim
-            )
+        empty_battery_pct_by_month, empty_battery_days_by_month, overall_empty_battery_pct = get_empty_battery_stats_for_required_mode(
+            lat=lat,
+            lon=lon,
+            resolved=resolved,
+            required_hrs=required_hrs,
+            tilt=tilt,
+            aspect=azim
+        )
 
         pvgis_meta = build_pvgis_meta(lat, lon, resolved, tilt, azim)
+        if source_type == "avlite":
+            pvgis_meta.update(resolved.get("avlite_meta", {}))
 
         result_key = resolved['device_name']
-
-        results[result_key] = {
+        row = {
             "device_id": did,
             "device_code": resolved["device_code"],
             "name": resolved["device_name"],
@@ -406,6 +393,13 @@ def simulate_for_devices(
             "overall_empty_battery_pct": overall_empty_battery_pct,
             "pvgis_meta": pvgis_meta,
         }
+        for k in ["panel_count", "panel_list", "total_nominal_wp", "equivalent_panel_wp",
+                  "equivalent_panel_tilt", "equivalent_panel_aspect",
+                  "equivalent_pct_of_physical_nominal", "physical_panel_geometry",
+                  "certified_intensity", "source_note"]:
+            if k in resolved:
+                row[k] = resolved[k]
+        results[result_key] = row
 
     worst_name, worst_gap = None, 1e9
     overall = "PASS"

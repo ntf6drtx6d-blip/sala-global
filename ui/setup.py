@@ -149,40 +149,39 @@ def _engine_summary(device_id, engine_key, battery_mode):
     dspec = DEVICES[device_id]
     system_type = dspec.get("system_type", "builtin")
 
-    # Built-in S4GA lights and Avlite fixtures both use device-level battery/panel values
     if system_type in ["builtin", "avlite_fixture"]:
-        if system_type == "avlite_fixture":
-            source_label = "Avlite built-in solar system"
-            battery_mode_label = "Built-in"
-        else:
-            source_label = "Built-in solar system"
-            battery_mode_label = "Built-in"
-
+        source_label = "Built-in solar system" if system_type == "builtin" else "Avlite built-in solar system"
         return {
             "source_label": source_label,
-            "pv": _safe_float(dspec.get("pv", 0), 0.0),
-            "batt": _safe_float(dspec.get("batt", 0), 0.0),
-            "battery_mode": battery_mode_label,
+            "pv": _safe_float(dspec.get("pv", 0.0), 0.0),
+            "batt": _safe_float(dspec.get("batt", 0.0), 0.0),
+            "battery_mode": "Built-in",
         }
 
-    # External solar engine branch
-    if not engine_key or engine_key not in SOLAR_ENGINES:
-        fallback_label = "Unknown source"
+    if system_type == "external_engine":
+        if not engine_key or engine_key not in SOLAR_ENGINES:
+            return {
+                "source_label": "Unknown solar engine",
+                "pv": 0.0,
+                "batt": 0.0,
+                "battery_mode": battery_mode if battery_mode else "Std",
+            }
+
+        eng = SOLAR_ENGINES[engine_key]
+        batt = eng["batt_ext"] if (battery_mode == "Ext" and eng.get("batt_ext")) else eng["batt"]
+
         return {
-            "source_label": fallback_label,
-            "pv": _safe_float(dspec.get("pv", 0), 0.0),
-            "batt": _safe_float(dspec.get("batt", 0), 0.0),
+            "source_label": eng["short_name"],
+            "pv": _safe_float(eng.get("pv", 0.0), 0.0),
+            "batt": _safe_float(batt, 0.0),
             "battery_mode": battery_mode if battery_mode else "Std",
         }
 
-    eng = SOLAR_ENGINES[engine_key]
-    batt = eng["batt_ext"] if (battery_mode == "Ext" and eng.get("batt_ext")) else eng["batt"]
-
     return {
-        "source_label": eng["short_name"],
-        "pv": _safe_float(eng.get("pv", 0), 0.0),
-        "batt": _safe_float(batt, 0.0),
-        "battery_mode": battery_mode,
+        "source_label": "Built-in solar system",
+        "pv": _safe_float(dspec.get("pv", 0.0), 0.0),
+        "batt": _safe_float(dspec.get("batt", 0.0), 0.0),
+        "battery_mode": "Built-in",
     }
 
 

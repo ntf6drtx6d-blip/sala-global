@@ -8,15 +8,18 @@ AVLITE_FIXTURES = {
         "variant": "B1",
         "name": "Avlite AV-70-863 B1",
         "system_type": "avlite_fixture",
+
         "battery_type": "NiMH",
         "battery_voltage_v": 3.6,
         "battery_ah": 8.6,
         "battery_wh_nominal": 30.96,
         "cutoff_pct": 20,
         "usable_battery_pct": 80,
+
         "certified_intensity": "100%",
         "current_ma_100": 32.0,
         "power_w_100": 0.1152,
+
         "panel_count": 2,
         "panel_geometry": "two opposite angled panels",
         "panels": [
@@ -24,6 +27,7 @@ AVLITE_FIXTURES = {
             {"name": "west_panel", "wp": 0.7, "tilt": 50.0, "aspect": 90.0},
         ],
         "pv_total_wp": 1.4,
+
         "source_note": "Battery and current based on AV-70 datasheet. Panel tilt is modeled from product geometry at 100% certified intensity.",
     },
     "av70_b2": {
@@ -33,15 +37,18 @@ AVLITE_FIXTURES = {
         "variant": "B2",
         "name": "Avlite AV-70-863 B2",
         "system_type": "avlite_fixture",
+
         "battery_type": "NiMH",
         "battery_voltage_v": 3.6,
         "battery_ah": 17.2,
         "battery_wh_nominal": 61.92,
         "cutoff_pct": 20,
         "usable_battery_pct": 80,
+
         "certified_intensity": "100%",
         "current_ma_100": 32.0,
         "power_w_100": 0.1152,
+
         "panel_count": 2,
         "panel_geometry": "two opposite angled panels",
         "panels": [
@@ -49,6 +56,7 @@ AVLITE_FIXTURES = {
             {"name": "west_panel", "wp": 0.7, "tilt": 50.0, "aspect": 90.0},
         ],
         "pv_total_wp": 1.4,
+
         "source_note": "Battery and current based on AV-70 datasheet. Panel tilt is modeled from product geometry at 100% certified intensity.",
     },
     "av426_c0": {
@@ -58,15 +66,18 @@ AVLITE_FIXTURES = {
         "variant": "C0",
         "name": "Avlite AV-426 C0",
         "system_type": "avlite_fixture",
+
         "battery_type": "SLA",
         "battery_voltage_v": 12.0,
         "battery_ah": 12.0,
         "battery_wh_nominal": 144.0,
         "cutoff_pct": 30,
         "usable_battery_pct": 70,
+
         "certified_intensity": "100%",
         "runtime_h_100": 56.0,
         "power_w_100": 1.8,
+
         "panel_count": 4,
         "panel_geometry": "four vertical panels",
         "panels": [
@@ -76,6 +87,7 @@ AVLITE_FIXTURES = {
             {"name": "north_panel", "wp": 5.0, "tilt": 90.0, "aspect": 180.0},
         ],
         "pv_total_wp": 20.0,
+
         "source_note": "Battery and solar panel data based on AV-426 manual/datasheet. 100% power derived from declared runtime using 30% FS reserve.",
     },
     "av426_c1": {
@@ -85,15 +97,18 @@ AVLITE_FIXTURES = {
         "variant": "C1",
         "name": "Avlite AV-426 C1",
         "system_type": "avlite_fixture",
+
         "battery_type": "SLA",
         "battery_voltage_v": 12.0,
         "battery_ah": 24.0,
         "battery_wh_nominal": 288.0,
         "cutoff_pct": 30,
         "usable_battery_pct": 70,
+
         "certified_intensity": "100%",
         "runtime_h_100": 112.0,
         "power_w_100": 1.8,
+
         "panel_count": 4,
         "panel_geometry": "four vertical panels",
         "panels": [
@@ -103,33 +118,60 @@ AVLITE_FIXTURES = {
             {"name": "north_panel", "wp": 7.0, "tilt": 90.0, "aspect": 180.0},
         ],
         "pv_total_wp": 28.0,
+
         "source_note": "Battery and solar panel data based on AV-426 manual/datasheet. 100% power derived from declared runtime using 30% FS reserve.",
     },
 }
 
+# IMPORTANT:
+# This dictionary must stay compatible with the existing Streamlit setup UI.
 AVLITE_DEVICES = {
     101: {
         "code": "AV70-B1",
         "name": "Avlite AV-70-863 B1",
         "system_type": "avlite_fixture",
         "fixture_key": "av70_b1",
+        "default_power": 0.1152,
+        "pv": 1.4,
+        "batt": 30.96,
+        "tilt": 50,
+        "fixed": True,
+        "tilt_options": [50],
     },
     102: {
         "code": "AV70-B2",
         "name": "Avlite AV-70-863 B2",
         "system_type": "avlite_fixture",
         "fixture_key": "av70_b2",
+        "default_power": 0.1152,
+        "pv": 1.4,
+        "batt": 61.92,
+        "tilt": 50,
+        "fixed": True,
+        "tilt_options": [50],
     },
     103: {
         "code": "AV426-C0",
         "name": "Avlite AV-426 C0",
         "system_type": "avlite_fixture",
         "fixture_key": "av426_c0",
+        "default_power": 1.8,
+        "pv": 20.0,
+        "batt": 144.0,
+        "tilt": 90,
+        "fixed": True,
+        "tilt_options": [90],
     },
     104: {
         "code": "AV426-C1",
         "name": "Avlite AV-426 C1",
         "system_type": "avlite_fixture",
         "fixture_key": "av426_c1",
+        "default_power": 1.8,
+        "pv": 28.0,
+        "batt": 288.0,
+        "tilt": 90,
+        "fixed": True,
+        "tilt_options": [90],
     },
 }

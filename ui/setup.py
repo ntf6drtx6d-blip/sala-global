@@ -147,13 +147,32 @@ def _safe_float(value, default=0.0):
 
 def _engine_summary(device_id, engine_key, battery_mode):
     dspec = DEVICES[device_id]
+    system_type = dspec.get("system_type", "builtin")
 
-    if dspec["system_type"] == "builtin":
+    # Built-in S4GA lights and Avlite fixtures both use device-level battery/panel values
+    if system_type in ["builtin", "avlite_fixture"]:
+        if system_type == "avlite_fixture":
+            source_label = "Avlite built-in solar system"
+            battery_mode_label = "Built-in"
+        else:
+            source_label = "Built-in solar system"
+            battery_mode_label = "Built-in"
+
         return {
-            "source_label": "Built-in solar system",
-            "pv": dspec.get("pv", 0),
-            "batt": dspec.get("batt", 0),
-            "battery_mode": "Built-in",
+            "source_label": source_label,
+            "pv": _safe_float(dspec.get("pv", 0), 0.0),
+            "batt": _safe_float(dspec.get("batt", 0), 0.0),
+            "battery_mode": battery_mode_label,
+        }
+
+    # External solar engine branch
+    if not engine_key or engine_key not in SOLAR_ENGINES:
+        fallback_label = "Unknown source"
+        return {
+            "source_label": fallback_label,
+            "pv": _safe_float(dspec.get("pv", 0), 0.0),
+            "batt": _safe_float(dspec.get("batt", 0), 0.0),
+            "battery_mode": battery_mode if battery_mode else "Std",
         }
 
     eng = SOLAR_ENGINES[engine_key]
@@ -161,13 +180,14 @@ def _engine_summary(device_id, engine_key, battery_mode):
 
     return {
         "source_label": eng["short_name"],
-        "pv": eng["pv"],
-        "batt": batt,
+        "pv": _safe_float(eng.get("pv", 0), 0.0),
+        "batt": _safe_float(batt, 0.0),
         "battery_mode": battery_mode,
     }
 
 
 def _default_multiselect_labels():
+
     labels = []
     for did in st.session_state.get("selected_ids", []):
         if did in DEVICES:

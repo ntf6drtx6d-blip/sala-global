@@ -165,6 +165,9 @@ DEVICES = {
     },
 }
 
+from core.devices_avlite import AVLITE_DEVICES
+
+DEVICES.update(AVLITE_DEVICES)
 
 def get_device_by_code(device_code: str):
     for _, device in DEVICES.items():

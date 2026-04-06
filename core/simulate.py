@@ -7,6 +7,7 @@ import calendar
 from urllib.parse import urlencode
 
 from core.devices import DEVICES, SOLAR_ENGINES
+from core.avlite_fs import simulate_avlite_for_devices
 
 
 def _parse_device_identifier(device_identifier, per_device_config=None):
@@ -290,11 +291,36 @@ def simulate_for_devices(
     results = {}
     az_for_tilt = {}
 
-    total_steps = max(1, len(selected_ids) * 12)
+    avlite_ids = []
+    standard_ids = []
+
+    for did in selected_ids:
+        try:
+            did_int = int(str(did).split("||", 1)[0])
+        except Exception:
+            did_int = int(did)
+
+        dspec = DEVICES[did_int]
+        if dspec.get("system_type") == "avlite_fixture":
+            avlite_ids.append(did)
+        else:
+            standard_ids.append(did)
+
+    if avlite_ids:
+        avlite_results, avlite_overall, avlite_worst = simulate_avlite_for_devices(
+            loc=loc,
+            required_hrs=required_hrs,
+            selected_ids=avlite_ids,
+            per_device_config=per_device_config,
+            progress_callback=progress_callback,
+        )
+        results.update(avlite_results)
+
+    total_steps = max(1, len(standard_ids) * 12) if standard_ids else 1
     completed_steps = 0
     started_at = time.time()
 
-    for did in selected_ids:
+    for did in standard_ids:
         resolved = resolve_device_config(did, per_device_config)
         tilt_options = resolved["tilt_options"]
         tilt = tilt_options[0] if resolved["fixed"] else min(tilt_options, key=lambda x: abs(x - slope))
@@ -342,9 +368,7 @@ def simulate_for_devices(
         status = "PASS" if all(h >= required_hrs - 1e-6 for h in hours) else "FAIL"
         fail_months = [MONTHS[i] for i, h in enumerate(hours) if h + 1e-6 < required_hrs]
 
-        # NEW: real PVGIS empty-battery stats for the selected operating mode
-        empty_battery_pct_by_month, empty_battery_days_by_month, overall_empty_battery_pct = \
-            get_empty_battery_stats_for_required_mode(
+        empty_battery_pct_by_month, empty_battery_days_by_month, overall_empty_battery_pct =             get_empty_battery_stats_for_required_mode(
                 lat=lat,
                 lon=lon,
                 resolved=resolved,
@@ -377,12 +401,9 @@ def simulate_for_devices(
             "power": resolved["power"],
             "lamp_variant": resolved.get("lamp_variant"),
             "monthly_energy_wh": monthly_energy_wh,
-
-            # NEW FIELDS
             "empty_battery_pct_by_month": empty_battery_pct_by_month,
             "empty_battery_days_by_month": empty_battery_days_by_month,
             "overall_empty_battery_pct": overall_empty_battery_pct,
-
             "pvgis_meta": pvgis_meta,
         }
 

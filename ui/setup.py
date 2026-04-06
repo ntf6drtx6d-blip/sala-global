@@ -17,6 +17,8 @@ def _init_setup_defaults():
             st.session_state.airport_query = ""
         if "selected_ids" not in st.session_state:
             st.session_state.selected_ids = []
+        if "selected_manufacturers" not in st.session_state:
+            st.session_state.selected_manufacturers = ["S4GA", "Avlite"]
         if "selected_simulation_keys" not in st.session_state:
             st.session_state.selected_simulation_keys = []
         if "per_device_config" not in st.session_state:
@@ -129,6 +131,18 @@ def longest_night_hours(lat_deg: float) -> float:
 def _device_label(device_id):
     d = DEVICES[device_id]
     return d["name"]
+
+
+def _device_manufacturer(device_id):
+    d = DEVICES[device_id]
+    return d.get("manufacturer", "S4GA")
+
+
+def _safe_float(value, default=0.0):
+    try:
+        return float(value)
+    except Exception:
+        return float(default)
 
 
 def _engine_summary(device_id, engine_key, battery_mode):
@@ -397,14 +411,39 @@ def render_setup(disabled=False):
 
         _refresh_study_ready()
 
-        st.markdown("### 3. Select devices")
+        st.markdown("### 3. Manufacturer")
 
-        device_options = {_device_label(k): k for k in DEVICES.keys()}
+        manufacturer_options = ["S4GA", "Avlite"]
+        current_manufacturers = st.session_state.get("selected_manufacturers", ["S4GA", "Avlite"])
+        selected_manufacturers = st.multiselect(
+            "Manufacturers included in this study",
+            manufacturer_options,
+            default=current_manufacturers,
+            key="selected_manufacturers_multiselect",
+            disabled=disabled,
+            help="Choose one or more manufacturers. Device list below will be filtered accordingly.",
+        )
+        st.session_state.selected_manufacturers = selected_manufacturers
+
+        st.markdown("### 4. Select devices")
+
+        filtered_device_ids = [
+            k for k in DEVICES.keys()
+            if _device_manufacturer(k) in selected_manufacturers
+        ]
+
+        device_options = {_device_label(k): k for k in filtered_device_ids}
+
+        default_labels = [
+            _device_label(did)
+            for did in st.session_state.get("selected_ids", [])
+            if did in filtered_device_ids
+        ]
 
         selected_labels = st.multiselect(
             "Devices included in this study",
             list(device_options.keys()),
-            default=_default_multiselect_labels(),
+            default=default_labels,
             key="selected_devices_multiselect",
             disabled=disabled,
         )
@@ -459,7 +498,7 @@ def render_setup(disabled=False):
             st.caption("Select an airport or click on the map to define the study point.")
 
 
-    st.markdown("### 4. Configure selected devices")
+    st.markdown("### 5. Configure selected devices")
 
     per_device_config = {}
     selected_simulation_keys = []
@@ -524,7 +563,7 @@ def render_setup(disabled=False):
                 if lamp_variant and dspec.get("lamp_variants"):
                     base_power = float(dspec["lamp_variants"][lamp_variant]["power_w"])
                 else:
-                    base_power = float(dspec["default_power"])
+                    base_power = _safe_float(dspec.get("default_power", dspec.get("power", dspec.get("default_consumption", 0.0))), 0.0)
 
                 default_power = float(saved_cfg.get("power", base_power))
                 engine_key = saved_cfg.get("engine_key", dspec.get("default_engine"))

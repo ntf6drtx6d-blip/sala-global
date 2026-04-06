@@ -1,14 +1,13 @@
 # core/avlite_fs.py
 # Avlite feasibility engine
-# Uses PVGIS MRcalc per physical panel face (2-panel or 4-panel geometry),
-# sums monthly irradiation, converts to monthly generation, and runs the
-# same style of monthly battery-buffer simulation used in the app.
+# - Uses PVGIS MRcalc (monthly radiation) per physical panel face
+# - Sums monthly irradiation across 2-panel / 4-panel geometry
+# - Converts irradiation to electrical generation using panel Wp and PR
+# - Runs monthly battery-buffer simulation
 #
 # This module does NOT use PVcalc.
-# It keeps fixed Avlite panel geometry exactly as defined in devices_avlite.py.
 
 import calendar
-import math
 import time
 from functools import lru_cache
 
@@ -24,17 +23,12 @@ PVGIS_BASES = [
     "https://re.jrc.ec.europa.eu/api/v5_2",
 ]
 
-# Engineering assumption aligned with common PV loss treatment.
-# Can be tuned later if you want.
 DEFAULT_PR = 0.86
-
-# Fixed comparison plane for "equivalent single-plane panel" metadata.
 EQUIV_TILT_DEG = 33.0
 EQUIV_ASPECT_DEG = 0.0
 
-# Network behaviour
 HTTP_TIMEOUT = 45
-USER_AGENT = "SALA-Avlite-FS/1.0"
+USER_AGENT = "SALA-Avlite-FS/1.1"
 
 
 def _days_in_month_non_leap(month_index_1_based: int) -> int:
@@ -86,8 +80,7 @@ def resolve_avlite_config(device_id, per_device_config=None):
 
 def _sanitize_geometry(angle_deg, aspect_deg):
     """
-    Keep Avlite fixed geometry, only avoid exact API edge values.
-    This is not a physical change, only a request-safety shim.
+    Keep fixed geometry intact; only avoid exact API edge values.
     """
     angle = float(angle_deg)
     aspect = float(aspect_deg)
@@ -105,67 +98,117 @@ def _sanitize_geometry(angle_deg, aspect_deg):
     return angle, aspect
 
 
-def _split_numeric_tokens(line: str):
-    cleaned = (
-        line.replace(";", ",")
-            .replace("\t", ",")
-            .replace("  ", " ")
-    )
-    parts = []
-    for chunk in cleaned.replace(",", " ").split():
-        try:
-            parts.append(float(chunk))
-        except Exception:
-            continue
-    return parts
-
-
-def _parse_mrcalc_basic_csv(text: str):
+def _find_monthly_12_values(obj):
     """
-    Parse MRcalc outputformat=basic.
-    Expected practical pattern:
-      month value ...
-    We take the first 12 rows that start with month 1..12 and use the next numeric value.
-    Returns monthly average daily irradiation on the selected plane, assumed in kWh/m2/day.
+    Robustly search JSON for a list of 12 numeric monthly values.
+    Returns the first plausible 12-value list found.
     """
-    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    month_map = {}
+    if isinstance(obj, list):
+        # direct list of 12 numbers
+        if len(obj) == 12 and all(isinstance(x, (int, float)) for x in obj):
+            return [float(x) for x in obj]
 
-    for ln in lines:
-        nums = _split_numeric_tokens(ln)
-        if len(nums) >= 2:
-            month = int(round(nums[0]))
-            if 1 <= month <= 12 and month not in month_map:
-                month_map[month] = float(nums[1])
+        # list of 12 dicts with month + value
+        if len(obj) == 12 and all(isinstance(x, dict) for x in obj):
+            # sort by month if present
+            month_keys = ["month", "m"]
+            value_keys = [
+                "H(i)_m", "H(i)", "Hm", "H_m", "value", "irradiation",
+                "global", "G_m", "G(i)_m", "G(i)"
+            ]
+            months = []
+            for row in obj:
+                m = None
+                for mk in month_keys:
+                    if mk in row and isinstance(row[mk], (int, float)):
+                        m = int(row[mk])
+                        break
+                v = None
+                for vk in value_keys:
+                    if vk in row and isinstance(row[vk], (int, float)):
+                        v = float(row[vk])
+                        break
+                if m is not None and v is not None and 1 <= m <= 12:
+                    months.append((m, v))
+            if len(months) == 12:
+                months.sort(key=lambda t: t[0])
+                return [v for _, v in months]
 
-    if len(month_map) == 12:
-        return [month_map[m] for m in range(1, 13)]
+        for item in obj:
+            found = _find_monthly_12_values(item)
+            if found is not None:
+                return found
 
-    # Fallback: if there are 12 lines with one numeric value, use them directly
-    single_vals = []
-    for ln in lines:
-        nums = _split_numeric_tokens(ln)
-        if len(nums) == 1:
-            single_vals.append(float(nums[0]))
-    if len(single_vals) >= 12:
-        return single_vals[:12]
+    elif isinstance(obj, dict):
+        # Preferred explicit keys
+        preferred_paths = [
+            ("outputs", "monthly", "fixed"),
+            ("outputs", "monthly"),
+            ("monthly",),
+            ("outputs",),
+        ]
+        for path in preferred_paths:
+            cur = obj
+            ok = True
+            for key in path:
+                if isinstance(cur, dict) and key in cur:
+                    cur = cur[key]
+                else:
+                    ok = False
+                    break
+            if ok:
+                found = _find_monthly_12_values(cur)
+                if found is not None:
+                    return found
 
-    raise RuntimeError(
-        "Could not parse MRcalc basic output into 12 monthly values. "
-        f"First lines: {lines[:8]}"
-    )
+        # direct dict with month-like keys
+        month_dict_keys = ["1","2","3","4","5","6","7","8","9","10","11","12"]
+        if all(k in obj and isinstance(obj[k], (int, float, dict)) for k in month_dict_keys):
+            vals = []
+            for k in month_dict_keys:
+                v = obj[k]
+                if isinstance(v, (int, float)):
+                    vals.append(float(v))
+                elif isinstance(v, dict):
+                    sub = _find_monthly_12_values(v)
+                    if sub is not None and len(sub) == 12:
+                        return sub
+                    return None
+                else:
+                    return None
+            return vals
+
+        for value in obj.values():
+            found = _find_monthly_12_values(value)
+            if found is not None:
+                return found
+
+    return None
+
+
+def _extract_error_text(resp):
+    try:
+        data = resp.json()
+        if isinstance(data, dict):
+            # PVGIS often returns message fields
+            for key in ["message", "error", "msg", "detail"]:
+                if key in data:
+                    return str(data[key])
+            return str(data)[:1000]
+    except Exception:
+        pass
+    return (resp.text or "")[:1000]
 
 
 @lru_cache(maxsize=2048)
 def _mrcalc_monthly_selected_plane(lat, lon, angle_deg, aspect_deg):
     """
-    Returns 12 monthly values for selected-plane irradiation using MRcalc.
-    We intentionally use MRcalc, not PVcalc.
+    Returns 12 monthly values for selected-plane irradiation using MRcalc JSON.
+    Values are expected as monthly average daily irradiation on selected plane.
     """
     angle_deg, aspect_deg = _sanitize_geometry(angle_deg, aspect_deg)
 
     last_err = None
-    # First try with default DB, then explicit ERA5 fallback.
     db_options = [None, "PVGIS-ERA5"]
 
     for base in PVGIS_BASES:
@@ -176,7 +219,7 @@ def _mrcalc_monthly_selected_plane(lat, lon, angle_deg, aspect_deg):
                 "selectrad": 1,
                 "angle": float(angle_deg),
                 "aspect": float(aspect_deg),
-                "outputformat": "basic",
+                "outputformat": "json",
                 "browser": 0,
             }
             if db:
@@ -190,7 +233,13 @@ def _mrcalc_monthly_selected_plane(lat, lon, angle_deg, aspect_deg):
                     headers={"User-Agent": USER_AGENT},
                 )
                 resp.raise_for_status()
-                monthly = _parse_mrcalc_basic_csv(resp.text)
+                data = resp.json()
+                monthly = _find_monthly_12_values(data)
+                if monthly is None:
+                    raise RuntimeError(
+                        "Could not find 12 monthly values in MRcalc JSON. "
+                        f"Top-level keys: {list(data.keys()) if isinstance(data, dict) else type(data)}"
+                    )
                 return monthly, {
                     "base": base,
                     "raddatabase": db or "default",
@@ -198,7 +247,11 @@ def _mrcalc_monthly_selected_plane(lat, lon, angle_deg, aspect_deg):
                     "aspect": float(aspect_deg),
                 }
             except Exception as e:
-                last_err = e
+                if 'resp' in locals() and resp is not None:
+                    err_text = _extract_error_text(resp)
+                    last_err = f"{type(e).__name__}: {e}; response={err_text}"
+                else:
+                    last_err = f"{type(e).__name__}: {e}"
                 continue
 
     raise RuntimeError(
@@ -210,12 +263,7 @@ def _mrcalc_monthly_selected_plane(lat, lon, angle_deg, aspect_deg):
 
 def _panel_monthly_generation_wh_day(lat, lon, panel, pr=DEFAULT_PR):
     """
-    Convert monthly selected-plane irradiation to electrical generation.
-
-    Assumption:
-      generation_Wh_per_day = irradiation_kWh_m2_day * panel_wp * PR
-
-    This works because Wp is referenced to 1 kW/m2 STC.
+    generation_Wh_per_day = irradiation_kWh_m2_day * panel_wp * PR
     """
     monthly_irr, meta = _mrcalc_monthly_selected_plane(
         float(lat), float(lon), float(panel["tilt"]), float(panel["aspect"])
@@ -249,12 +297,6 @@ def _monthly_generation_wh_per_day(lat, lon, resolved_cfg, pr=DEFAULT_PR):
 
 
 def _fit_equivalent_single_plane_wp(lat, lon, total_monthly_gen_wh_day, pr=DEFAULT_PR):
-    """
-    Find equivalent single-plane panel at fixed S4GA-style base tilt/aspect.
-    We fit one Wp value so that:
-        P_eq * H_ref[m] * PR ~ total_monthly_gen_wh_day[m]
-    over 12 months in least-squares sense.
-    """
     ref_irr, api_meta = _mrcalc_monthly_selected_plane(
         float(lat), float(lon), EQUIV_TILT_DEG, EQUIV_ASPECT_DEG
     )
@@ -377,7 +419,7 @@ def _simulate_year_with_monthly_average_generation(monthly_gen_wh_day, power_w, 
 
 def build_avlite_pvgis_meta(lat, lon, resolved_cfg, per_panel_monthly, total_monthly_wh_day, equivalent_plane):
     return {
-        "dataset_note": "Calculated with PVGIS MRcalc by summing all physical panel faces separately. No PVcalc is used.",
+        "dataset_note": "Calculated with PVGIS MRcalc JSON by summing all physical panel faces separately. No PVcalc is used.",
         "lat": float(lat),
         "lon": float(lon),
         "device": resolved_cfg["fixture_name"],

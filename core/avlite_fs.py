@@ -58,9 +58,9 @@ def resolve_avlite_config(device_id, per_device_config=None):
 
 
 def _sanitize_panel_geometry(panel):
+    # PVGIS helper currently clamps PVcalc to 50 Wp minimum.
+    # For tiny panels we query at 50 Wp and scale output back to actual Wp.
     actual_wp = max(0.001, float(panel["wp"]))
-
-    # pvgis_client clamps PVcalc to minimum 0.05 kW (= 50 Wp)
     query_wp = max(actual_wp, 50.0)
     scale = actual_wp / query_wp
 
@@ -254,7 +254,9 @@ def simulate_avlite_for_devices(loc, required_hrs, selected_ids, per_device_conf
 
     for did in selected_ids:
         resolved = resolve_avlite_config(did, per_device_config)
-        monthly_gen_wh_day, per_panel_monthly = _monthly_generation_wh_per_day(lat=lat, lon=lon, resolved_cfg=resolved)
+        monthly_gen_wh_day, per_panel_monthly = _monthly_generation_wh_per_day(
+            lat=lat, lon=lon, resolved_cfg=resolved
+        )
 
         sim = _simulate_year_with_monthly_average_generation(
             monthly_gen_wh_day=monthly_gen_wh_day,
@@ -271,13 +273,8 @@ def simulate_avlite_for_devices(loc, required_hrs, selected_ids, per_device_conf
                 pct = completed_steps / total_steps
                 eta = (elapsed / completed_steps) * (total_steps - completed_steps) if completed_steps else 0.0
                 progress_callback(
-                    completed_steps,
-                    total_steps,
-                    pct,
-                    elapsed,
-                    eta,
-                    resolved["device_name"],
-                    MONTHS[mi],
+                    completed_steps, total_steps, pct, elapsed, eta,
+                    resolved["device_name"], MONTHS[mi]
                 )
 
         hours = sim["hours_by_month"]
@@ -286,15 +283,12 @@ def simulate_avlite_for_devices(loc, required_hrs, selected_ids, per_device_conf
         fail_months = [MONTHS[i] for i, h in enumerate(hours) if h + 1e-6 < float(required_hrs)]
 
         pvgis_meta = build_avlite_pvgis_meta(
-            lat=lat,
-            lon=lon,
-            resolved_cfg=resolved,
+            lat=lat, lon=lon, resolved_cfg=resolved,
             per_panel_monthly=per_panel_monthly,
             total_monthly_wh_day=monthly_gen_wh_day,
         )
 
         result_key = resolved["device_name"]
-
         results[result_key] = {
             "device_id": did,
             "device_code": resolved["device_code"],
@@ -339,7 +333,6 @@ def simulate_avlite_for_devices(loc, required_hrs, selected_ids, per_device_conf
 
     worst_name, worst_gap = None, 1e9
     overall = "PASS"
-
     for name, r in results.items():
         gap = r["min_margin"]
         if gap < worst_gap:

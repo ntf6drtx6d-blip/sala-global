@@ -58,20 +58,9 @@ def resolve_avlite_config(device_id, per_device_config=None):
 
 
 def _sanitize_panel_geometry(panel):
-    """
-    PVGIS PVcalc can be unstable on exact edge geometry values such as:
-    - tilt = 90
-    - aspect = 180
-    We soften them slightly.
-
-    IMPORTANT:
-    pvgis_client.py internally clamps PVcalc peakpower to minimum 0.05 kW (= 50 Wp).
-    For small panels (e.g. 0.7W, 5W, 7W) we therefore:
-    1) query PVGIS at 50Wp
-    2) scale the result back to actual Wp
-    This is valid because PVcalc energy scales linearly with peak power.
-    """
     actual_wp = max(0.001, float(panel["wp"]))
+
+    # pvgis_client clamps PVcalc to minimum 0.05 kW (= 50 Wp)
     query_wp = max(actual_wp, 50.0)
     scale = actual_wp / query_wp
 
@@ -112,9 +101,6 @@ def _single_panel_monthly_wh_day(lat, lon, panel):
 
 
 def _monthly_generation_wh_per_day(lat, lon, resolved_cfg):
-    """
-    Sum PVGIS monthly Wh/day over all physical panel faces.
-    """
     per_panel_monthly = []
     total = [0.0] * 12
 
@@ -169,10 +155,7 @@ def _simulate_year_with_monthly_average_generation(monthly_gen_wh_day, power_w, 
         month_end_socs = []
 
         for _day in range(days):
-            # simple daily bucket model:
-            # daily PV generation charges the battery first
             batt_wh = min(batt_max_wh, batt_wh + gen_day_wh)
-
             available_wh = max(0.0, batt_wh - batt_min_wh)
 
             if available_wh >= demand_day_wh:
@@ -207,7 +190,6 @@ def _simulate_year_with_monthly_average_generation(monthly_gen_wh_day, power_w, 
 
     overall_empty_battery_pct = (total_empty_days / total_days) * 100.0 if total_days else 0.0
     lowest_battery_pct = min(all_daily_end_soc) if all_daily_end_soc else 0.0
-
     above_60_total = sum(1 for x in all_daily_end_soc if x >= 60.0)
     below_40_total = sum(1 for x in all_daily_end_soc if x < 40.0)
 
@@ -243,7 +225,7 @@ def build_avlite_pvgis_meta(lat, lon, resolved_cfg, per_panel_monthly, total_mon
     return {
         "dataset_note": (
             "Calculated with PVGIS PVcalc by summing all physical panel faces separately. "
-            "Small panels below 50Wp are queried at 50Wp due to pvgis_client clamp and then scaled back."
+            "Small panels below 50Wp are queried at 50Wp because pvgis_client clamps PVcalc to 50Wp minimum, then scaled back."
         ),
         "lat": float(lat),
         "lon": float(lon),
@@ -258,10 +240,6 @@ def build_avlite_pvgis_meta(lat, lon, resolved_cfg, per_panel_monthly, total_mon
         "panel_geometry": resolved_cfg["panel_geometry"],
         "panels": per_panel_monthly,
         "monthly_total_wh_day": total_monthly_wh_day,
-        "explanation": (
-            "This Avlite engine does not use one synthetic single-plane panel. "
-            "It runs PVGIS panel-by-panel and sums all faces."
-        ),
     }
 
 
@@ -276,12 +254,7 @@ def simulate_avlite_for_devices(loc, required_hrs, selected_ids, per_device_conf
 
     for did in selected_ids:
         resolved = resolve_avlite_config(did, per_device_config)
-
-        monthly_gen_wh_day, per_panel_monthly = _monthly_generation_wh_per_day(
-            lat=lat,
-            lon=lon,
-            resolved_cfg=resolved
-        )
+        monthly_gen_wh_day, per_panel_monthly = _monthly_generation_wh_per_day(lat=lat, lon=lon, resolved_cfg=resolved)
 
         sim = _simulate_year_with_monthly_average_generation(
             monthly_gen_wh_day=monthly_gen_wh_day,
@@ -329,7 +302,6 @@ def simulate_avlite_for_devices(loc, required_hrs, selected_ids, per_device_conf
             "system_type": "avlite_fixture",
             "engine": "AVLITE",
             "engine_key": resolved["fixture_key"],
-
             "power": resolved["power"],
             "pv": resolved["pv"],
             "batt": resolved["batt_nominal_wh"],
@@ -340,12 +312,10 @@ def simulate_avlite_for_devices(loc, required_hrs, selected_ids, per_device_conf
             "battery_mode": "Built-in",
             "cutoff_pct": resolved["cutoff_pct"],
             "usable_battery_pct": resolved["usable_battery_pct"],
-
             "tilt": None,
             "azim": None,
             "panel_count": resolved["panel_count"],
             "panel_geometry": resolved["panel_geometry"],
-
             "hours": hours,
             "status": status,
             "min_margin": min_margin,
@@ -354,7 +324,6 @@ def simulate_avlite_for_devices(loc, required_hrs, selected_ids, per_device_conf
             "empty_battery_pct_by_month": sim["empty_battery_pct_by_month"],
             "empty_battery_days_by_month": sim["empty_battery_days_by_month"],
             "overall_empty_battery_pct": sim["overall_empty_battery_pct"],
-
             "lowest_battery_pct_est": sim["lowest_battery_pct_est"],
             "days_above_60_pct_est": sim["days_above_60_pct_est"],
             "days_below_40_pct_est": sim["days_below_40_pct_est"],
@@ -363,7 +332,6 @@ def simulate_avlite_for_devices(loc, required_hrs, selected_ids, per_device_conf
             "end_soc_monthly_min": sim["end_soc_monthly_min"],
             "days_above_60_pct_by_month": sim["days_above_60_pct_by_month"],
             "days_below_40_pct_by_month": sim["days_below_40_pct_by_month"],
-
             "certified_intensity": resolved["certified_intensity"],
             "source_note": resolved["source_note"],
             "pvgis_meta": pvgis_meta,

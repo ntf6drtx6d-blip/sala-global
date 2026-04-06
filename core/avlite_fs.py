@@ -104,36 +104,101 @@ def _simulate(gen, power, hours, batt, cutoff):
 
     return out
 
+def simulate_avlite_for_devices(
+    loc,
+    required_hrs,
+    selected_ids,
+    per_device_config=None,
+    progress_callback=None,
+):
+    per_device_config = per_device_config or {}
+    lat, lon = loc["lat"], loc["lon"]
 
-def simulate_avlite_for_devices(loc, required_hrs, selected_ids):
-    lat,lon=loc["lat"],loc["lon"]
+    results = {}
+    overall = "PASS"
+    worst = None
+    worst_gap = 999
 
-    results={}
-    overall="PASS"
-    worst=None
-    worst_gap=999
+    total_steps = max(1, len(selected_ids) * 12)
+    completed_steps = 0
+    started_at = time.time()
 
     for did in selected_ids:
-        cfg=resolve_avlite_config(did)
+        cfg = resolve_avlite_config(did)
 
-        gen=_total_gen(lat,lon,cfg["panels"])
+        # optional UI label override if present
+        user_cfg = per_device_config.get(did) or per_device_config.get(str(did), {})
+        display_name = user_cfg.get("display_label") or cfg["name"]
 
-        hours=_simulate(gen,cfg["power"],required_hrs,cfg["batt"],cfg["cutoff"])
+        gen = _total_gen(lat, lon, cfg["panels"])
+        hours = _simulate(gen, cfg["power"], required_hrs, cfg["batt"], cfg["cutoff"])
 
-        gap=min(h-required_hrs for h in hours)
-        status="PASS" if all(h>=required_hrs for h in hours) else "FAIL"
+        for mi in range(12):
+            completed_steps += 1
+            if progress_callback:
+                elapsed = time.time() - started_at
+                pct = completed_steps / total_steps
+                eta = (elapsed / completed_steps) * (total_steps - completed_steps) if completed_steps else 0.0
+                progress_callback(
+                    completed_steps,
+                    total_steps,
+                    pct,
+                    elapsed,
+                    eta,
+                    display_name,
+                    MONTHS[mi],
+                )
 
-        if gap<worst_gap:
-            worst_gap=gap
-            worst=cfg["name"]
+        gap = min(h - required_hrs for h in hours)
+        status = "PASS" if all(h >= required_hrs for h in hours) else "FAIL"
 
-        if status=="FAIL":
-            overall="FAIL"
+        if gap < worst_gap:
+            worst_gap = gap
+            worst = display_name
 
-        results[cfg["name"]]={
-            "hours":hours,
-            "status":status,
-            "min_margin":gap
+        if status == "FAIL":
+            overall = "FAIL"
+
+        results[display_name] = {
+            "device_id": did,
+            "name": display_name,
+            "device_code": cfg.get("device_code", ""),
+            "system_type": "avlite_fixture",
+            "engine": "AVLITE",
+            "engine_key": cfg.get("fixture_key", ""),
+            "power": cfg["power"],
+            "pv": sum(float(p["wp"]) for p in cfg["panels"]),
+            "batt": cfg["batt"],
+            "batt_std": cfg["batt"],
+            "batt_nominal_wh": cfg["batt"],
+            "batt_usable_wh": cfg["batt"] * (1 - cfg["cutoff"] / 100.0),
+            "battery_type": cfg.get("battery_type", ""),
+            "battery_mode": "Built-in",
+            "cutoff_pct": cfg["cutoff"],
+            "usable_battery_pct": 100.0 - cfg["cutoff"],
+            "tilt": None,
+            "azim": None,
+            "panel_count": len(cfg["panels"]),
+            "panel_geometry": cfg.get("panel_geometry", ""),
+            "hours": hours,
+            "status": status,
+            "min_margin": gap,
+            "fail_months": [MONTHS[i] for i, h in enumerate(hours) if h < required_hrs],
+            "monthly_energy_wh": [h * cfg["power"] for h in hours],
+            "empty_battery_pct_by_month": [0.0] * 12,
+            "empty_battery_days_by_month": [0] * 12,
+            "overall_empty_battery_pct": 0.0,
+            "lowest_battery_pct_est": None,
+            "days_above_60_pct_est": None,
+            "days_below_40_pct_est": None,
+            "reserve_distribution_est": {},
+            "daily_end_soc_est": [],
+            "end_soc_monthly_min": [],
+            "days_above_60_pct_by_month": [],
+            "days_below_40_pct_by_month": [],
+            "certified_intensity": "100%",
+            "source_note": "Calculated with PVGIS MRcalc per panel face.",
+            "pvgis_meta": {},
         }
 
     return results, overall, worst

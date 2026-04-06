@@ -1,12 +1,14 @@
 # core/avlite_fs.py
-# Avlite feasibility engine based on PVGIS MRcalc
-# - Runs MRcalc for each physical panel face
-# - Aggregates monthly irradiation by calendar month
-# - Converts monthly irradiation to average daily generation
-# - Simulates battery reserve month-by-month
+# Avlite feasibility engine
 #
-# Compatible with core/simulate.py call:
-#   simulate_avlite_for_devices(loc, required_hrs, selected_ids, per_device_config=None, progress_callback=None)
+# Logic:
+# 1) Use PVGIS MRcalc on each physical Avlite panel face (2-panel / 4-panel geometry)
+# 2) Sum monthly panel generation
+# 3) Derive a conservative equivalent single-plane panel
+# 4) Run the SAME SHScalc off-grid approach used by the standard engine
+#
+# Compatible with:
+# simulate_avlite_for_devices(loc, required_hrs, selected_ids, per_device_config=None, progress_callback=None)
 
 import calendar
 import time
@@ -15,6 +17,7 @@ from functools import lru_cache
 import requests
 
 from core.devices_avlite import AVLITE_FIXTURES, AVLITE_DEVICES
+from pvgis_client import shs_monthly
 
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -25,14 +28,18 @@ PVGIS_BASES = [
 ]
 
 HTTP_TIMEOUT = 45
-USER_AGENT = "SALA-Avlite-FS/2.0"
-
-# Conservative fixed performance ratio for panel-to-electrical conversion.
+USER_AGENT = "SALA-Avlite-FS/3.0"
 DEFAULT_PR = 0.86
+EQUIV_TILT_DEG = 33.0
 
 
 def _days_in_month_non_leap(month_index_1_based: int) -> int:
     return calendar.monthrange(2025, month_index_1_based)[1]
+
+
+def _south_facing_aspect(lat: float) -> float:
+    # Same convention used in the standard engine.
+    return 0.0 if float(lat) >= 0 else 180.0
 
 
 def _parse_avlite_device_identifier(device_identifier, per_device_config=None):
@@ -95,7 +102,6 @@ def _sanitize_geometry(angle_deg: float, aspect_deg: float):
     angle = float(angle_deg)
     aspect = float(aspect_deg)
 
-    # keep physical geometry, only avoid exact API edge values
     if angle >= 90.0:
         angle = 89.999
     if angle <= 0.0:
@@ -111,8 +117,8 @@ def _sanitize_geometry(angle_deg: float, aspect_deg: float):
 
 def _extract_monthly_from_mrcalc_json(data):
     """
-    PVGIS MRcalc JSON response currently has:
-        data["outputs"]["monthly"] = [
+    MRcalc JSON response:
+        outputs["monthly"] = [
             {"year": 2005, "month": 1, "H(i)_m": ...},
             ...
         ]
@@ -164,12 +170,6 @@ def _extract_monthly_from_mrcalc_json(data):
 
 @lru_cache(maxsize=2048)
 def _mrcalc_monthly_selected_plane(lat, lon, angle_deg, aspect_deg):
-    """
-    Returns 12 monthly irradiation values from MRcalc, aggregated by calendar month.
-    IMPORTANT:
-      - output is monthly irradiation sum per month (kWh/m²/month equivalent field from API row values)
-      - caller must convert this to average daily value for battery simulation
-    """
     angle_deg, aspect_deg = _sanitize_geometry(angle_deg, aspect_deg)
 
     last_err = None
@@ -228,7 +228,8 @@ def _mrcalc_monthly_selected_plane(lat, lon, angle_deg, aspect_deg):
 def _panel_monthly_generation_wh_day(lat, lon, panel, pr=DEFAULT_PR):
     """
     Convert MRcalc monthly irradiation into average daily electrical generation.
-    The key fix here is dividing monthly irradiation by number of days in month.
+    Key fix:
+      monthly irradiation must be divided by number of days in month.
     """
     monthly_irr_sum, meta = _mrcalc_monthly_selected_plane(
         float(lat), float(lon), float(panel["tilt"]), float(panel["aspect"])
@@ -269,108 +270,139 @@ def _monthly_generation_wh_per_day(lat, lon, resolved_cfg, pr=DEFAULT_PR):
     return total, per_panel
 
 
-def _simulate_year_with_monthly_average_generation(monthly_gen_wh_day, power_w, required_hrs, batt_nominal_wh, cutoff_pct):
-    required_hrs = float(required_hrs)
-    power_w = max(float(power_w), 0.0001)
-    batt_nominal_wh = float(batt_nominal_wh)
-    cutoff_pct = float(cutoff_pct)
+def _build_panel_summary(resolved_cfg):
+    panels = resolved_cfg["panels"]
+    total_wp = sum(float(p["wp"]) for p in panels)
 
-    batt_min_wh = batt_nominal_wh * (cutoff_pct / 100.0)
-    batt_max_wh = batt_nominal_wh
-    batt_wh = batt_max_wh
+    return {
+        "panel_count": len(panels),
+        "panel_list": [
+            {
+                "name": p["name"],
+                "wp": float(p["wp"]),
+                "tilt": float(p["tilt"]),
+                "aspect": float(p["aspect"]),
+            }
+            for p in panels
+        ],
+        "total_nominal_wp": total_wp,
+    }
 
-    hours_by_month = []
-    energy_by_month = []
-    empty_days_by_month = []
-    empty_pct_by_month = []
-    end_soc_monthly_min = []
-    days_above_60_pct_by_month = []
-    days_below_40_pct_by_month = []
-    all_daily_end_soc = []
+
+def _derive_equivalent_single_plane(lat, lon, total_monthly_wh_day):
+    """
+    Derive one equivalent single-plane panel at fixed tilt 33° and south-facing aspect.
+    Conservative rule:
+      - fit monthly profile against reference plane
+      - cap by worst winter-month ratio (Nov-Feb) to avoid optimistic equivalent PV
+    """
+    aspect = _south_facing_aspect(lat)
+    ref_monthly_irr_sum, meta = _mrcalc_monthly_selected_plane(
+        float(lat), float(lon), float(EQUIV_TILT_DEG), float(aspect)
+    )
+
+    ref_daily_basis = []
+    for i, h_month in enumerate(ref_monthly_irr_sum, start=1):
+        days = _days_in_month_non_leap(i)
+        ref_daily_basis.append((float(h_month) / days) * DEFAULT_PR)
+
+    # weighted least squares with more weight on winter months
+    weights = [2.0 if i in (1, 2, 11, 12) else 1.0 for i in range(1, 13)]
+    num = sum(weights[i] * float(total_monthly_wh_day[i]) * ref_daily_basis[i] for i in range(12))
+    den = sum(weights[i] * (ref_daily_basis[i] ** 2) for i in range(12))
+    fit_wp = max(0.0, num / den) if den > 0 else 0.0
+
+    # conservative winter cap
+    winter_idx = [0, 1, 10, 11]  # Jan, Feb, Nov, Dec
+    ratios = []
+    for i in winter_idx:
+        b = ref_daily_basis[i]
+        if b > 1e-9:
+            ratios.append(float(total_monthly_wh_day[i]) / b)
+    winter_cap_wp = min(ratios) if ratios else fit_wp
+
+    equiv_wp = min(fit_wp, winter_cap_wp)
+
+    return {
+        "equivalent_wp": max(0.0, float(equiv_wp)),
+        "equivalent_tilt_deg": float(EQUIV_TILT_DEG),
+        "equivalent_aspect_deg": float(aspect),
+        "fit_wp": float(fit_wp),
+        "winter_cap_wp": float(winter_cap_wp),
+        "reference_monthly_irr_kwh_m2_month": ref_monthly_irr_sum,
+        "reference_daily_basis_wh_day_per_wp": ref_daily_basis,
+        "api_meta": meta,
+    }
+
+
+def _max_wh_for_month_equivalent(lat, lon, pv_wp, batt_wh, tilt, aspect, cutoff_pct, month_index_zero_based):
+    hi_cap = int(min(20000, max(3 * batt_wh, 8 * pv_wp * 24)))
+
+    def fe_for(cons_wh_day):
+        if cons_wh_day <= 0:
+            return 0.0
+        monthly = shs_monthly(
+            lat, lon,
+            pv_wp, batt_wh,
+            float(cons_wh_day),
+            tilt, aspect,
+            cutoff_pct=cutoff_pct,
+        )
+        return float(monthly[month_index_zero_based].get("f_e", 0.0))
+
+    lo, hi = 1, hi_cap
+    best = 0
+
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        fe = fe_for(mid)
+
+        if fe <= 0.0:
+            best = mid
+            lo = mid + 1
+        else:
+            hi = mid - 1
+
+    return int(best)
+
+
+def _get_empty_battery_stats_for_required_mode_equivalent(lat, lon, pv_wp, batt_wh, tilt, aspect, cutoff_pct, required_daily_wh):
+    monthly = shs_monthly(
+        lat, lon,
+        pv_wp,
+        batt_wh,
+        required_daily_wh,
+        tilt,
+        aspect,
+        cutoff_pct=cutoff_pct,
+    )
+
+    pct_by_month = []
+    days_by_month = []
 
     total_days = 0
-    total_empty_days = 0
+    weighted_pct_sum = 0.0
 
     for mi in range(12):
-        days = _days_in_month_non_leap(mi + 1)
-        gen_day_wh = float(monthly_gen_wh_day[mi])
-        demand_day_wh = required_hrs * power_w
+        f_e = float(monthly[mi].get("f_e", 0.0))
+        dim = _days_in_month_non_leap(mi + 1)
+        pct_by_month.append(f_e)
+        days_by_month.append(round(dim * f_e / 100.0))
 
-        month_achieved_hours = 0.0
-        month_empty_days = 0
-        month_end_socs = []
+        weighted_pct_sum += f_e * dim
+        total_days += dim
 
-        for _day in range(days):
-            batt_wh = min(batt_max_wh, batt_wh + gen_day_wh)
-            available_wh = max(0.0, batt_wh - batt_min_wh)
+    overall_pct = weighted_pct_sum / total_days if total_days else 0.0
+    return pct_by_month, days_by_month, overall_pct
 
-            if available_wh >= demand_day_wh:
-                achieved_hrs = required_hrs
-                batt_wh -= demand_day_wh
-            else:
-                achieved_hrs = available_wh / power_w
-                batt_wh = batt_min_wh
-                month_empty_days += 1
 
-            end_soc = 100.0 * batt_wh / batt_nominal_wh if batt_nominal_wh > 0 else 0.0
-
-            month_achieved_hours += achieved_hrs
-            month_end_socs.append(end_soc)
-            all_daily_end_soc.append(end_soc)
-
-        avg_achieved_hrs = month_achieved_hours / days if days else 0.0
-        hours_by_month.append(avg_achieved_hrs)
-        energy_by_month.append(avg_achieved_hrs * power_w)
-        empty_days_by_month.append(month_empty_days)
-        empty_pct_by_month.append((month_empty_days / days) * 100.0 if days else 0.0)
-        end_soc_monthly_min.append(min(month_end_socs) if month_end_socs else 0.0)
-
-        above_60 = sum(1 for x in month_end_socs if x >= 60.0)
-        below_40 = sum(1 for x in month_end_socs if x < 40.0)
-
-        days_above_60_pct_by_month.append((above_60 / days) * 100.0 if days else 0.0)
-        days_below_40_pct_by_month.append((below_40 / days) * 100.0 if days else 0.0)
-
-        total_days += days
-        total_empty_days += month_empty_days
-
-    overall_empty_battery_pct = (total_empty_days / total_days) * 100.0 if total_days else 0.0
-    lowest_battery_pct = min(all_daily_end_soc) if all_daily_end_soc else 0.0
-
-    above_60_total = sum(1 for x in all_daily_end_soc if x >= 60.0)
-    below_40_total = sum(1 for x in all_daily_end_soc if x < 40.0)
-
-    days_above_60_pct_total = (above_60_total / total_days) * 100.0 if total_days else 0.0
-    days_below_40_pct_total = (below_40_total / total_days) * 100.0 if total_days else 0.0
-
-    reserve_distribution_est = {
-        "80_100": (sum(1 for x in all_daily_end_soc if x >= 80.0) / total_days) * 100.0 if total_days else 0.0,
-        "60_80":  (sum(1 for x in all_daily_end_soc if 60.0 <= x < 80.0) / total_days) * 100.0 if total_days else 0.0,
-        "40_60":  (sum(1 for x in all_daily_end_soc if 40.0 <= x < 60.0) / total_days) * 100.0 if total_days else 0.0,
-        "30_40":  (sum(1 for x in all_daily_end_soc if 30.0 <= x < 40.0) / total_days) * 100.0 if total_days else 0.0,
-        "below_30": (sum(1 for x in all_daily_end_soc if x < 30.0) / total_days) * 100.0 if total_days else 0.0,
-    }
-
+def build_avlite_pvgis_meta(lat, lon, resolved_cfg, panel_summary, per_panel_monthly, total_monthly_wh_day, equivalent_plane):
     return {
-        "hours_by_month": hours_by_month,
-        "monthly_energy_wh": energy_by_month,
-        "empty_battery_days_by_month": empty_days_by_month,
-        "empty_battery_pct_by_month": empty_pct_by_month,
-        "overall_empty_battery_pct": overall_empty_battery_pct,
-        "lowest_battery_pct_est": lowest_battery_pct,
-        "days_above_60_pct_est": days_above_60_pct_total,
-        "days_below_40_pct_est": days_below_40_pct_total,
-        "reserve_distribution_est": reserve_distribution_est,
-        "daily_end_soc_est": all_daily_end_soc,
-        "end_soc_monthly_min": end_soc_monthly_min,
-        "days_above_60_pct_by_month": days_above_60_pct_by_month,
-        "days_below_40_pct_by_month": days_below_40_pct_by_month,
-    }
-
-
-def build_avlite_pvgis_meta(lat, lon, resolved_cfg, per_panel_monthly, total_monthly_wh_day):
-    return {
-        "dataset_note": "Calculated with PVGIS MRcalc JSON by summing all physical panel faces separately.",
+        "dataset_note": (
+            "Physical Avlite panel geometry is calculated with PVGIS MRcalc. "
+            "Then an equivalent single-plane panel is derived and evaluated with PVGIS SHScalc "
+            "using the same off-grid approach as the standard engine."
+        ),
         "lat": float(lat),
         "lon": float(lon),
         "device": resolved_cfg["fixture_name"],
@@ -380,10 +412,13 @@ def build_avlite_pvgis_meta(lat, lon, resolved_cfg, per_panel_monthly, total_mon
         "battery_nominal_wh": resolved_cfg["batt_nominal_wh"],
         "battery_usable_wh": resolved_cfg["batt_usable_wh"],
         "cutoff_pct": resolved_cfg["cutoff_pct"],
-        "panel_count": resolved_cfg["panel_count"],
+        "panel_count": panel_summary["panel_count"],
         "panel_geometry": resolved_cfg["panel_geometry"],
+        "physical_panels": panel_summary["panel_list"],
+        "total_nominal_wp": panel_summary["total_nominal_wp"],
         "panels": per_panel_monthly,
         "monthly_total_wh_day": total_monthly_wh_day,
+        "equivalent_single_plane": equivalent_plane,
     }
 
 
@@ -404,23 +439,45 @@ def simulate_avlite_for_devices(
 
     for did in selected_ids:
         resolved = resolve_avlite_config(did, per_device_config)
+        panel_summary = _build_panel_summary(resolved)
 
-        monthly_gen_wh_day, per_panel_monthly = _monthly_generation_wh_per_day(
+        # 1) Real physical panel geometry → summed daily generation basis
+        total_monthly_wh_day, per_panel_monthly = _monthly_generation_wh_per_day(
             lat=lat,
             lon=lon,
             resolved_cfg=resolved,
             pr=DEFAULT_PR,
         )
 
-        sim = _simulate_year_with_monthly_average_generation(
-            monthly_gen_wh_day=monthly_gen_wh_day,
-            power_w=resolved["power"],
-            required_hrs=required_hrs,
-            batt_nominal_wh=resolved["batt_nominal_wh"],
-            cutoff_pct=resolved["cutoff_pct"],
+        # 2) Build conservative equivalent single-plane PV
+        equivalent_plane = _derive_equivalent_single_plane(
+            lat=lat,
+            lon=lon,
+            total_monthly_wh_day=total_monthly_wh_day,
         )
 
+        eq_wp = equivalent_plane["equivalent_wp"]
+        eq_tilt = equivalent_plane["equivalent_tilt_deg"]
+        eq_aspect = equivalent_plane["equivalent_aspect_deg"]
+
+        # 3) Run the SAME off-grid approach as the standard engine
+        hours = []
+        monthly_energy_wh = []
+
         for mi in range(12):
+            best_wh = _max_wh_for_month_equivalent(
+                lat=lat,
+                lon=lon,
+                pv_wp=eq_wp,
+                batt_wh=resolved["batt_nominal_wh"],
+                tilt=eq_tilt,
+                aspect=eq_aspect,
+                cutoff_pct=resolved["cutoff_pct"],
+                month_index_zero_based=mi,
+            )
+            monthly_energy_wh.append(best_wh)
+            hours.append(min(best_wh / max(resolved["power"], 0.05), 24.0))
+
             completed_steps += 1
             if progress_callback:
                 elapsed = time.time() - started_at
@@ -436,17 +493,30 @@ def simulate_avlite_for_devices(
                     MONTHS[mi],
                 )
 
-        hours = sim["hours_by_month"]
         min_margin = min(h - float(required_hrs) for h in hours)
         status = "PASS" if all(h >= float(required_hrs) - 1e-6 for h in hours) else "FAIL"
         fail_months = [MONTHS[i] for i, h in enumerate(hours) if h + 1e-6 < float(required_hrs)]
+
+        empty_battery_pct_by_month, empty_battery_days_by_month, overall_empty_battery_pct = \
+            _get_empty_battery_stats_for_required_mode_equivalent(
+                lat=lat,
+                lon=lon,
+                pv_wp=eq_wp,
+                batt_wh=resolved["batt_nominal_wh"],
+                tilt=eq_tilt,
+                aspect=eq_aspect,
+                cutoff_pct=resolved["cutoff_pct"],
+                required_daily_wh=float(required_hrs) * max(float(resolved["power"]), 0.05),
+            )
 
         pvgis_meta = build_avlite_pvgis_meta(
             lat=lat,
             lon=lon,
             resolved_cfg=resolved,
+            panel_summary=panel_summary,
             per_panel_monthly=per_panel_monthly,
-            total_monthly_wh_day=monthly_gen_wh_day,
+            total_monthly_wh_day=total_monthly_wh_day,
+            equivalent_plane=equivalent_plane,
         )
 
         result_key = resolved["device_name"]
@@ -457,39 +527,34 @@ def simulate_avlite_for_devices(
             "system_type": "avlite_fixture",
             "engine": "AVLITE",
             "engine_key": resolved["fixture_key"],
-            "power": resolved["power"],
-            "pv": resolved["pv"],
+            "pv": eq_wp,  # simulation PV is equivalent single-plane panel
+            "pv_physical_nominal": panel_summary["total_nominal_wp"],
             "batt": resolved["batt_nominal_wh"],
             "batt_std": resolved["batt_nominal_wh"],
-            "batt_nominal_wh": resolved["batt_nominal_wh"],
-            "batt_usable_wh": resolved["batt_usable_wh"],
-            "battery_type": resolved["battery_type"],
             "battery_mode": "Built-in",
-            "cutoff_pct": resolved["cutoff_pct"],
-            "usable_battery_pct": resolved["usable_battery_pct"],
-            "tilt": None,
-            "azim": None,
-            "panel_count": resolved["panel_count"],
-            "panel_geometry": resolved["panel_geometry"],
+            "tilt": eq_tilt,
+            "azim": float(eq_aspect),
             "hours": hours,
             "status": status,
             "min_margin": min_margin,
             "fail_months": fail_months,
-            "monthly_energy_wh": sim["monthly_energy_wh"],
-            "empty_battery_pct_by_month": sim["empty_battery_pct_by_month"],
-            "empty_battery_days_by_month": sim["empty_battery_days_by_month"],
-            "overall_empty_battery_pct": sim["overall_empty_battery_pct"],
-            "lowest_battery_pct_est": sim["lowest_battery_pct_est"],
-            "days_above_60_pct_est": sim["days_above_60_pct_est"],
-            "days_below_40_pct_est": sim["days_below_40_pct_est"],
-            "reserve_distribution_est": sim["reserve_distribution_est"],
-            "daily_end_soc_est": sim["daily_end_soc_est"],
-            "end_soc_monthly_min": sim["end_soc_monthly_min"],
-            "days_above_60_pct_by_month": sim["days_above_60_pct_by_month"],
-            "days_below_40_pct_by_month": sim["days_below_40_pct_by_month"],
+            "power": resolved["power"],
+            "lamp_variant": None,
+            "monthly_energy_wh": monthly_energy_wh,
+            "empty_battery_pct_by_month": empty_battery_pct_by_month,
+            "empty_battery_days_by_month": empty_battery_days_by_month,
+            "overall_empty_battery_pct": overall_empty_battery_pct,
+            "pvgis_meta": pvgis_meta,
+
+            # extra transparency fields
+            "panel_count": panel_summary["panel_count"],
+            "panel_list": panel_summary["panel_list"],
+            "total_nominal_wp": panel_summary["total_nominal_wp"],
+            "equivalent_panel_wp": eq_wp,
+            "equivalent_panel_tilt": eq_tilt,
+            "equivalent_panel_aspect": eq_aspect,
             "certified_intensity": resolved["certified_intensity"],
             "source_note": resolved["source_note"],
-            "pvgis_meta": pvgis_meta,
         }
 
     worst_name, worst_gap = None, 1e9

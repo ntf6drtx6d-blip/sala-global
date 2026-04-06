@@ -57,64 +57,68 @@ def resolve_avlite_config(device_id, per_device_config=None):
     }
 
 
-def _sanitize_panel_geometry(panel):
-    # PVGIS helper currently clamps PVcalc to 50 Wp minimum.
-    # For tiny panels we query at 50 Wp and scale output back to actual Wp.
-    actual_wp = max(0.001, float(panel["wp"]))
-    query_wp = max(actual_wp, 50.0)
-    scale = actual_wp / query_wp
-
-    tilt = float(panel["tilt"])
-    if tilt >= 90.0:
-        tilt = 89.0
-    elif tilt < 0.0:
-        tilt = 0.0
-
-    aspect = float(panel["aspect"])
-    if aspect >= 180.0:
-        aspect = 179.0
-    elif aspect <= -180.0:
-        aspect = -179.0
-
-    return {
-        "actual_wp": actual_wp,
-        "query_wp": query_wp,
-        "scale": scale,
-        "tilt": tilt,
-        "aspect": aspect,
+def _single_panel_monthly_wh_day(lat, lon, panel):
+    """
+    Debug version:
+    - does NOT modify panel tilt/aspect
+    - does NOT change geometry assumptions
+    - raises detailed error telling exactly which panel failed
+    """
+    debug_payload = {
+        "panel_name": panel.get("name"),
+        "lat": float(lat),
+        "lon": float(lon),
+        "wp": float(panel["wp"]),
+        "tilt": float(panel["tilt"]),
+        "aspect": float(panel["aspect"]),
     }
 
+    print("AVLITE PANEL DEBUG START:", debug_payload)
 
-def _single_panel_monthly_wh_day(lat, lon, panel):
-    geom = _sanitize_panel_geometry(panel)
+    try:
+        monthly = pvcalc_monthly_wh_per_day(
+            lat=float(lat),
+            lon=float(lon),
+            pv_wp=float(panel["wp"]),
+            tilt_deg=float(panel["tilt"]),
+            aspect_deg=float(panel["aspect"]),
+        )
+    except Exception as e:
+        raise RuntimeError(
+            "AVLITE panel PVGIS failed | "
+            f"panel={panel.get('name')} | "
+            f"lat={float(lat)} | lon={float(lon)} | "
+            f"wp={float(panel['wp'])} | "
+            f"tilt={float(panel['tilt'])} | "
+            f"aspect={float(panel['aspect'])} | "
+            f"err={e}"
+        ) from e
 
-    monthly_query = pvcalc_monthly_wh_per_day(
-        lat=float(lat),
-        lon=float(lon),
-        pv_wp=float(geom["query_wp"]),
-        tilt_deg=float(geom["tilt"]),
-        aspect_deg=float(geom["aspect"]),
-    )
-
-    monthly_actual = [float(x) * float(geom["scale"]) for x in monthly_query]
-    return monthly_actual, geom
+    print("AVLITE PANEL DEBUG OK:", debug_payload)
+    return monthly, debug_payload
 
 
 def _monthly_generation_wh_per_day(lat, lon, resolved_cfg):
+    """
+    Sum PVGIS monthly generation over all physical panel faces.
+
+    IMPORTANT:
+    This version does NOT alter Avlite panel geometry.
+    It uses exactly the panel definitions from devices_avlite.py.
+    """
     per_panel_monthly = []
     total = [0.0] * 12
 
     for panel in resolved_cfg["panels"]:
-        monthly, geom = _single_panel_monthly_wh_day(lat=lat, lon=lon, panel=panel)
+        monthly, dbg = _single_panel_monthly_wh_day(lat=lat, lon=lon, panel=panel)
 
         per_panel_monthly.append({
             "name": panel["name"],
-            "wp_actual": float(geom["actual_wp"]),
-            "wp_query": float(geom["query_wp"]),
-            "scale_applied": float(geom["scale"]),
-            "tilt": float(geom["tilt"]),
-            "aspect": float(geom["aspect"]),
+            "wp": float(panel["wp"]),
+            "tilt": float(panel["tilt"]),
+            "aspect": float(panel["aspect"]),
             "monthly_wh_day": monthly,
+            "debug": dbg,
         })
 
         for i in range(12):
@@ -223,10 +227,7 @@ def _simulate_year_with_monthly_average_generation(monthly_gen_wh_day, power_w, 
 
 def build_avlite_pvgis_meta(lat, lon, resolved_cfg, per_panel_monthly, total_monthly_wh_day):
     return {
-        "dataset_note": (
-            "Calculated with PVGIS PVcalc by summing all physical panel faces separately. "
-            "Small panels below 50Wp are queried at 50Wp because pvgis_client clamps PVcalc to 50Wp minimum, then scaled back."
-        ),
+        "dataset_note": "Calculated with PVGIS PVcalc by summing all physical panel faces separately.",
         "lat": float(lat),
         "lon": float(lon),
         "device": resolved_cfg["fixture_name"],

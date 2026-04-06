@@ -33,7 +33,7 @@ def resolve_avlite_config(device_id, per_device_config=None):
 
     display_name = user_cfg.get("display_label") or dspec["name"]
 
-    cfg = {
+    return {
         "device_id": parsed_device_id,
         "device_code": dspec["code"],
         "device_name": display_name,
@@ -55,27 +55,79 @@ def resolve_avlite_config(device_id, per_device_config=None):
         "certified_intensity": fixture["certified_intensity"],
         "source_note": fixture.get("source_note", ""),
     }
-    return cfg
+
+
+def _sanitize_panel_geometry(panel):
+    """
+    PVGIS PVcalc can be unstable on exact edge geometry values such as:
+    - tilt = 90
+    - aspect = 180
+    We soften them slightly.
+
+    IMPORTANT:
+    pvgis_client.py internally clamps PVcalc peakpower to minimum 0.05 kW (= 50 Wp).
+    For small panels (e.g. 0.7W, 5W, 7W) we therefore:
+    1) query PVGIS at 50Wp
+    2) scale the result back to actual Wp
+    This is valid because PVcalc energy scales linearly with peak power.
+    """
+    actual_wp = max(0.001, float(panel["wp"]))
+    query_wp = max(actual_wp, 50.0)
+    scale = actual_wp / query_wp
+
+    tilt = float(panel["tilt"])
+    if tilt >= 90.0:
+        tilt = 89.0
+    elif tilt < 0.0:
+        tilt = 0.0
+
+    aspect = float(panel["aspect"])
+    if aspect >= 180.0:
+        aspect = 179.0
+    elif aspect <= -180.0:
+        aspect = -179.0
+
+    return {
+        "actual_wp": actual_wp,
+        "query_wp": query_wp,
+        "scale": scale,
+        "tilt": tilt,
+        "aspect": aspect,
+    }
+
+
+def _single_panel_monthly_wh_day(lat, lon, panel):
+    geom = _sanitize_panel_geometry(panel)
+
+    monthly_query = pvcalc_monthly_wh_per_day(
+        lat=float(lat),
+        lon=float(lon),
+        pv_wp=float(geom["query_wp"]),
+        tilt_deg=float(geom["tilt"]),
+        aspect_deg=float(geom["aspect"]),
+    )
+
+    monthly_actual = [float(x) * float(geom["scale"]) for x in monthly_query]
+    return monthly_actual, geom
 
 
 def _monthly_generation_wh_per_day(lat, lon, resolved_cfg):
+    """
+    Sum PVGIS monthly Wh/day over all physical panel faces.
+    """
     per_panel_monthly = []
     total = [0.0] * 12
 
     for panel in resolved_cfg["panels"]:
-        monthly = pvcalc_monthly_wh_per_day(
-            lat=float(lat),
-            lon=float(lon),
-            pv_wp=float(panel["wp"]),
-            tilt_deg=float(panel["tilt"]),
-            aspect_deg=float(panel["aspect"]),
-        )
+        monthly, geom = _single_panel_monthly_wh_day(lat=lat, lon=lon, panel=panel)
 
         per_panel_monthly.append({
             "name": panel["name"],
-            "wp": float(panel["wp"]),
-            "tilt": float(panel["tilt"]),
-            "aspect": float(panel["aspect"]),
+            "wp_actual": float(geom["actual_wp"]),
+            "wp_query": float(geom["query_wp"]),
+            "scale_applied": float(geom["scale"]),
+            "tilt": float(geom["tilt"]),
+            "aspect": float(geom["aspect"]),
             "monthly_wh_day": monthly,
         })
 
@@ -117,7 +169,10 @@ def _simulate_year_with_monthly_average_generation(monthly_gen_wh_day, power_w, 
         month_end_socs = []
 
         for _day in range(days):
+            # simple daily bucket model:
+            # daily PV generation charges the battery first
             batt_wh = min(batt_max_wh, batt_wh + gen_day_wh)
+
             available_wh = max(0.0, batt_wh - batt_min_wh)
 
             if available_wh >= demand_day_wh:
@@ -152,6 +207,7 @@ def _simulate_year_with_monthly_average_generation(monthly_gen_wh_day, power_w, 
 
     overall_empty_battery_pct = (total_empty_days / total_days) * 100.0 if total_days else 0.0
     lowest_battery_pct = min(all_daily_end_soc) if all_daily_end_soc else 0.0
+
     above_60_total = sum(1 for x in all_daily_end_soc if x >= 60.0)
     below_40_total = sum(1 for x in all_daily_end_soc if x < 40.0)
 
@@ -160,9 +216,9 @@ def _simulate_year_with_monthly_average_generation(monthly_gen_wh_day, power_w, 
 
     reserve_distribution_est = {
         "80_100": (sum(1 for x in all_daily_end_soc if x >= 80.0) / total_days) * 100.0 if total_days else 0.0,
-        "60_80": (sum(1 for x in all_daily_end_soc if 60.0 <= x < 80.0) / total_days) * 100.0 if total_days else 0.0,
-        "40_60": (sum(1 for x in all_daily_end_soc if 40.0 <= x < 60.0) / total_days) * 100.0 if total_days else 0.0,
-        "30_40": (sum(1 for x in all_daily_end_soc if 30.0 <= x < 40.0) / total_days) * 100.0 if total_days else 0.0,
+        "60_80":  (sum(1 for x in all_daily_end_soc if 60.0 <= x < 80.0) / total_days) * 100.0 if total_days else 0.0,
+        "40_60":  (sum(1 for x in all_daily_end_soc if 40.0 <= x < 60.0) / total_days) * 100.0 if total_days else 0.0,
+        "30_40":  (sum(1 for x in all_daily_end_soc if 30.0 <= x < 40.0) / total_days) * 100.0 if total_days else 0.0,
         "below_30": (sum(1 for x in all_daily_end_soc if x < 30.0) / total_days) * 100.0 if total_days else 0.0,
     }
 
@@ -185,7 +241,10 @@ def _simulate_year_with_monthly_average_generation(monthly_gen_wh_day, power_w, 
 
 def build_avlite_pvgis_meta(lat, lon, resolved_cfg, per_panel_monthly, total_monthly_wh_day):
     return {
-        "dataset_note": "Calculated with PVGIS PVcalc by summing all physical panel faces separately.",
+        "dataset_note": (
+            "Calculated with PVGIS PVcalc by summing all physical panel faces separately. "
+            "Small panels below 50Wp are queried at 50Wp due to pvgis_client clamp and then scaled back."
+        ),
         "lat": float(lat),
         "lon": float(lon),
         "device": resolved_cfg["fixture_name"],
@@ -200,8 +259,8 @@ def build_avlite_pvgis_meta(lat, lon, resolved_cfg, per_panel_monthly, total_mon
         "panels": per_panel_monthly,
         "monthly_total_wh_day": total_monthly_wh_day,
         "explanation": (
-            "Avlite geometry is modeled face-by-face. "
-            "Each solar panel face is sent to PVGIS separately and the monthly generation is summed."
+            "This Avlite engine does not use one synthetic single-plane panel. "
+            "It runs PVGIS panel-by-panel and sums all faces."
         ),
     }
 
@@ -217,7 +276,12 @@ def simulate_avlite_for_devices(loc, required_hrs, selected_ids, per_device_conf
 
     for did in selected_ids:
         resolved = resolve_avlite_config(did, per_device_config)
-        monthly_gen_wh_day, per_panel_monthly = _monthly_generation_wh_per_day(lat=lat, lon=lon, resolved_cfg=resolved)
+
+        monthly_gen_wh_day, per_panel_monthly = _monthly_generation_wh_per_day(
+            lat=lat,
+            lon=lon,
+            resolved_cfg=resolved
+        )
 
         sim = _simulate_year_with_monthly_average_generation(
             monthly_gen_wh_day=monthly_gen_wh_day,
@@ -240,14 +304,22 @@ def simulate_avlite_for_devices(loc, required_hrs, selected_ids, per_device_conf
                     elapsed,
                     eta,
                     resolved["device_name"],
-                    MONTHS[mi]
+                    MONTHS[mi],
                 )
 
         hours = sim["hours_by_month"]
         min_margin = min(h - float(required_hrs) for h in hours)
         status = "PASS" if all(h >= float(required_hrs) - 1e-6 for h in hours) else "FAIL"
         fail_months = [MONTHS[i] for i, h in enumerate(hours) if h + 1e-6 < float(required_hrs)]
-        pvgis_meta = build_avlite_pvgis_meta(lat, lon, resolved, per_panel_monthly, monthly_gen_wh_day)
+
+        pvgis_meta = build_avlite_pvgis_meta(
+            lat=lat,
+            lon=lon,
+            resolved_cfg=resolved,
+            per_panel_monthly=per_panel_monthly,
+            total_monthly_wh_day=monthly_gen_wh_day,
+        )
+
         result_key = resolved["device_name"]
 
         results[result_key] = {
@@ -257,6 +329,7 @@ def simulate_avlite_for_devices(loc, required_hrs, selected_ids, per_device_conf
             "system_type": "avlite_fixture",
             "engine": "AVLITE",
             "engine_key": resolved["fixture_key"],
+
             "power": resolved["power"],
             "pv": resolved["pv"],
             "batt": resolved["batt_nominal_wh"],
@@ -264,13 +337,15 @@ def simulate_avlite_for_devices(loc, required_hrs, selected_ids, per_device_conf
             "batt_nominal_wh": resolved["batt_nominal_wh"],
             "batt_usable_wh": resolved["batt_usable_wh"],
             "battery_type": resolved["battery_type"],
-            "battery_mode": "Certified 100%",
+            "battery_mode": "Built-in",
             "cutoff_pct": resolved["cutoff_pct"],
             "usable_battery_pct": resolved["usable_battery_pct"],
+
             "tilt": None,
             "azim": None,
             "panel_count": resolved["panel_count"],
             "panel_geometry": resolved["panel_geometry"],
+
             "hours": hours,
             "status": status,
             "min_margin": min_margin,
@@ -279,6 +354,7 @@ def simulate_avlite_for_devices(loc, required_hrs, selected_ids, per_device_conf
             "empty_battery_pct_by_month": sim["empty_battery_pct_by_month"],
             "empty_battery_days_by_month": sim["empty_battery_days_by_month"],
             "overall_empty_battery_pct": sim["overall_empty_battery_pct"],
+
             "lowest_battery_pct_est": sim["lowest_battery_pct_est"],
             "days_above_60_pct_est": sim["days_above_60_pct_est"],
             "days_below_40_pct_est": sim["days_below_40_pct_est"],
@@ -287,6 +363,7 @@ def simulate_avlite_for_devices(loc, required_hrs, selected_ids, per_device_conf
             "end_soc_monthly_min": sim["end_soc_monthly_min"],
             "days_above_60_pct_by_month": sim["days_above_60_pct_by_month"],
             "days_below_40_pct_by_month": sim["days_below_40_pct_by_month"],
+
             "certified_intensity": resolved["certified_intensity"],
             "source_note": resolved["source_note"],
             "pvgis_meta": pvgis_meta,

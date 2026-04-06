@@ -7,6 +7,7 @@ AVLITE_FIXTURES = {
         "model": "AV-70-863",
         "variant": "B1",
         "name": "Avlite AV-70-863 B1",
+        "manufacturer": "Avlite",
         "system_type": "avlite_fixture",
 
         "battery_type": "NiMH",
@@ -36,6 +37,7 @@ AVLITE_FIXTURES = {
         "model": "AV-70-863",
         "variant": "B2",
         "name": "Avlite AV-70-863 B2",
+        "manufacturer": "Avlite",
         "system_type": "avlite_fixture",
 
         "battery_type": "NiMH",
@@ -65,6 +67,7 @@ AVLITE_FIXTURES = {
         "model": "AV-426",
         "variant": "C0",
         "name": "Avlite AV-426 C0",
+        "manufacturer": "Avlite",
         "system_type": "avlite_fixture",
 
         "battery_type": "SLA",
@@ -96,6 +99,7 @@ AVLITE_FIXTURES = {
         "model": "AV-426",
         "variant": "C1",
         "name": "Avlite AV-426 C1",
+        "manufacturer": "Avlite",
         "system_type": "avlite_fixture",
 
         "battery_type": "SLA",
@@ -129,6 +133,7 @@ AVLITE_DEVICES = {
     101: {
         "code": "AV70-B1",
         "name": "Avlite AV-70-863 B1",
+        "manufacturer": "Avlite",
         "system_type": "avlite_fixture",
         "fixture_key": "av70_b1",
         "default_power": 0.1152,
@@ -141,6 +146,7 @@ AVLITE_DEVICES = {
     102: {
         "code": "AV70-B2",
         "name": "Avlite AV-70-863 B2",
+        "manufacturer": "Avlite",
         "system_type": "avlite_fixture",
         "fixture_key": "av70_b2",
         "default_power": 0.1152,
@@ -153,6 +159,7 @@ AVLITE_DEVICES = {
     103: {
         "code": "AV426-C0",
         "name": "Avlite AV-426 C0",
+        "manufacturer": "Avlite",
         "system_type": "avlite_fixture",
         "fixture_key": "av426_c0",
         "default_power": 1.8,
@@ -165,6 +172,7 @@ AVLITE_DEVICES = {
     104: {
         "code": "AV426-C1",
         "name": "Avlite AV-426 C1",
+        "manufacturer": "Avlite",
         "system_type": "avlite_fixture",
         "fixture_key": "av426_c1",
         "default_power": 1.8,

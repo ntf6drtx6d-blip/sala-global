@@ -47,6 +47,7 @@ DEVICES = {
     1: {
         "code": "SP-401SMI",
         "name": "PRO SP-401SMI",
+        "manufacturer": "S4GA",
         "system_type": "builtin",
         "default_power": 3.3,
         "pv": 25,
@@ -67,6 +68,7 @@ DEVICES = {
     2: {
         "code": "SP-501SHI",
         "name": "CAT-I SP-501SHI",
+        "manufacturer": "S4GA",
         "system_type": "builtin",
         "default_power": 27.0,
         "pv": 25,
@@ -83,6 +85,7 @@ DEVICES = {
     3: {
         "code": "SP-301SL",
         "name": "STD SP-301SL",
+        "manufacturer": "S4GA",
         "system_type": "builtin",
         "default_power": 1.48,
         "pv": 5,
@@ -102,6 +105,7 @@ DEVICES = {
     4: {
         "code": "SP-200",
         "name": "SP-200 Inset Light",
+        "manufacturer": "S4GA",
         "system_type": "external_engine",
         "default_power": 5.0,
         "default_engine": "se_mini",
@@ -110,6 +114,7 @@ DEVICES = {
     5: {
         "code": "PAPI",
         "name": "PAPI",
+        "manufacturer": "S4GA",
         "system_type": "external_engine",
         "default_power": 320.0,
         "default_engine": "se_max",
@@ -118,6 +123,7 @@ DEVICES = {
     6: {
         "code": "A-PAPI",
         "name": "A-PAPI",
+        "manufacturer": "S4GA",
         "system_type": "external_engine",
         "default_power": 160.0,
         "default_engine": "se_max",
@@ -126,6 +132,7 @@ DEVICES = {
     7: {
         "code": "RGL",
         "name": "Runway Guard Light",
+        "manufacturer": "S4GA",
         "system_type": "external_engine",
         "default_power": 3.0,
         "default_engine": "se_mini",
@@ -134,6 +141,7 @@ DEVICES = {
     8: {
         "code": "WDI",
         "name": "Wind Direction Indicator",
+        "manufacturer": "S4GA",
         "system_type": "external_engine",
         "default_power": 10.0,
         "default_engine": "se_mini",
@@ -142,6 +150,7 @@ DEVICES = {
     9: {
         "code": "SIGN-L",
         "name": "Large Guidance Sign",
+        "manufacturer": "S4GA",
         "system_type": "external_engine",
         "default_power": 35.0,
         "default_engine": "se_compact",
@@ -150,6 +159,7 @@ DEVICES = {
     10: {
         "code": "SIGN-M",
         "name": "Medium Guidance Sign",
+        "manufacturer": "S4GA",
         "system_type": "external_engine",
         "default_power": 22.0,
         "default_engine": "se_compact",
@@ -158,6 +168,7 @@ DEVICES = {
     11: {
         "code": "SIGN-S",
         "name": "Small Guidance Sign",
+        "manufacturer": "S4GA",
         "system_type": "external_engine",
         "default_power": 15.0,
         "default_engine": "se_compact",

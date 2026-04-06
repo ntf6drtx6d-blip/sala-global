@@ -1,13 +1,40 @@
 # core/avlite_fs.py
+# Avlite feasibility engine
+# Uses PVGIS MRcalc per physical panel face (2-panel or 4-panel geometry),
+# sums monthly irradiation, converts to monthly generation, and runs the
+# same style of monthly battery-buffer simulation used in the app.
+#
+# This module does NOT use PVcalc.
+# It keeps fixed Avlite panel geometry exactly as defined in devices_avlite.py.
 
 import calendar
+import math
 import time
+from functools import lru_cache
 
-from pvgis_client import pvcalc_monthly_wh_per_day
+import requests
+
 from core.devices_avlite import AVLITE_FIXTURES, AVLITE_DEVICES
 
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+PVGIS_BASES = [
+    "https://re.jrc.ec.europa.eu/api/v5_3",
+    "https://re.jrc.ec.europa.eu/api/v5_2",
+]
+
+# Engineering assumption aligned with common PV loss treatment.
+# Can be tuned later if you want.
+DEFAULT_PR = 0.86
+
+# Fixed comparison plane for "equivalent single-plane panel" metadata.
+EQUIV_TILT_DEG = 33.0
+EQUIV_ASPECT_DEG = 0.0
+
+# Network behaviour
+HTTP_TIMEOUT = 45
+USER_AGENT = "SALA-Avlite-FS/1.0"
 
 
 def _days_in_month_non_leap(month_index_1_based: int) -> int:
@@ -57,74 +84,196 @@ def resolve_avlite_config(device_id, per_device_config=None):
     }
 
 
-def _single_panel_monthly_wh_day(lat, lon, panel):
+def _sanitize_geometry(angle_deg, aspect_deg):
     """
-    Debug version:
-    - does NOT modify panel tilt/aspect
-    - does NOT change geometry assumptions
-    - raises detailed error telling exactly which panel failed
+    Keep Avlite fixed geometry, only avoid exact API edge values.
+    This is not a physical change, only a request-safety shim.
     """
-    debug_payload = {
-        "panel_name": panel.get("name"),
-        "lat": float(lat),
-        "lon": float(lon),
-        "wp": float(panel["wp"]),
+    angle = float(angle_deg)
+    aspect = float(aspect_deg)
+
+    if angle >= 90.0:
+        angle = 89.999
+    if angle <= 0.0:
+        angle = 0.001
+
+    if aspect >= 180.0:
+        aspect = 179.999
+    if aspect <= -180.0:
+        aspect = -179.999
+
+    return angle, aspect
+
+
+def _split_numeric_tokens(line: str):
+    cleaned = (
+        line.replace(";", ",")
+            .replace("\t", ",")
+            .replace("  ", " ")
+    )
+    parts = []
+    for chunk in cleaned.replace(",", " ").split():
+        try:
+            parts.append(float(chunk))
+        except Exception:
+            continue
+    return parts
+
+
+def _parse_mrcalc_basic_csv(text: str):
+    """
+    Parse MRcalc outputformat=basic.
+    Expected practical pattern:
+      month value ...
+    We take the first 12 rows that start with month 1..12 and use the next numeric value.
+    Returns monthly average daily irradiation on the selected plane, assumed in kWh/m2/day.
+    """
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    month_map = {}
+
+    for ln in lines:
+        nums = _split_numeric_tokens(ln)
+        if len(nums) >= 2:
+            month = int(round(nums[0]))
+            if 1 <= month <= 12 and month not in month_map:
+                month_map[month] = float(nums[1])
+
+    if len(month_map) == 12:
+        return [month_map[m] for m in range(1, 13)]
+
+    # Fallback: if there are 12 lines with one numeric value, use them directly
+    single_vals = []
+    for ln in lines:
+        nums = _split_numeric_tokens(ln)
+        if len(nums) == 1:
+            single_vals.append(float(nums[0]))
+    if len(single_vals) >= 12:
+        return single_vals[:12]
+
+    raise RuntimeError(
+        "Could not parse MRcalc basic output into 12 monthly values. "
+        f"First lines: {lines[:8]}"
+    )
+
+
+@lru_cache(maxsize=2048)
+def _mrcalc_monthly_selected_plane(lat, lon, angle_deg, aspect_deg):
+    """
+    Returns 12 monthly values for selected-plane irradiation using MRcalc.
+    We intentionally use MRcalc, not PVcalc.
+    """
+    angle_deg, aspect_deg = _sanitize_geometry(angle_deg, aspect_deg)
+
+    last_err = None
+    # First try with default DB, then explicit ERA5 fallback.
+    db_options = [None, "PVGIS-ERA5"]
+
+    for base in PVGIS_BASES:
+        for db in db_options:
+            params = {
+                "lat": float(lat),
+                "lon": float(lon),
+                "selectrad": 1,
+                "angle": float(angle_deg),
+                "aspect": float(aspect_deg),
+                "outputformat": "basic",
+                "browser": 0,
+            }
+            if db:
+                params["raddatabase"] = db
+
+            try:
+                resp = requests.get(
+                    f"{base}/MRcalc",
+                    params=params,
+                    timeout=HTTP_TIMEOUT,
+                    headers={"User-Agent": USER_AGENT},
+                )
+                resp.raise_for_status()
+                monthly = _parse_mrcalc_basic_csv(resp.text)
+                return monthly, {
+                    "base": base,
+                    "raddatabase": db or "default",
+                    "angle": float(angle_deg),
+                    "aspect": float(aspect_deg),
+                }
+            except Exception as e:
+                last_err = e
+                continue
+
+    raise RuntimeError(
+        f"PVGIS MRcalc failed for all endpoints. "
+        f"lat={lat}, lon={lon}, angle={angle_deg}, aspect={aspect_deg}. "
+        f"Last error: {last_err}"
+    )
+
+
+def _panel_monthly_generation_wh_day(lat, lon, panel, pr=DEFAULT_PR):
+    """
+    Convert monthly selected-plane irradiation to electrical generation.
+
+    Assumption:
+      generation_Wh_per_day = irradiation_kWh_m2_day * panel_wp * PR
+
+    This works because Wp is referenced to 1 kW/m2 STC.
+    """
+    monthly_irr, meta = _mrcalc_monthly_selected_plane(
+        float(lat), float(lon), float(panel["tilt"]), float(panel["aspect"])
+    )
+
+    wp = float(panel["wp"])
+    monthly_gen = [float(h) * wp * float(pr) for h in monthly_irr]
+
+    return monthly_gen, {
+        "name": panel["name"],
+        "wp": wp,
         "tilt": float(panel["tilt"]),
         "aspect": float(panel["aspect"]),
+        "monthly_irr_kwh_m2_day": monthly_irr,
+        "monthly_gen_wh_day": monthly_gen,
+        "api_meta": meta,
     }
 
-    print("AVLITE PANEL DEBUG START:", debug_payload)
 
-    try:
-        monthly = pvcalc_monthly_wh_per_day(
-            lat=float(lat),
-            lon=float(lon),
-            pv_wp=float(panel["wp"]),
-            tilt_deg=float(panel["tilt"]),
-            aspect_deg=float(panel["aspect"]),
-        )
-    except Exception as e:
-        raise RuntimeError(
-            "AVLITE panel PVGIS failed | "
-            f"panel={panel.get('name')} | "
-            f"lat={float(lat)} | lon={float(lon)} | "
-            f"wp={float(panel['wp'])} | "
-            f"tilt={float(panel['tilt'])} | "
-            f"aspect={float(panel['aspect'])} | "
-            f"err={e}"
-        ) from e
-
-    print("AVLITE PANEL DEBUG OK:", debug_payload)
-    return monthly, debug_payload
-
-
-def _monthly_generation_wh_per_day(lat, lon, resolved_cfg):
-    """
-    Sum PVGIS monthly generation over all physical panel faces.
-
-    IMPORTANT:
-    This version does NOT alter Avlite panel geometry.
-    It uses exactly the panel definitions from devices_avlite.py.
-    """
-    per_panel_monthly = []
+def _monthly_generation_wh_per_day(lat, lon, resolved_cfg, pr=DEFAULT_PR):
+    per_panel = []
     total = [0.0] * 12
 
     for panel in resolved_cfg["panels"]:
-        monthly, dbg = _single_panel_monthly_wh_day(lat=lat, lon=lon, panel=panel)
-
-        per_panel_monthly.append({
-            "name": panel["name"],
-            "wp": float(panel["wp"]),
-            "tilt": float(panel["tilt"]),
-            "aspect": float(panel["aspect"]),
-            "monthly_wh_day": monthly,
-            "debug": dbg,
-        })
-
+        monthly_gen, meta = _panel_monthly_generation_wh_day(lat, lon, panel, pr=pr)
+        per_panel.append(meta)
         for i in range(12):
-            total[i] += float(monthly[i])
+            total[i] += float(monthly_gen[i])
 
-    return total, per_panel_monthly
+    return total, per_panel
+
+
+def _fit_equivalent_single_plane_wp(lat, lon, total_monthly_gen_wh_day, pr=DEFAULT_PR):
+    """
+    Find equivalent single-plane panel at fixed S4GA-style base tilt/aspect.
+    We fit one Wp value so that:
+        P_eq * H_ref[m] * PR ~ total_monthly_gen_wh_day[m]
+    over 12 months in least-squares sense.
+    """
+    ref_irr, api_meta = _mrcalc_monthly_selected_plane(
+        float(lat), float(lon), EQUIV_TILT_DEG, EQUIV_ASPECT_DEG
+    )
+
+    ref_basis = [max(1e-9, float(h) * float(pr)) for h in ref_irr]
+    num = sum(float(g) * b for g, b in zip(total_monthly_gen_wh_day, ref_basis))
+    den = sum(b * b for b in ref_basis)
+    equiv_wp = max(0.0, num / den) if den > 0 else 0.0
+
+    equiv_monthly_gen = [equiv_wp * b for b in ref_basis]
+
+    return {
+        "equivalent_tilt_deg": EQUIV_TILT_DEG,
+        "equivalent_aspect_deg": EQUIV_ASPECT_DEG,
+        "equivalent_wp": equiv_wp,
+        "reference_monthly_irr_kwh_m2_day": ref_irr,
+        "equivalent_monthly_gen_wh_day": equiv_monthly_gen,
+        "api_meta": api_meta,
+    }
 
 
 def _simulate_year_with_monthly_average_generation(monthly_gen_wh_day, power_w, required_hrs, batt_nominal_wh, cutoff_pct):
@@ -194,6 +343,7 @@ def _simulate_year_with_monthly_average_generation(monthly_gen_wh_day, power_w, 
 
     overall_empty_battery_pct = (total_empty_days / total_days) * 100.0 if total_days else 0.0
     lowest_battery_pct = min(all_daily_end_soc) if all_daily_end_soc else 0.0
+
     above_60_total = sum(1 for x in all_daily_end_soc if x >= 60.0)
     below_40_total = sum(1 for x in all_daily_end_soc if x < 40.0)
 
@@ -225,9 +375,9 @@ def _simulate_year_with_monthly_average_generation(monthly_gen_wh_day, power_w, 
     }
 
 
-def build_avlite_pvgis_meta(lat, lon, resolved_cfg, per_panel_monthly, total_monthly_wh_day):
+def build_avlite_pvgis_meta(lat, lon, resolved_cfg, per_panel_monthly, total_monthly_wh_day, equivalent_plane):
     return {
-        "dataset_note": "Calculated with PVGIS PVcalc by summing all physical panel faces separately.",
+        "dataset_note": "Calculated with PVGIS MRcalc by summing all physical panel faces separately. No PVcalc is used.",
         "lat": float(lat),
         "lon": float(lon),
         "device": resolved_cfg["fixture_name"],
@@ -241,6 +391,7 @@ def build_avlite_pvgis_meta(lat, lon, resolved_cfg, per_panel_monthly, total_mon
         "panel_geometry": resolved_cfg["panel_geometry"],
         "panels": per_panel_monthly,
         "monthly_total_wh_day": total_monthly_wh_day,
+        "equivalent_single_plane": equivalent_plane,
     }
 
 
@@ -255,8 +406,19 @@ def simulate_avlite_for_devices(loc, required_hrs, selected_ids, per_device_conf
 
     for did in selected_ids:
         resolved = resolve_avlite_config(did, per_device_config)
+
         monthly_gen_wh_day, per_panel_monthly = _monthly_generation_wh_per_day(
-            lat=lat, lon=lon, resolved_cfg=resolved
+            lat=lat,
+            lon=lon,
+            resolved_cfg=resolved,
+            pr=DEFAULT_PR,
+        )
+
+        equivalent_plane = _fit_equivalent_single_plane_wp(
+            lat=lat,
+            lon=lon,
+            total_monthly_gen_wh_day=monthly_gen_wh_day,
+            pr=DEFAULT_PR,
         )
 
         sim = _simulate_year_with_monthly_average_generation(
@@ -274,8 +436,13 @@ def simulate_avlite_for_devices(loc, required_hrs, selected_ids, per_device_conf
                 pct = completed_steps / total_steps
                 eta = (elapsed / completed_steps) * (total_steps - completed_steps) if completed_steps else 0.0
                 progress_callback(
-                    completed_steps, total_steps, pct, elapsed, eta,
-                    resolved["device_name"], MONTHS[mi]
+                    completed_steps,
+                    total_steps,
+                    pct,
+                    elapsed,
+                    eta,
+                    resolved["device_name"],
+                    MONTHS[mi],
                 )
 
         hours = sim["hours_by_month"]
@@ -284,9 +451,12 @@ def simulate_avlite_for_devices(loc, required_hrs, selected_ids, per_device_conf
         fail_months = [MONTHS[i] for i, h in enumerate(hours) if h + 1e-6 < float(required_hrs)]
 
         pvgis_meta = build_avlite_pvgis_meta(
-            lat=lat, lon=lon, resolved_cfg=resolved,
+            lat=lat,
+            lon=lon,
+            resolved_cfg=resolved,
             per_panel_monthly=per_panel_monthly,
             total_monthly_wh_day=monthly_gen_wh_day,
+            equivalent_plane=equivalent_plane,
         )
 
         result_key = resolved["device_name"]
@@ -297,6 +467,7 @@ def simulate_avlite_for_devices(loc, required_hrs, selected_ids, per_device_conf
             "system_type": "avlite_fixture",
             "engine": "AVLITE",
             "engine_key": resolved["fixture_key"],
+
             "power": resolved["power"],
             "pv": resolved["pv"],
             "batt": resolved["batt_nominal_wh"],
@@ -307,10 +478,12 @@ def simulate_avlite_for_devices(loc, required_hrs, selected_ids, per_device_conf
             "battery_mode": "Built-in",
             "cutoff_pct": resolved["cutoff_pct"],
             "usable_battery_pct": resolved["usable_battery_pct"],
+
             "tilt": None,
             "azim": None,
             "panel_count": resolved["panel_count"],
             "panel_geometry": resolved["panel_geometry"],
+
             "hours": hours,
             "status": status,
             "min_margin": min_margin,
@@ -319,6 +492,7 @@ def simulate_avlite_for_devices(loc, required_hrs, selected_ids, per_device_conf
             "empty_battery_pct_by_month": sim["empty_battery_pct_by_month"],
             "empty_battery_days_by_month": sim["empty_battery_days_by_month"],
             "overall_empty_battery_pct": sim["overall_empty_battery_pct"],
+
             "lowest_battery_pct_est": sim["lowest_battery_pct_est"],
             "days_above_60_pct_est": sim["days_above_60_pct_est"],
             "days_below_40_pct_est": sim["days_below_40_pct_est"],
@@ -327,6 +501,7 @@ def simulate_avlite_for_devices(loc, required_hrs, selected_ids, per_device_conf
             "end_soc_monthly_min": sim["end_soc_monthly_min"],
             "days_above_60_pct_by_month": sim["days_above_60_pct_by_month"],
             "days_below_40_pct_by_month": sim["days_below_40_pct_by_month"],
+
             "certified_intensity": resolved["certified_intensity"],
             "source_note": resolved["source_note"],
             "pvgis_meta": pvgis_meta,
@@ -334,6 +509,7 @@ def simulate_avlite_for_devices(loc, required_hrs, selected_ids, per_device_conf
 
     worst_name, worst_gap = None, 1e9
     overall = "PASS"
+
     for name, r in results.items():
         gap = r["min_margin"]
         if gap < worst_gap:

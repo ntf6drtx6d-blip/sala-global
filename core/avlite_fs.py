@@ -28,7 +28,7 @@ EQUIV_TILT_DEG = 33.0
 EQUIV_ASPECT_DEG = 0.0
 
 HTTP_TIMEOUT = 45
-USER_AGENT = "SALA-Avlite-FS/1.2"
+USER_AGENT = "SALA-Avlite-FS/1.3"
 
 
 def _days_in_month_non_leap(month_index_1_based: int) -> int:
@@ -102,43 +102,54 @@ def _extract_error_text(resp):
             for key in ["message", "error", "msg", "detail"]:
                 if key in data:
                     return str(data[key])
-            return str(data)[:1000]
+            return str(data)[:1200]
     except Exception:
         pass
-    return (resp.text or "")[:1000]
+    return (resp.text or "")[:1200]
 
 
 def _extract_monthly_from_mrcalc_json(data):
     """
-    Strict parser for MRcalc JSON.
-    Expected path:
-        outputs -> monthly -> fixed -> [12 rows]
-    Preferred monthly value key:
-        H(i)_m
+    PVGIS MRcalc JSON currently returns:
+        outputs["monthly"] = [
+            {"year": 2005, "month": 1, "H(i)_m": ...},
+            ...
+        ]
+    We aggregate all rows by month and return 12 monthly average values.
     """
     try:
-        monthly = data["outputs"]["monthly"]["fixed"]
+        rows = data["outputs"]["monthly"]
+
+        if not isinstance(rows, list) or not rows:
+            raise ValueError("outputs.monthly is empty or not a list")
+
+        by_month = {m: [] for m in range(1, 13)}
+
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+
+            month = row.get("month")
+            val = row.get("H(i)_m")
+
+            if month is None or val is None:
+                continue
+
+            month = int(month)
+            val = float(val)
+
+            if 1 <= month <= 12:
+                by_month[month].append(val)
 
         result = []
-        for idx, row in enumerate(monthly, start=1):
-            if not isinstance(row, dict):
-                raise ValueError(f"Month row {idx} is not a dict")
-
-            val = row.get("H(i)_m")
-            if val is None:
-                val = row.get("H(i)")
-            if val is None:
-                val = row.get("Hm")
-            if val is None:
-                val = row.get("value")
-
-            if val is None:
-                raise ValueError(f"Missing irradiation value in month row {idx}. Keys: {list(row.keys())}")
-
-            result.append(float(val))
+        for m in range(1, 13):
+            vals = by_month[m]
+            if not vals:
+                raise ValueError(f"No values for month {m}")
+            result.append(sum(vals) / len(vals))
 
         if len(result) != 12:
-            raise ValueError(f"Expected 12 months, got {len(result)}")
+            raise ValueError(f"Expected 12 monthly averages, got {len(result)}")
 
         return result
 
@@ -151,6 +162,11 @@ def _extract_monthly_from_mrcalc_json(data):
 
 @lru_cache(maxsize=2048)
 def _mrcalc_monthly_selected_plane(lat, lon, angle_deg, aspect_deg):
+    """
+    Returns 12 monthly average daily irradiation values on selected plane.
+    Uses MRcalc JSON and aggregates outputs.monthly by calendar month.
+    IMPORTANT: PVGIS expects azimuth parameter here, not aspect.
+    """
     angle_deg, aspect_deg = _sanitize_geometry(angle_deg, aspect_deg)
 
     last_err = None
@@ -163,7 +179,7 @@ def _mrcalc_monthly_selected_plane(lat, lon, angle_deg, aspect_deg):
                 "lon": float(lon),
                 "selectrad": 1,
                 "angle": float(angle_deg),
-                "aspect": float(aspect_deg),
+                "azimuth": float(aspect_deg),
                 "outputformat": "json",
                 "browser": 0,
             }
@@ -180,6 +196,7 @@ def _mrcalc_monthly_selected_plane(lat, lon, angle_deg, aspect_deg):
                 )
                 resp.raise_for_status()
                 data = resp.json()
+
                 monthly = _extract_monthly_from_mrcalc_json(data)
 
                 if not isinstance(monthly, list) or len(monthly) != 12:
@@ -190,7 +207,9 @@ def _mrcalc_monthly_selected_plane(lat, lon, angle_deg, aspect_deg):
                     "raddatabase": db or "default",
                     "angle": float(angle_deg),
                     "aspect": float(aspect_deg),
+                    "azimuth_sent": float(aspect_deg),
                 }
+
             except Exception as e:
                 if resp is not None:
                     err_text = _extract_error_text(resp)

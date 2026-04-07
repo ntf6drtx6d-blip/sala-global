@@ -117,6 +117,25 @@ def _panel_configuration_text(result_row):
     return "N/A"
 
 
+def _render_key_value_table(rows, title=None):
+    if title:
+        st.markdown(f"### {title}")
+
+    with st.container(border=True):
+        for label, value in rows:
+            c1, c2 = st.columns([1.2, 2.2])
+            with c1:
+                st.markdown(
+                    f"<div style='color:#667085;font-weight:700;'>{label}</div>",
+                    unsafe_allow_html=True,
+                )
+            with c2:
+                st.markdown(
+                    f"<div style='color:#1f2937;'>{value}</div>",
+                    unsafe_allow_html=True,
+                )
+
+
 def render_device_capability_cards(results: dict):
     st.markdown("## Device-level performance breakdown")
 
@@ -210,67 +229,31 @@ def render_device_capability_cards(results: dict):
                 effective_wp = r.get("equivalent_panel_wp", r.get("pv"))
                 effective_pct = r.get("equivalent_pct_of_physical_nominal")
                 equivalent_tilt = r.get("equivalent_panel_tilt", 33)
+
                 configuration = _panel_configuration_text(r)
-                panels_text = f"{int(r.get('panel_count', len(panel_list) or 0))} × {_unique_panel_wp_text(panel_list)}"
+
+                panel_count = int(r.get("panel_count", len(panel_list) or 0))
+                panels_text = f"{panel_count} × {_unique_panel_wp_text(panel_list)}"
+
                 nominal_tilt_text = _unique_panel_tilt_text(panel_list)
                 azimuth_text = format_panel_azimuths(panel_list)
 
-                st.markdown("### Solar input used in simulation")
-
-                st.markdown(
-                    f"""
-                    <div style="
-                        border:1px solid #e6eaf0;
-                        border-radius:14px;
-                        background:#ffffff;
-                        padding:14px 16px;
-                        margin-top:8px;
-                        margin-bottom:12px;
-                        box-shadow:0 2px 10px rgba(16,24,40,0.04);
-                    ">
-                        <div style="display:grid;grid-template-columns: minmax(220px, 280px) 1fr;row-gap:8px;column-gap:18px;">
-                            <div style="color:#667085;font-weight:700;">Nominal multi-face PV</div>
-                            <div style="color:#1f2937;">{_fmt_wp(nominal_wp)}</div>
-
-                            <div style="color:#667085;font-weight:700;">Effective PV used in simulation</div>
-                            <div style="color:#1f2937;">{_fmt_wp(effective_wp)}</div>
-
-                            <div style="color:#667085;font-weight:700;">Effective PV as % of nominal</div>
-                            <div style="color:#1f2937;">{_fmt_pct(effective_pct)}</div>
-
-                            <div style="color:#667085;font-weight:700;">Equivalent PV tilt used in simulation</div>
-                            <div style="color:#1f2937;">{float(equivalent_tilt):.0f}°</div>
-                        </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
+                _render_key_value_table(
+                    [
+                        ("Nominal multi-face PV", _fmt_wp(nominal_wp)),
+                        ("Effective PV used in simulation", _fmt_wp(effective_wp)),
+                        ("Effective PV as % of nominal", _fmt_pct(effective_pct)),
+                        ("Equivalent PV tilt used in simulation", f"{float(equivalent_tilt):.0f}°"),
+                    ],
+                    title="Solar input used in simulation",
                 )
 
-                st.markdown("### Physical panel geometry")
-                st.markdown(
-                    f"""
-                    <div style="
-                        border:1px solid #e6eaf0;
-                        border-radius:14px;
-                        background:#ffffff;
-                        padding:14px 16px;
-                        margin-top:8px;
-                        box-shadow:0 2px 10px rgba(16,24,40,0.04);
-                    ">
-                        <div style="display:grid;grid-template-columns: minmax(220px, 280px) 1fr;row-gap:8px;column-gap:18px;">
-                            <div style="color:#667085;font-weight:700;">Configuration</div>
-                            <div style="color:#1f2937;">{configuration}</div>
-
-                            <div style="color:#667085;font-weight:700;">Panels</div>
-                            <div style="color:#1f2937;">{panels_text}</div>
-
-                            <div style="color:#667085;font-weight:700;">Nominal panel tilt(s)</div>
-                            <div style="color:#1f2937;">{nominal_tilt_text}</div>
-
-                            <div style="color:#667085;font-weight:700;">Nominal panel azimuth</div>
-                            <div style="color:#1f2937;">{azimuth_text}</div>
-                        </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
+                _render_key_value_table(
+                    [
+                        ("Configuration", configuration),
+                        ("Panels", panels_text),
+                        ("Nominal panel tilt(s)", nominal_tilt_text),
+                        ("Nominal panel azimuth", azimuth_text),
+                    ],
+                    title="Physical panel geometry",
                 )

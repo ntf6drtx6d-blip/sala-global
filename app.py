@@ -1,7 +1,12 @@
 import os
+import json
+import time
+import hmac
+import base64
+import hashlib
 import streamlit as st
 
-from core.db import init_db, create_user, user_exists, save_study
+from core.db import init_db, create_user, user_exists, save_study, get_user_by_email
 from core.auth import hash_password, init_auth_state, is_logged_in, is_admin, logout
 
 from ui.setup import render_setup
@@ -22,6 +27,139 @@ st.set_page_config(
 )
 
 LOGO_PATH = "sala_logo.png"
+
+# ---- Persistent auth via signed URL token ----
+# This survives Streamlit restarts because it is stored in the browser URL.
+# It is not as strong as HttpOnly cookies, but it works without extra packages.
+AUTH_QUERY_PARAM = "auth"
+AUTH_TOKEN_TTL_DAYS = 30
+
+
+def _b64url_encode(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("utf-8")
+
+
+def _b64url_decode(data: str) -> bytes:
+    padding = "=" * (-len(data) % 4)
+    return base64.urlsafe_b64decode((data + padding).encode("utf-8"))
+
+
+def _auth_persist_secret() -> str:
+    return (
+        st.secrets.get("AUTH_PERSIST_SECRET")
+        or st.secrets.get("REMEMBER_ME_SECRET")
+        or st.secrets.get("ADMIN_PASSWORD")
+        or "change-this-secret-in-streamlit-secrets"
+    )
+
+
+def _sign_auth_payload(payload_json: str) -> str:
+    secret = _auth_persist_secret().encode("utf-8")
+    sig = hmac.new(secret, payload_json.encode("utf-8"), hashlib.sha256).digest()
+    return _b64url_encode(sig)
+
+
+def _make_auth_token() -> str | None:
+    email = st.session_state.get("auth_email")
+    user_id = st.session_state.get("auth_user_id")
+    role = st.session_state.get("auth_role")
+    full_name = st.session_state.get("auth_full_name")
+
+    if not email or not user_id:
+        return None
+
+    payload = {
+        "uid": int(user_id),
+        "email": str(email),
+        "role": str(role or ""),
+        "full_name": str(full_name or ""),
+        "exp": int(time.time()) + AUTH_TOKEN_TTL_DAYS * 24 * 3600,
+    }
+    payload_json = json.dumps(payload, separators=(",", ":"), sort_keys=True)
+    sig = _sign_auth_payload(payload_json)
+    return f"{_b64url_encode(payload_json.encode('utf-8'))}.{sig}"
+
+
+def _parse_auth_token(token: str) -> dict | None:
+    try:
+        payload_b64, sig = token.split(".", 1)
+        payload_json = _b64url_decode(payload_b64).decode("utf-8")
+        expected_sig = _sign_auth_payload(payload_json)
+
+        if not hmac.compare_digest(sig, expected_sig):
+            return None
+
+        payload = json.loads(payload_json)
+        if int(payload.get("exp", 0)) < int(time.time()):
+            return None
+
+        return payload
+    except Exception:
+        return None
+
+
+def _set_auth_query_token(token: str | None):
+    qp = st.query_params
+    if token:
+        qp[AUTH_QUERY_PARAM] = token
+    else:
+        try:
+            del qp[AUTH_QUERY_PARAM]
+        except Exception:
+            qp[AUTH_QUERY_PARAM] = ""
+
+
+def restore_login_from_query_token():
+    if is_logged_in():
+        return
+
+    token = st.query_params.get(AUTH_QUERY_PARAM)
+    if not token:
+        return
+
+    payload = _parse_auth_token(token)
+    if not payload:
+        _set_auth_query_token(None)
+        return
+
+    email = payload.get("email")
+    if not email:
+        _set_auth_query_token(None)
+        return
+
+    user = get_user_by_email(email)
+    if not user or not user["is_active"]:
+        _set_auth_query_token(None)
+        return
+
+    st.session_state.auth_ok = True
+    st.session_state.auth_user_id = user["id"]
+    st.session_state.auth_email = user["email"]
+    st.session_state.auth_role = user["role"]
+    st.session_state.auth_full_name = user["full_name"]
+
+
+def persist_login_to_query_token():
+    if not is_logged_in():
+        return
+
+    current = st.query_params.get(AUTH_QUERY_PARAM)
+    payload = _parse_auth_token(current) if current else None
+
+    # refresh token if missing, invalid, or belongs to a different user
+    if (
+        not payload
+        or payload.get("email") != st.session_state.get("auth_email")
+        or int(payload.get("uid", -1)) != int(st.session_state.get("auth_user_id") or -1)
+    ):
+        token = _make_auth_token()
+        if token:
+            _set_auth_query_token(token)
+
+
+def logout_and_forget():
+    _set_auth_query_token(None)
+    logout()
 
 
 def init_state():
@@ -286,7 +424,7 @@ def render_header():
             st.write(f"Role: {role}")
 
             if st.button("Log out", key="logout_from_popover", use_container_width=True):
-                logout()
+                logout_and_forget()
 
 
 def _trigger_simulation():
@@ -761,6 +899,7 @@ def render_calculator_app():
 init_state()
 init_auth_state()
 bootstrap_admin_user()
+restore_login_from_query_token()
 apply_global_styles()
 
 if not is_logged_in():
@@ -768,6 +907,7 @@ if not is_logged_in():
     render_login_page()
     st.stop()
 
+persist_login_to_query_token()
 render_header()
 
 user_id = st.session_state.get("auth_user_id")

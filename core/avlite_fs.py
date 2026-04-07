@@ -1,24 +1,25 @@
 # core/avlite_fs.py
 # Avlite equivalent-panel translator.
 #
-# Updated method:
-# 1) Calculate annual PV generation for the relevant physical / proxy geometry using PVGIS MRcalc
-# 2) Compare against a properly oriented single reference panel at 33° with the same total nominal Wp
-# 3) Derive one annual site-specific geometry coefficient
-# 4) Apply this coefficient to the REAL nominal PV of the lamp
-# 5) Return a resolved config compatible with the standard simulator path
+# Corrected method:
+# 1) Calculate annual PV electricity output for the relevant physical / proxy geometry
+#    using PVGIS Grid-Connected PV (PVcalc) yearly production.
+# 2) Compare against a properly oriented single reference panel at 33° with the same
+#    total nominal Wp.
+# 3) Derive one annual site-specific geometry coefficient.
+# 4) Apply this coefficient to the REAL nominal PV of the lamp.
+# 5) Return a resolved config compatible with the standard simulator path.
 #
-# Key assumptions implemented:
+# Important implementation choices:
 # - Annual ratio only (no worst-month / third-worst logic)
 # - AV70 uses fixed East-West proxy geometry for coefficient calculation:
 #       7W East + 7W West vs single 14W @ 33°
 #   then applies that coefficient to the REAL AV70 nominal PV = 1.4 W
-# - AV426 uses fixed 4-sided geometry:
-#       7W North + 7W East + 7W South + 7W West vs single 28W @ 33°
-#   then applies that coefficient to the REAL AV426 nominal PV = 28 W
-# - Keep fast execution via MRcalc request caching
+# - AV426 uses its actual configured 4-sided fixture geometry from devices_avlite
+#   (supports both 4x5W and 4x7W variants automatically if present in fixture data)
+# - Coefficient step uses PVGIS Grid-Connected yearly electricity production (E_y),
+#   not MRcalc irradiation proxy.
 
-import calendar
 from functools import lru_cache
 import requests
 
@@ -30,22 +31,21 @@ PVGIS_BASES = [
 ]
 
 HTTP_TIMEOUT = 45
-USER_AGENT = "SALA-Avlite-EQ/1.2"
-DEFAULT_PR = 0.86
+USER_AGENT = "SALA-Avlite-EQ/1.3"
 REFERENCE_TILT_DEG = 33.0
-PHYSICAL_TILT_DEG = 50.0
+PHYSICAL_TILT_DEG_AV70 = 50.0
+GRID_PV_LOSS_PCT = 14.0
+GRID_PV_TECH = "crystSi"
+GRID_MOUNTING = "free"
 
+# PVGIS convention for fixed planes: 0=south, 90=west, -90=east.
 ASPECT_NORTH = 180.0
 ASPECT_EAST = -90.0
 ASPECT_SOUTH = 0.0
 ASPECT_WEST = 90.0
 
 
-def _days_in_month_non_leap(month_index_1_based: int) -> int:
-    return calendar.monthrange(2025, month_index_1_based)[1]
-
-
-def _south_facing_aspect(lat: float) -> float:
+def _equator_facing_aspect(lat: float) -> float:
     return 0.0 if float(lat) >= 0 else 180.0
 
 
@@ -58,6 +58,7 @@ def _parse_avlite_device_identifier(device_identifier, per_device_config=None):
     except Exception:
         device_id = int(device_identifier)
     return device_id, user_cfg
+
 
 
 def resolve_avlite_fixture(device_id, per_device_config=None):
@@ -86,6 +87,7 @@ def resolve_avlite_fixture(device_id, per_device_config=None):
     }
 
 
+
 def _extract_error_text(resp) -> str:
     try:
         data = resp.json()
@@ -99,63 +101,68 @@ def _extract_error_text(resp) -> str:
     return (resp.text or "")[:1200]
 
 
+
 def _sanitize_geometry(angle_deg: float, aspect_deg: float):
     angle = float(angle_deg)
     aspect = float(aspect_deg)
 
-    if angle >= 90.0:
-        angle = 89.999
-    if angle <= 0.0:
-        angle = 0.001
+    if angle < 0.0:
+        angle = 0.0
+    if angle > 90.0:
+        angle = 90.0
 
-    if aspect >= 180.0:
-        aspect = 179.999
-    if aspect <= -180.0:
-        aspect = -179.999
+    # PVGIS examples/documentation use 180 for north, but guard exact overflow.
+    if aspect > 180.0:
+        aspect = 180.0
+    if aspect < -180.0:
+        aspect = -180.0
 
     return angle, aspect
 
 
-def _extract_monthly_from_mrcalc_json(data):
+
+def _extract_yearly_pv_energy_kwh(data: dict) -> float:
+    # Official examples show outputs.totals.fixed.E_y for PVcalc JSON.
+    outputs = data.get("outputs") or {}
+    totals = outputs.get("totals") or {}
+    fixed = totals.get("fixed") or {}
+    e_y = fixed.get("E_y")
+    if e_y is None:
+        raise RuntimeError(f"PVGIS PVcalc JSON missing outputs.totals.fixed.E_y: {list((outputs or {}).keys())}")
+    return float(e_y)
+
+
+@lru_cache(maxsize=4096)
+def _pvcalc_yearly_kwh(
+    lat: float,
+    lon: float,
+    peakpower_kw: float,
+    tilt_deg: float,
+    aspect_deg: float,
+    pvtechchoice: str = GRID_PV_TECH,
+    loss_pct: float = GRID_PV_LOSS_PCT,
+    mountingplace: str = GRID_MOUNTING,
+    raddatabase: str | None = None,
+):
     """
-    MRcalc JSON response:
-        outputs["monthly"] = [
-            {"year": 2005, "month": 1, "H(i)_m": ...},
-            ...
-        ]
-
-    We aggregate all years by calendar month and return 12 monthly averages.
+    Returns PVGIS Grid-Connected yearly PV electricity production E_y in kWh/year.
+    peakpower_kw must be in kW as required by PVcalc.
     """
-    rows = data["outputs"]["monthly"]
-    by_month = {m: [] for m in range(1, 13)}
-
-    for row in rows:
-        month = int(row["month"])
-        val = float(row["H(i)_m"])
-        if 1 <= month <= 12:
-            by_month[month].append(val)
-
-    out = []
-    for m in range(1, 13):
-        vals = by_month[m]
-        if not vals:
-            raise RuntimeError(f"No MRcalc values for month {m}")
-        out.append(sum(vals) / len(vals))
-    return out
-
-
-@lru_cache(maxsize=2048)
-def _mrcalc_monthly_selected_plane(lat, lon, angle_deg, aspect_deg):
-    angle_deg, aspect_deg = _sanitize_geometry(angle_deg, aspect_deg)
+    angle_deg, aspect_deg = _sanitize_geometry(tilt_deg, aspect_deg)
     last_err = None
-    db_options = [None, "PVGIS-ERA5"]
+
+    # First try with default DB (closest to UI behavior). If it fails, try explicit DBs.
+    db_options = [raddatabase] if raddatabase else [None, "PVGIS-SARAH3", "PVGIS-NSRDB", "PVGIS-ERA5"]
 
     for base in PVGIS_BASES:
         for db in db_options:
             params = {
                 "lat": float(lat),
                 "lon": float(lon),
-                "selectrad": 1,
+                "peakpower": float(peakpower_kw),
+                "pvtechchoice": pvtechchoice,
+                "mountingplace": mountingplace,
+                "loss": float(loss_pct),
                 "angle": float(angle_deg),
                 "aspect": float(aspect_deg),
                 "outputformat": "json",
@@ -167,19 +174,29 @@ def _mrcalc_monthly_selected_plane(lat, lon, angle_deg, aspect_deg):
             resp = None
             try:
                 resp = requests.get(
-                    f"{base}/MRcalc",
+                    f"{base}/PVcalc",
                     params=params,
                     timeout=HTTP_TIMEOUT,
                     headers={"User-Agent": USER_AGENT},
                 )
                 resp.raise_for_status()
                 data = resp.json()
-                monthly = _extract_monthly_from_mrcalc_json(data)
-                return monthly, {
+                e_y_kwh = _extract_yearly_pv_energy_kwh(data)
+                inputs = data.get("inputs") or {}
+                meta = {
                     "base": base,
-                    "raddatabase": db or "default",
+                    "raddatabase": inputs.get("meteo_data", {}).get("radiation_db") or db or "default",
+                    "peakpower_kw": float(peakpower_kw),
                     "angle": float(angle_deg),
                     "aspect": float(aspect_deg),
+                    "pvtechchoice": pvtechchoice,
+                    "loss_pct": float(loss_pct),
+                    "mountingplace": mountingplace,
+                }
+                return {
+                    "annual_gen_kwh_year": float(e_y_kwh),
+                    "annual_gen_wh_year": float(e_y_kwh) * 1000.0,
+                    "api_meta": meta,
                 }
             except Exception as e:
                 if resp is not None:
@@ -189,51 +206,22 @@ def _mrcalc_monthly_selected_plane(lat, lon, angle_deg, aspect_deg):
                 continue
 
     raise RuntimeError(
-        f"PVGIS MRcalc failed for all endpoints. "
-        f"lat={lat}, lon={lon}, angle={angle_deg}, aspect={aspect_deg}. "
+        f"PVGIS PVcalc failed for all endpoints. "
+        f"lat={lat}, lon={lon}, peakpower_kw={peakpower_kw}, angle={angle_deg}, aspect={aspect_deg}. "
         f"Last error: {last_err}"
     )
 
 
-def _annual_generation_wh_day(lat, lon, wp, tilt_deg, aspect_deg, pr=DEFAULT_PR):
-    """
-    Returns annual-average electrical generation in Wh/day for a panel.
-    This is intentionally annual only for speed and transparency.
-    """
-    monthly_irr_sum, meta = _mrcalc_monthly_selected_plane(
-        float(lat), float(lon), float(tilt_deg), float(aspect_deg)
+
+def _cached_yearly_generation(lat: float, lon: float, wp: float, tilt_deg: float, aspect_deg: float):
+    return _pvcalc_yearly_kwh(
+        float(lat),
+        float(lon),
+        float(wp) / 1000.0,
+        float(tilt_deg),
+        float(aspect_deg),
     )
 
-    total_wh_year = 0.0
-    total_days = 0
-    monthly_gen_wh_day = []
-
-    for i, h_month in enumerate(monthly_irr_sum, start=1):
-        days = _days_in_month_non_leap(i)
-        h_day = float(h_month) / days
-        gen_wh_day = h_day * float(wp) * float(pr)
-        monthly_gen_wh_day.append(gen_wh_day)
-        total_wh_year += gen_wh_day * days
-        total_days += days
-
-    annual_wh_day = total_wh_year / total_days if total_days else 0.0
-    annual_wh_year = total_wh_year
-
-    return {
-        "wp": float(wp),
-        "tilt": float(tilt_deg),
-        "aspect": float(aspect_deg),
-        "annual_gen_wh_day": float(annual_wh_day),
-        "annual_gen_wh_year": float(annual_wh_year),
-        "monthly_gen_wh_day": [float(x) for x in monthly_gen_wh_day],
-        "monthly_irr_kwh_m2_month": [float(x) for x in monthly_irr_sum],
-        "api_meta": meta,
-    }
-
-
-@lru_cache(maxsize=512)
-def _cached_annual_generation(lat, lon, wp, tilt_deg, aspect_deg):
-    return _annual_generation_wh_day(lat, lon, wp, tilt_deg, aspect_deg)
 
 
 def _device_family(fixture_cfg):
@@ -250,14 +238,16 @@ def _device_family(fixture_cfg):
     return "GENERIC"
 
 
+
 def _build_reference_annual(lat, lon, total_wp):
-    aspect = _south_facing_aspect(lat)
-    return _cached_annual_generation(float(lat), float(lon), float(total_wp), REFERENCE_TILT_DEG, aspect)
+    aspect = _equator_facing_aspect(lat)
+    return _cached_yearly_generation(float(lat), float(lon), float(total_wp), REFERENCE_TILT_DEG, aspect)
+
 
 
 def _geometry_coefficient_av70(lat, lon):
-    east = _cached_annual_generation(float(lat), float(lon), 7.0, PHYSICAL_TILT_DEG, ASPECT_EAST)
-    west = _cached_annual_generation(float(lat), float(lon), 7.0, PHYSICAL_TILT_DEG, ASPECT_WEST)
+    east = _cached_yearly_generation(float(lat), float(lon), 7.0, PHYSICAL_TILT_DEG_AV70, ASPECT_EAST)
+    west = _cached_yearly_generation(float(lat), float(lon), 7.0, PHYSICAL_TILT_DEG_AV70, ASPECT_WEST)
     ref = _build_reference_annual(lat, lon, 14.0)
 
     geom_annual = east["annual_gen_wh_year"] + west["annual_gen_wh_year"]
@@ -265,7 +255,7 @@ def _geometry_coefficient_av70(lat, lon):
     coeff = (geom_annual / ref_annual) if ref_annual > 0 else 0.0
 
     return {
-        "method": "proxy_ew_vs_single_33_annual",
+        "method": "grid_pvcalc_proxy_ew_vs_single_33_annual",
         "coefficient": float(coeff),
         "geometry_annual_gen_wh_year": float(geom_annual),
         "reference_annual_gen_wh_year": float(ref_annual),
@@ -276,53 +266,27 @@ def _geometry_coefficient_av70(lat, lon):
     }
 
 
-def _geometry_coefficient_av426(lat, lon):
-    north = _cached_annual_generation(float(lat), float(lon), 7.0, PHYSICAL_TILT_DEG, ASPECT_NORTH)
-    east = _cached_annual_generation(float(lat), float(lon), 7.0, PHYSICAL_TILT_DEG, ASPECT_EAST)
-    south = _cached_annual_generation(float(lat), float(lon), 7.0, PHYSICAL_TILT_DEG, ASPECT_SOUTH)
-    west = _cached_annual_generation(float(lat), float(lon), 7.0, PHYSICAL_TILT_DEG, ASPECT_WEST)
-    ref = _build_reference_annual(lat, lon, 28.0)
 
-    geom_annual = (
-        north["annual_gen_wh_year"]
-        + east["annual_gen_wh_year"]
-        + south["annual_gen_wh_year"]
-        + west["annual_gen_wh_year"]
-    )
-    ref_annual = ref["annual_gen_wh_year"]
-    coeff = (geom_annual / ref_annual) if ref_annual > 0 else 0.0
-
-    return {
-        "method": "physical_4side_vs_single_33_annual",
-        "coefficient": float(coeff),
-        "geometry_annual_gen_wh_year": float(geom_annual),
-        "reference_annual_gen_wh_year": float(ref_annual),
-        "geometry_inputs": [north, east, south, west],
-        "reference_input": ref,
-        "proxy_total_wp": 28.0,
-        "real_total_wp": 28.0,
-    }
-
-
-def _geometry_coefficient_generic(lat, lon, fixture_cfg):
-    """
-    Fallback for any unexpected Avlite device.
-    Uses the actual configured panels and compares their annual summed output
-    against a single south-facing reference panel @33° with the same nominal Wp.
-    """
+def _geometry_coefficient_from_actual_panels(lat, lon, fixture_cfg, method_name: str):
     total_nominal_wp = float(fixture_cfg["pv_total_wp"])
     per_panel = []
     geom_annual = 0.0
 
     for panel in fixture_cfg["panels"]:
-        info = _cached_annual_generation(
+        info = _cached_yearly_generation(
             float(lat),
             float(lon),
             float(panel["wp"]),
             float(panel["tilt"]),
             float(panel["aspect"]),
         )
-        per_panel.append(info)
+        per_panel.append({
+            **info,
+            "wp": float(panel["wp"]),
+            "tilt": float(panel["tilt"]),
+            "aspect": float(panel["aspect"]),
+            "name": panel.get("name", ""),
+        })
         geom_annual += info["annual_gen_wh_year"]
 
     ref = _build_reference_annual(lat, lon, total_nominal_wp)
@@ -330,7 +294,7 @@ def _geometry_coefficient_generic(lat, lon, fixture_cfg):
     coeff = (geom_annual / ref_annual) if ref_annual > 0 else 0.0
 
     return {
-        "method": "generic_physical_vs_single_33_annual",
+        "method": method_name,
         "coefficient": float(coeff),
         "geometry_annual_gen_wh_year": float(geom_annual),
         "reference_annual_gen_wh_year": float(ref_annual),
@@ -341,13 +305,36 @@ def _geometry_coefficient_generic(lat, lon, fixture_cfg):
     }
 
 
+
+def _geometry_coefficient_av426(lat, lon, fixture_cfg):
+    # Use actual fixture geometry so both 4x5W and 4x7W variants are supported.
+    return _geometry_coefficient_from_actual_panels(
+        lat,
+        lon,
+        fixture_cfg,
+        method_name="grid_pvcalc_physical_4side_vs_single_33_annual",
+    )
+
+
+
+def _geometry_coefficient_generic(lat, lon, fixture_cfg):
+    return _geometry_coefficient_from_actual_panels(
+        lat,
+        lon,
+        fixture_cfg,
+        method_name="grid_pvcalc_generic_physical_vs_single_33_annual",
+    )
+
+
+
 def _resolve_geometry_coefficient(lat, lon, fixture_cfg):
     family = _device_family(fixture_cfg)
     if family == "AV70":
         return family, _geometry_coefficient_av70(lat, lon)
     if family == "AV426":
-        return family, _geometry_coefficient_av426(lat, lon)
+        return family, _geometry_coefficient_av426(lat, lon, fixture_cfg)
     return family, _geometry_coefficient_generic(lat, lon, fixture_cfg)
+
 
 
 def resolve_avlite_equivalent_config(device_id, loc, per_device_config=None):
@@ -360,14 +347,15 @@ def resolve_avlite_equivalent_config(device_id, loc, per_device_config=None):
     total_nominal_wp = float(fixture_cfg["pv_total_wp"])
     annual_coefficient = float(coeff_data["coefficient"])
     effective_wp = max(0.0, total_nominal_wp * annual_coefficient)
-    aspect = _south_facing_aspect(lat)
+    aspect = _equator_facing_aspect(lat)
 
     equivalent_pct = annual_coefficient * 100.0
 
     avlite_meta = {
         "dataset_note": (
-            "Avlite annual geometry coefficient was calculated with PVGIS MRcalc and applied to the real nominal PV power "
-            "before passing the resolved equivalent single panel into the standard off-grid simulator path."
+            "Avlite annual geometry coefficient was calculated with PVGIS Grid-Connected PV yearly electricity output "
+            "and applied to the real nominal PV power before passing the resolved equivalent single panel into the "
+            "standard off-grid simulator path."
         ),
         "device_family": family,
         "geometry_method": coeff_data["method"],
@@ -380,6 +368,8 @@ def resolve_avlite_equivalent_config(device_id, loc, per_device_config=None):
         "reference_input": coeff_data["reference_input"],
         "geometry_annual_gen_wh_year": coeff_data["geometry_annual_gen_wh_year"],
         "reference_annual_gen_wh_year": coeff_data["reference_annual_gen_wh_year"],
+        "grid_pv_loss_pct": GRID_PV_LOSS_PCT,
+        "grid_pv_tech": GRID_PV_TECH,
     }
 
     resolved = {
@@ -417,7 +407,7 @@ def resolve_avlite_equivalent_config(device_id, loc, per_device_config=None):
         "equivalent_panel_aspect": float(aspect),
         "equivalent_pct_of_physical_nominal": equivalent_pct,
 
-        # new annual transparency values
+        # annual transparency values
         "annual_geometry_coefficient": annual_coefficient,
         "annual_geometry_pct": equivalent_pct,
         "effective_pv_used_for_offgrid": effective_wp,

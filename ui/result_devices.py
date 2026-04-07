@@ -9,6 +9,7 @@ from ui.result_helpers import (
     format_achievable_hours,
     format_battery_hours,
     short_device_label,
+    format_panel_azimuths,
 )
 
 
@@ -54,6 +55,66 @@ def device_status_chip(status: str):
     if status == "PASS":
         return '<span style="background:#ecfdf3;color:#067647;border:1px solid #abefc6;padding:4px 10px;border-radius:999px;font-size:0.82rem;font-weight:800;">Meets requirement</span>'
     return '<span style="background:#fef3f2;color:#b42318;border:1px solid #fecdca;padding:4px 10px;border-radius:999px;font-size:0.82rem;font-weight:800;">Below requirement</span>'
+
+
+def _fmt_wp(val):
+    try:
+        return f"{float(val):.1f} Wp"
+    except Exception:
+        return "N/A"
+
+
+def _fmt_pct(val):
+    try:
+        return f"{float(val):.0f}%"
+    except Exception:
+        return "N/A"
+
+
+def _unique_panel_wp_text(panel_list):
+    try:
+        vals = sorted({float(p.get("wp", 0)) for p in (panel_list or [])})
+        vals = [v for v in vals if v > 0]
+        if not vals:
+            return "N/A"
+        if len(vals) == 1:
+            return f"{vals[0]:.1f} W"
+        return " / ".join(f"{v:.1f} W" for v in vals)
+    except Exception:
+        return "N/A"
+
+
+def _unique_panel_tilt_text(panel_list):
+    try:
+        vals = sorted({float(p.get("tilt", 0)) for p in (panel_list or [])})
+        vals = [v for v in vals if v > 0]
+        if not vals:
+            return "N/A"
+        if len(vals) == 1:
+            return f"{vals[0]:.0f}°"
+        return " / ".join(f"{v:.0f}°" for v in vals)
+    except Exception:
+        return "N/A"
+
+
+def _panel_configuration_text(result_row):
+    geometry = result_row.get("physical_panel_geometry")
+    if geometry:
+        return str(geometry)
+
+    count = result_row.get("panel_count")
+    try:
+        count = int(count)
+    except Exception:
+        count = 0
+
+    if count == 4:
+        return "4-sided"
+    if count == 2:
+        return "2-sided"
+    if count > 0:
+        return f"{count}-panel"
+    return "N/A"
 
 
 def render_device_capability_cards(results: dict):
@@ -142,3 +203,74 @@ def render_device_capability_cards(results: dict):
                 """,
                 unsafe_allow_html=True,
             )
+
+            if r.get("system_type") == "avlite_fixture":
+                panel_list = r.get("panel_list", []) or []
+                nominal_wp = r.get("total_nominal_wp")
+                effective_wp = r.get("equivalent_panel_wp", r.get("pv"))
+                effective_pct = r.get("equivalent_pct_of_physical_nominal")
+                equivalent_tilt = r.get("equivalent_panel_tilt", 33)
+                configuration = _panel_configuration_text(r)
+                panels_text = f"{int(r.get('panel_count', len(panel_list) or 0))} × {_unique_panel_wp_text(panel_list)}"
+                nominal_tilt_text = _unique_panel_tilt_text(panel_list)
+                azimuth_text = format_panel_azimuths(panel_list)
+
+                st.markdown("### Solar input used in simulation")
+
+                st.markdown(
+                    f"""
+                    <div style="
+                        border:1px solid #e6eaf0;
+                        border-radius:14px;
+                        background:#ffffff;
+                        padding:14px 16px;
+                        margin-top:8px;
+                        margin-bottom:12px;
+                        box-shadow:0 2px 10px rgba(16,24,40,0.04);
+                    ">
+                        <div style="display:grid;grid-template-columns: minmax(220px, 280px) 1fr;row-gap:8px;column-gap:18px;">
+                            <div style="color:#667085;font-weight:700;">Nominal multi-face PV</div>
+                            <div style="color:#1f2937;">{_fmt_wp(nominal_wp)}</div>
+
+                            <div style="color:#667085;font-weight:700;">Effective PV used in simulation</div>
+                            <div style="color:#1f2937;">{_fmt_wp(effective_wp)}</div>
+
+                            <div style="color:#667085;font-weight:700;">Effective PV as % of nominal</div>
+                            <div style="color:#1f2937;">{_fmt_pct(effective_pct)}</div>
+
+                            <div style="color:#667085;font-weight:700;">Equivalent PV tilt used in simulation</div>
+                            <div style="color:#1f2937;">{float(equivalent_tilt):.0f}°</div>
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+                st.markdown("### Physical panel geometry")
+                st.markdown(
+                    f"""
+                    <div style="
+                        border:1px solid #e6eaf0;
+                        border-radius:14px;
+                        background:#ffffff;
+                        padding:14px 16px;
+                        margin-top:8px;
+                        box-shadow:0 2px 10px rgba(16,24,40,0.04);
+                    ">
+                        <div style="display:grid;grid-template-columns: minmax(220px, 280px) 1fr;row-gap:8px;column-gap:18px;">
+                            <div style="color:#667085;font-weight:700;">Configuration</div>
+                            <div style="color:#1f2937;">{configuration}</div>
+
+                            <div style="color:#667085;font-weight:700;">Panels</div>
+                            <div style="color:#1f2937;">{panels_text}</div>
+
+                            <div style="color:#667085;font-weight:700;">Nominal panel tilt(s)</div>
+                            <div style="color:#1f2937;">{nominal_tilt_text}</div>
+
+                            <div style="color:#667085;font-weight:700;">Nominal panel azimuth</div>
+                            <div style="color:#1f2937;">{azimuth_text}</div>
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )

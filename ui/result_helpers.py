@@ -169,3 +169,74 @@ def overall_interpretation_text(results: dict) -> str:
         )
 
     return "The selected device set could not be fully assessed."
+
+
+def pvgis_to_compass(deg: float) -> float:
+    """
+    Convert PVGIS azimuth convention to standard compass convention:
+    Compass:
+      North = 0° / 360°
+      East  = 90°
+      South = 180°
+      West  = 270°
+    PVGIS:
+      South = 0°
+      West  = 90°
+      North = 180°
+      East  = -90°
+    """
+    return (float(deg) + 180.0) % 360.0
+
+
+def azimuth_to_direction(compass_deg: float) -> str:
+    deg = float(compass_deg) % 360.0
+
+    if abs(deg - 0.0) < 1e-9:
+        return "North"
+    if abs(deg - 90.0) < 1e-9:
+        return "East"
+    if abs(deg - 180.0) < 1e-9:
+        return "South"
+    if abs(deg - 270.0) < 1e-9:
+        return "West"
+
+    if 45.0 <= deg < 135.0:
+        return "East"
+    if 135.0 <= deg < 225.0:
+        return "South"
+    if 225.0 <= deg < 315.0:
+        return "West"
+    return "North"
+
+
+def format_panel_azimuth(deg: float) -> str:
+    compass = pvgis_to_compass(deg)
+    direction = azimuth_to_direction(compass)
+    compass_rounded = int(round(compass)) % 360
+    if compass_rounded == 360:
+        compass_rounded = 0
+    return f"{direction} ({compass_rounded}°)"
+
+
+def format_panel_azimuths(panel_list: list[dict]) -> str:
+    formatted = []
+    seen = set()
+
+    for panel in panel_list or []:
+        try:
+            label = format_panel_azimuth(float(panel.get("aspect", 0)))
+        except Exception:
+            continue
+        if label not in seen:
+            seen.add(label)
+            formatted.append(label)
+
+    def _sort_key(label: str):
+        try:
+            deg = int(label.split("(")[1].split("°")[0])
+            return deg
+        except Exception:
+            return 999
+
+    formatted.sort(key=_sort_key)
+    return ", ".join(formatted) if formatted else "N/A"

@@ -1,23 +1,22 @@
 # core/avlite_fs.py
 # Avlite equivalent-panel translator.
 #
-# Purpose:
-# 1) Calculate real physical 2-panel / 4-panel geometry using PVGIS MRcalc
-# 2) Derive one equivalent single panel per lamp
-# 3) Return a resolved config compatible with the standard simulator path
+# Updated method:
+# 1) Calculate annual PV generation for the relevant physical / proxy geometry using PVGIS MRcalc
+# 2) Compare against a properly oriented single reference panel at 33° with the same total nominal Wp
+# 3) Derive one annual site-specific geometry coefficient
+# 4) Apply this coefficient to the REAL nominal PV of the lamp
+# 5) Return a resolved config compatible with the standard simulator path
 #
-# Method used for equivalent panel:
-# - Calculate monthly equivalent Wp values against a 1 Wp reference panel @ 33°
-# - Keep transparency values:
-#     * annual average equivalent
-#     * worst-month equivalent
-#     * third-worst equivalent
-# - Use third-worst equivalent as the simulation value
-#
-# This keeps the method:
-# - more conservative than annual average
-# - less punitive than absolute worst-month
-# - explainable to others
+# Key assumptions implemented:
+# - Annual ratio only (no worst-month / third-worst logic)
+# - AV70 uses fixed East-West proxy geometry for coefficient calculation:
+#       7W East + 7W West vs single 14W @ 33°
+#   then applies that coefficient to the REAL AV70 nominal PV = 1.4 W
+# - AV426 uses fixed 4-sided geometry:
+#       7W North + 7W East + 7W South + 7W West vs single 28W @ 33°
+#   then applies that coefficient to the REAL AV426 nominal PV = 28 W
+# - Keep fast execution via MRcalc request caching
 
 import calendar
 from functools import lru_cache
@@ -31,9 +30,15 @@ PVGIS_BASES = [
 ]
 
 HTTP_TIMEOUT = 45
-USER_AGENT = "SALA-Avlite-EQ/1.1"
+USER_AGENT = "SALA-Avlite-EQ/1.2"
 DEFAULT_PR = 0.86
-EQUIV_TILT_DEG = 33.0
+REFERENCE_TILT_DEG = 33.0
+PHYSICAL_TILT_DEG = 50.0
+
+ASPECT_NORTH = 180.0
+ASPECT_EAST = -90.0
+ASPECT_SOUTH = 0.0
+ASPECT_WEST = 90.0
 
 
 def _days_in_month_non_leap(month_index_1_based: int) -> int:
@@ -190,110 +195,159 @@ def _mrcalc_monthly_selected_plane(lat, lon, angle_deg, aspect_deg):
     )
 
 
-def _panel_monthly_generation_wh_day(lat, lon, panel, pr=DEFAULT_PR):
+def _annual_generation_wh_day(lat, lon, wp, tilt_deg, aspect_deg, pr=DEFAULT_PR):
     """
-    Convert MRcalc monthly irradiation into average daily electrical generation.
+    Returns annual-average electrical generation in Wh/day for a panel.
+    This is intentionally annual only for speed and transparency.
     """
     monthly_irr_sum, meta = _mrcalc_monthly_selected_plane(
-        float(lat), float(lon), float(panel["tilt"]), float(panel["aspect"])
+        float(lat), float(lon), float(tilt_deg), float(aspect_deg)
     )
 
-    wp = float(panel["wp"])
-    monthly_irr_day = []
+    total_wh_year = 0.0
+    total_days = 0
     monthly_gen_wh_day = []
 
     for i, h_month in enumerate(monthly_irr_sum, start=1):
         days = _days_in_month_non_leap(i)
         h_day = float(h_month) / days
-        monthly_irr_day.append(h_day)
-        monthly_gen_wh_day.append(h_day * wp * float(pr))
+        gen_wh_day = h_day * float(wp) * float(pr)
+        monthly_gen_wh_day.append(gen_wh_day)
+        total_wh_year += gen_wh_day * days
+        total_days += days
 
-    return monthly_gen_wh_day, {
-        "name": panel["name"],
-        "wp": wp,
-        "tilt": float(panel["tilt"]),
-        "aspect": float(panel["aspect"]),
-        "monthly_irr_kwh_m2_month": monthly_irr_sum,
-        "monthly_irr_kwh_m2_day": monthly_irr_day,
-        "monthly_gen_wh_day": monthly_gen_wh_day,
-        "api_meta": meta,
-    }
-
-
-def _physical_generation_wh_day(lat, lon, fixture_cfg):
-    per_panel = []
-    total = [0.0] * 12
-
-    for panel in fixture_cfg["panels"]:
-        monthly_gen, meta = _panel_monthly_generation_wh_day(lat, lon, panel)
-        per_panel.append(meta)
-        for i in range(12):
-            total[i] += float(monthly_gen[i])
-
-    return total, per_panel
-
-
-def _derive_equivalent_single_plane(lat, lon, total_monthly_wh_day):
-    """
-    Build equivalent single-panel PV from real Avlite multi-face geometry.
-
-    Method:
-    1. Compute monthly equivalent Wp values against 1 Wp reference panel @ 33°
-    2. Keep transparency values:
-       - annual_average_wp
-       - worst_month_wp
-       - third_worst_wp
-    3. Use third_worst_wp as the simulation value
-       (moderately conservative approach)
-    """
-    aspect = _south_facing_aspect(lat)
-
-    ref_monthly_irr_sum, meta = _mrcalc_monthly_selected_plane(
-        float(lat),
-        float(lon),
-        float(EQUIV_TILT_DEG),
-        float(aspect),
-    )
-
-    # Reference daily output for 1 Wp panel @ 33°
-    ref_daily_basis = []
-    for i, h_month in enumerate(ref_monthly_irr_sum, start=1):
-        days = _days_in_month_non_leap(i)
-        h_day = float(h_month) / days
-        ref_daily_basis.append(h_day * DEFAULT_PR)  # Wh/day per 1 Wp
-
-    # Monthly equivalent panel values
-    monthly_equivalent_wp = []
-    for i in range(12):
-        basis = ref_daily_basis[i]
-        if basis <= 1e-9:
-            monthly_equivalent_wp.append(0.0)
-        else:
-            monthly_equivalent_wp.append(float(total_monthly_wh_day[i]) / basis)
-
-    annual_average_wp = sum(monthly_equivalent_wp) / 12.0
-
-    sorted_wp = sorted(monthly_equivalent_wp)
-    worst_month_wp = sorted_wp[0]
-    third_worst_wp = sorted_wp[2] if len(sorted_wp) >= 3 else sorted_wp[0]
-
-    equivalent_wp_used = max(0.0, third_worst_wp)
+    annual_wh_day = total_wh_year / total_days if total_days else 0.0
+    annual_wh_year = total_wh_year
 
     return {
-        "equivalent_wp": float(equivalent_wp_used),
-        "equivalent_tilt_deg": float(EQUIV_TILT_DEG),
-        "equivalent_aspect_deg": float(aspect),
-
-        # transparency values
-        "annual_average_wp": float(annual_average_wp),
-        "worst_month_wp": float(worst_month_wp),
-        "third_worst_wp": float(third_worst_wp),
-        "monthly_equivalent_wp": [float(x) for x in monthly_equivalent_wp],
-
-        "reference_monthly_irr_kwh_m2_month": [float(x) for x in ref_monthly_irr_sum],
-        "reference_daily_basis_wh_day_per_wp": [float(x) for x in ref_daily_basis],
+        "wp": float(wp),
+        "tilt": float(tilt_deg),
+        "aspect": float(aspect_deg),
+        "annual_gen_wh_day": float(annual_wh_day),
+        "annual_gen_wh_year": float(annual_wh_year),
+        "monthly_gen_wh_day": [float(x) for x in monthly_gen_wh_day],
+        "monthly_irr_kwh_m2_month": [float(x) for x in monthly_irr_sum],
         "api_meta": meta,
     }
+
+
+@lru_cache(maxsize=512)
+def _cached_annual_generation(lat, lon, wp, tilt_deg, aspect_deg):
+    return _annual_generation_wh_day(lat, lon, wp, tilt_deg, aspect_deg)
+
+
+def _device_family(fixture_cfg):
+    text = " ".join([
+        str(fixture_cfg.get("device_code", "")),
+        str(fixture_cfg.get("device_name", "")),
+        str(fixture_cfg.get("fixture_key", "")),
+        str(fixture_cfg.get("fixture_name", "")),
+    ]).lower()
+    if "av70" in text:
+        return "AV70"
+    if "av426" in text:
+        return "AV426"
+    return "GENERIC"
+
+
+def _build_reference_annual(lat, lon, total_wp):
+    aspect = _south_facing_aspect(lat)
+    return _cached_annual_generation(float(lat), float(lon), float(total_wp), REFERENCE_TILT_DEG, aspect)
+
+
+def _geometry_coefficient_av70(lat, lon):
+    east = _cached_annual_generation(float(lat), float(lon), 7.0, PHYSICAL_TILT_DEG, ASPECT_EAST)
+    west = _cached_annual_generation(float(lat), float(lon), 7.0, PHYSICAL_TILT_DEG, ASPECT_WEST)
+    ref = _build_reference_annual(lat, lon, 14.0)
+
+    geom_annual = east["annual_gen_wh_year"] + west["annual_gen_wh_year"]
+    ref_annual = ref["annual_gen_wh_year"]
+    coeff = (geom_annual / ref_annual) if ref_annual > 0 else 0.0
+
+    return {
+        "method": "proxy_ew_vs_single_33_annual",
+        "coefficient": float(coeff),
+        "geometry_annual_gen_wh_year": float(geom_annual),
+        "reference_annual_gen_wh_year": float(ref_annual),
+        "geometry_inputs": [east, west],
+        "reference_input": ref,
+        "proxy_total_wp": 14.0,
+        "real_total_wp": 1.4,
+    }
+
+
+def _geometry_coefficient_av426(lat, lon):
+    north = _cached_annual_generation(float(lat), float(lon), 7.0, PHYSICAL_TILT_DEG, ASPECT_NORTH)
+    east = _cached_annual_generation(float(lat), float(lon), 7.0, PHYSICAL_TILT_DEG, ASPECT_EAST)
+    south = _cached_annual_generation(float(lat), float(lon), 7.0, PHYSICAL_TILT_DEG, ASPECT_SOUTH)
+    west = _cached_annual_generation(float(lat), float(lon), 7.0, PHYSICAL_TILT_DEG, ASPECT_WEST)
+    ref = _build_reference_annual(lat, lon, 28.0)
+
+    geom_annual = (
+        north["annual_gen_wh_year"]
+        + east["annual_gen_wh_year"]
+        + south["annual_gen_wh_year"]
+        + west["annual_gen_wh_year"]
+    )
+    ref_annual = ref["annual_gen_wh_year"]
+    coeff = (geom_annual / ref_annual) if ref_annual > 0 else 0.0
+
+    return {
+        "method": "physical_4side_vs_single_33_annual",
+        "coefficient": float(coeff),
+        "geometry_annual_gen_wh_year": float(geom_annual),
+        "reference_annual_gen_wh_year": float(ref_annual),
+        "geometry_inputs": [north, east, south, west],
+        "reference_input": ref,
+        "proxy_total_wp": 28.0,
+        "real_total_wp": 28.0,
+    }
+
+
+def _geometry_coefficient_generic(lat, lon, fixture_cfg):
+    """
+    Fallback for any unexpected Avlite device.
+    Uses the actual configured panels and compares their annual summed output
+    against a single south-facing reference panel @33° with the same nominal Wp.
+    """
+    total_nominal_wp = float(fixture_cfg["pv_total_wp"])
+    per_panel = []
+    geom_annual = 0.0
+
+    for panel in fixture_cfg["panels"]:
+        info = _cached_annual_generation(
+            float(lat),
+            float(lon),
+            float(panel["wp"]),
+            float(panel["tilt"]),
+            float(panel["aspect"]),
+        )
+        per_panel.append(info)
+        geom_annual += info["annual_gen_wh_year"]
+
+    ref = _build_reference_annual(lat, lon, total_nominal_wp)
+    ref_annual = ref["annual_gen_wh_year"]
+    coeff = (geom_annual / ref_annual) if ref_annual > 0 else 0.0
+
+    return {
+        "method": "generic_physical_vs_single_33_annual",
+        "coefficient": float(coeff),
+        "geometry_annual_gen_wh_year": float(geom_annual),
+        "reference_annual_gen_wh_year": float(ref_annual),
+        "geometry_inputs": per_panel,
+        "reference_input": ref,
+        "proxy_total_wp": total_nominal_wp,
+        "real_total_wp": total_nominal_wp,
+    }
+
+
+def _resolve_geometry_coefficient(lat, lon, fixture_cfg):
+    family = _device_family(fixture_cfg)
+    if family == "AV70":
+        return family, _geometry_coefficient_av70(lat, lon)
+    if family == "AV426":
+        return family, _geometry_coefficient_av426(lat, lon)
+    return family, _geometry_coefficient_generic(lat, lon, fixture_cfg)
 
 
 def resolve_avlite_equivalent_config(device_id, loc, per_device_config=None):
@@ -301,30 +355,31 @@ def resolve_avlite_equivalent_config(device_id, loc, per_device_config=None):
     lat = float(loc["lat"])
     lon = float(loc["lon"])
 
-    total_monthly_wh_day, per_panel_monthly = _physical_generation_wh_day(lat, lon, fixture_cfg)
-    equiv = _derive_equivalent_single_plane(lat, lon, total_monthly_wh_day)
+    family, coeff_data = _resolve_geometry_coefficient(lat, lon, fixture_cfg)
 
     total_nominal_wp = float(fixture_cfg["pv_total_wp"])
-    equivalent_wp = float(equiv["equivalent_wp"])
-    annual_average_wp = float(equiv["annual_average_wp"])
-    worst_month_wp = float(equiv["worst_month_wp"])
-    third_worst_wp = float(equiv["third_worst_wp"])
+    annual_coefficient = float(coeff_data["coefficient"])
+    effective_wp = max(0.0, total_nominal_wp * annual_coefficient)
+    aspect = _south_facing_aspect(lat)
 
-    equivalent_pct = (equivalent_wp / total_nominal_wp * 100.0) if total_nominal_wp > 0 else 0.0
-    annual_average_pct = (annual_average_wp / total_nominal_wp * 100.0) if total_nominal_wp > 0 else 0.0
-    worst_month_pct = (worst_month_wp / total_nominal_wp * 100.0) if total_nominal_wp > 0 else 0.0
-    third_worst_pct = (third_worst_wp / total_nominal_wp * 100.0) if total_nominal_wp > 0 else 0.0
+    equivalent_pct = annual_coefficient * 100.0
 
     avlite_meta = {
         "dataset_note": (
-            "Avlite physical panel geometry was calculated with PVGIS MRcalc. "
-            "A single equivalent panel was then derived and sent through the same off-grid simulator path as S4GA."
+            "Avlite annual geometry coefficient was calculated with PVGIS MRcalc and applied to the real nominal PV power "
+            "before passing the resolved equivalent single panel into the standard off-grid simulator path."
         ),
+        "device_family": family,
+        "geometry_method": coeff_data["method"],
         "physical_panel_geometry": fixture_cfg["panel_geometry"],
-        "physical_panels": per_panel_monthly,
         "panel_count": fixture_cfg["panel_count"],
         "total_nominal_wp": total_nominal_wp,
-        "equivalent_single_plane": equiv,
+        "annual_geometry_coefficient": annual_coefficient,
+        "effective_pv_used_for_offgrid": effective_wp,
+        "geometry_inputs": coeff_data["geometry_inputs"],
+        "reference_input": coeff_data["reference_input"],
+        "geometry_annual_gen_wh_year": coeff_data["geometry_annual_gen_wh_year"],
+        "reference_annual_gen_wh_year": coeff_data["reference_annual_gen_wh_year"],
     }
 
     resolved = {
@@ -336,14 +391,14 @@ def resolve_avlite_equivalent_config(device_id, loc, per_device_config=None):
         "engine_key": fixture_cfg["fixture_key"],
         "engine_name": "BUILT-IN",
         "power": fixture_cfg["power"],
-        "pv": equivalent_wp,  # value actually used in standard off-grid simulation path
+        "pv": effective_wp,
         "batt_std": fixture_cfg["batt_nominal_wh"],
         "batt": fixture_cfg["batt_nominal_wh"],
         "battery_mode": "Built-in",
         "fixed": True,
-        "tilt_options": [float(EQUIV_TILT_DEG)],
-        "tilt": float(EQUIV_TILT_DEG),
-        "equivalent_aspect": float(equiv["equivalent_aspect_deg"]),
+        "tilt_options": [float(REFERENCE_TILT_DEG)],
+        "tilt": float(REFERENCE_TILT_DEG),
+        "equivalent_aspect": float(aspect),
         "avlite_meta": avlite_meta,
 
         # explicit UI/report transparency fields
@@ -356,20 +411,19 @@ def resolve_avlite_equivalent_config(device_id, loc, per_device_config=None):
         } for p in fixture_cfg["panels"]],
         "total_nominal_wp": total_nominal_wp,
 
-        # simulation value
-        "equivalent_panel_wp": equivalent_wp,
-        "equivalent_panel_tilt": float(EQUIV_TILT_DEG),
-        "equivalent_panel_aspect": float(equiv["equivalent_aspect_deg"]),
+        # simulation value actually used
+        "equivalent_panel_wp": effective_wp,
+        "equivalent_panel_tilt": float(REFERENCE_TILT_DEG),
+        "equivalent_panel_aspect": float(aspect),
         "equivalent_pct_of_physical_nominal": equivalent_pct,
 
-        # transparency values
-        "annual_average_equivalent_wp": annual_average_wp,
-        "annual_average_equivalent_pct": annual_average_pct,
-        "worst_month_equivalent_wp": worst_month_wp,
-        "worst_month_equivalent_pct": worst_month_pct,
-        "third_worst_equivalent_wp": third_worst_wp,
-        "third_worst_equivalent_pct": third_worst_pct,
-        "monthly_equivalent_wp": equiv["monthly_equivalent_wp"],
+        # new annual transparency values
+        "annual_geometry_coefficient": annual_coefficient,
+        "annual_geometry_pct": equivalent_pct,
+        "effective_pv_used_for_offgrid": effective_wp,
+        "geometry_method": coeff_data["method"],
+        "geometry_annual_gen_wh_year": float(coeff_data["geometry_annual_gen_wh_year"]),
+        "reference_annual_gen_wh_year": float(coeff_data["reference_annual_gen_wh_year"]),
 
         "physical_panel_geometry": fixture_cfg["panel_geometry"],
         "certified_intensity": fixture_cfg["certified_intensity"],

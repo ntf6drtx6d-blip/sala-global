@@ -1,7 +1,12 @@
+
 # ui/result_helpers.py
 
 import math
 import streamlit as st
+
+
+MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+          "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 
 def format_required_hours(hours: float) -> str:
@@ -22,6 +27,20 @@ def format_battery_hours(hours: float) -> str:
     if minutes == 0:
         return f"{whole}h"
     return f"{whole}h {minutes:02d}m"
+
+
+def format_energy_wh(val: float) -> str:
+    try:
+        return f"{float(val):.1f} Wh"
+    except Exception:
+        return "N/A"
+
+
+def format_percent(val: float, digits: int = 0) -> str:
+    try:
+        return f"{float(val):.{digits}f}%"
+    except Exception:
+        return "N/A"
 
 
 def operating_mode_name() -> str:
@@ -172,19 +191,6 @@ def overall_interpretation_text(results: dict) -> str:
 
 
 def pvgis_to_compass(deg: float) -> float:
-    """
-    Convert PVGIS azimuth convention to standard compass convention:
-    Compass:
-      North = 0° / 360°
-      East  = 90°
-      South = 180°
-      West  = 270°
-    PVGIS:
-      South = 0°
-      West  = 90°
-      North = 180°
-      East  = -90°
-    """
     return (float(deg) + 180.0) % 360.0
 
 
@@ -218,7 +224,7 @@ def format_panel_azimuth(deg: float) -> str:
     return f"{direction} ({compass_rounded}°)"
 
 
-def format_panel_azimuths(panel_list: list[dict]) -> str:
+def format_panel_azimuths(panel_list):
     formatted = []
     seen = set()
 

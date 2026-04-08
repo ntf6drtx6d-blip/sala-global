@@ -1,3 +1,4 @@
+
 # core/simulate.py
 # unified simulator: standard S4GA path + Avlite equivalent-panel path using same engine
 
@@ -136,6 +137,78 @@ def resolve_device_config(device_id, per_device_config=None):
         "tilt": None,
     }
     return cfg
+
+
+def _infer_battery_basis(resolved):
+    code = str(resolved.get("device_code", "")).upper()
+    system_type = resolved.get("system_type")
+
+    if system_type == "avlite_fixture":
+        raw_type = str(resolved.get("battery_type", "Lead Acid")).upper()
+        if "NIMH" in raw_type:
+            return "NiMH", 20.0
+        if "LIFEPO4" in raw_type or "LFP" in raw_type:
+            return "LiFePO4", 20.0
+        return "Lead Acid (SLA)" if "SLA" in raw_type else "Lead Acid", 30.0
+
+    if "SP-301" in code:
+        return "LiFePO4", 20.0
+
+    return "Lead Acid", 30.0
+
+
+def _monthly_generation_used_in_simulation(lat, lon, resolved_cfg, tilt, azim):
+    try:
+        return pvcalc_monthly_wh_per_day(
+            lat=lat,
+            lon=lon,
+            pv_wp=float(resolved_cfg["pv"]),
+            tilt_deg=float(tilt),
+            aspect_deg=float(azim),
+        )
+    except Exception:
+        return [0.0] * 12
+
+
+def _battery_behavior_metrics(monthly_gen_wh_day, batt_wh, cutoff_pct, power_w, required_hrs):
+    usable_battery_wh = max(0.001, float(batt_wh) * (1.0 - float(cutoff_pct) / 100.0))
+    discharge_pct_per_hr = float(power_w) / usable_battery_wh * 100.0
+
+    recharge_pct_per_hr_by_month = []
+    monthly_soc_avg = []
+    monthly_soc_end = []
+    monthly_status = []
+
+    soc = 100.0
+    cutoff_floor = float(cutoff_pct)
+
+    for i, gen_wh_day in enumerate(monthly_gen_wh_day, start=1):
+        recharge_pct_per_hr = float(gen_wh_day) / usable_battery_wh / 24.0 * 100.0
+        recharge_pct_per_hr_by_month.append(recharge_pct_per_hr)
+
+        net_pct_per_day = (recharge_pct_per_hr * 24.0) - (discharge_pct_per_hr * float(required_hrs))
+        soc_end = soc + net_pct_per_day * _days_in_month_non_leap(i)
+        soc_end = min(100.0, soc_end)
+        soc_end = max(cutoff_floor, soc_end)
+
+        monthly_soc_avg.append((soc + soc_end) / 2.0)
+        monthly_soc_end.append(soc_end)
+        monthly_status.append("green" if recharge_pct_per_hr >= discharge_pct_per_hr else "red")
+        soc = soc_end
+
+    avg_recharge_pct_per_hr = sum(
+        recharge_pct_per_hr_by_month[i] * _days_in_month_non_leap(i + 1) for i in range(12)
+    ) / sum(_days_in_month_non_leap(i + 1) for i in range(12))
+
+    return {
+        "usable_battery_wh": usable_battery_wh,
+        "discharge_pct_per_hr": discharge_pct_per_hr,
+        "recharge_pct_per_hr_by_month": recharge_pct_per_hr_by_month,
+        "avg_recharge_pct_per_hr": avg_recharge_pct_per_hr,
+        "monthly_soc_avg": monthly_soc_avg,
+        "monthly_soc_end": monthly_soc_end,
+        "monthly_status": monthly_status,
+    }
 
 
 def build_pvgis_meta(lat, lon, resolved_cfg, tilt, azim):
@@ -367,6 +440,21 @@ def simulate_for_devices(
         if source_type == "avlite":
             pvgis_meta.update(resolved.get("avlite_meta", {}))
 
+        battery_type, cutoff_pct = _infer_battery_basis(resolved)
+        monthly_generation_wh_day = _monthly_generation_used_in_simulation(lat, lon, resolved, tilt, azim)
+        behavior = _battery_behavior_metrics(
+            monthly_gen_wh_day=monthly_generation_wh_day,
+            batt_wh=resolved["batt"],
+            cutoff_pct=cutoff_pct,
+            power_w=resolved["power"],
+            required_hrs=required_hrs,
+        )
+        effective_pv_used = float(resolved.get("equivalent_panel_wp", resolved["pv"]))
+        faa_3sunhours_energy_wh = effective_pv_used * 3.0
+        faa_8h_required_wh = max(float(resolved["power"]), 0.0) * 8.0
+        faa_3sunhours_compliant = faa_3sunhours_energy_wh >= faa_8h_required_wh
+        faa_8h_compliant = behavior["usable_battery_wh"] >= faa_8h_required_wh
+
         result_key = resolved['device_name']
         row = {
             "device_id": did,
@@ -392,6 +480,23 @@ def simulate_for_devices(
             "empty_battery_days_by_month": empty_battery_days_by_month,
             "overall_empty_battery_pct": overall_empty_battery_pct,
             "pvgis_meta": pvgis_meta,
+
+            "battery_type": battery_type,
+            "cutoff_pct": cutoff_pct,
+            "usable_battery_wh": behavior["usable_battery_wh"],
+            "monthly_generation_wh_day": monthly_generation_wh_day,
+            "discharge_pct_per_hr": behavior["discharge_pct_per_hr"],
+            "recharge_pct_per_hr_by_month": behavior["recharge_pct_per_hr_by_month"],
+            "avg_recharge_pct_per_hr": behavior["avg_recharge_pct_per_hr"],
+            "soc_monthly_avg": behavior["monthly_soc_avg"],
+            "soc_monthly_end": behavior["monthly_soc_end"],
+            "charge_discharge_status_by_month": behavior["monthly_status"],
+
+            "faa_reference": "FAA AC 150/5345-50B §3.4.2.2",
+            "faa_3sunhours_energy_wh": faa_3sunhours_energy_wh,
+            "faa_8h_required_wh": faa_8h_required_wh,
+            "faa_3sunhours_compliant": faa_3sunhours_compliant,
+            "faa_8h_compliant": faa_8h_compliant,
         }
         for k in ["panel_count", "panel_list", "total_nominal_wp", "equivalent_panel_wp",
                   "equivalent_panel_tilt", "equivalent_panel_aspect",

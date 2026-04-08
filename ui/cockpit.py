@@ -1,7 +1,9 @@
+
 import os
 import time
 import tempfile
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 
@@ -23,7 +25,7 @@ def format_seconds(seconds):
 
 
 def now_ts():
-    return datetime.now().strftime("%H:%M:%S")
+    return datetime.now(ZoneInfo("Europe/Madrid")).strftime("%H:%M:%S")
 
 
 def short_device_label_from_id(device_id):
@@ -183,33 +185,36 @@ def _run_simulation(progress_callback=None):
     add_log("Preparing annual feasibility conclusion.")
 
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-        push_progress(97, "Generating results")
-        add_log("Generating consultant-style PDF report.")
+        tmp_path = tmp.name
 
-        make_pdf(
-            tmp.name,
-            loc,
-            st.session_state.required_hours,
-            results,
-            overall,
-            "",
-            0,
-            "",
-            st.session_state.airport_label,
-            datetime.now().strftime("%Y-%m-%d %H:%M"),
-            st.session_state.get("auth_full_name") or st.session_state.get("auth_email") or "SALA user",
-        )
-        with open(tmp.name, "rb") as f:
-            st.session_state.pdf_bytes = f.read()
+    make_pdf(
+        results=results,
+        overall=overall,
+        airport_label=st.session_state.airport_label,
+        created_at=datetime.now(ZoneInfo("Europe/Madrid")).strftime("%Y-%m-%d %H:%M"),
+        author_name=st.session_state.get("auth_full_name") or st.session_state.get("auth_email", ""),
+        required_hours=st.session_state.required_hours,
+        output_path=tmp_path,
+        lat=st.session_state.lat,
+        lon=st.session_state.lon,
+        selected_ids=st.session_state.get("selected_simulation_keys") or st.session_state.selected_ids,
+    )
+
+    with open(tmp_path, "rb") as f:
+        pdf_bytes = f.read()
+
+    try:
+        os.unlink(tmp_path)
+    except Exception:
+        pass
+
+    push_progress(100, "Generating results")
+    add_log("Simulation complete.")
+    add_log(f"Total elapsed time: {format_seconds(elapsed)}.")
 
     st.session_state.results = results
     st.session_state.overall = overall
+    st.session_state.pdf_bytes = pdf_bytes
+    st.session_state.pdf_name = "sala_standardized_feasibility_study.pdf"
     st.session_state.elapsed = elapsed
     st.session_state.running = False
-    st.session_state.run_progress = 100
-    st.session_state.run_stage = "Completed"
-
-    if progress_callback:
-        progress_callback(100, "Completed")
-
-    st.rerun()

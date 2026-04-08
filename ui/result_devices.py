@@ -3,7 +3,7 @@
 
 import textwrap
 import streamlit as st
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 
 from ui.result_helpers import (
     MONTHS,
@@ -142,44 +142,96 @@ def _render_key_value_table(rows, title=None):
 
 
 def _render_charge_discharge_chart(result_row):
-    soc = result_row.get("soc_monthly_avg") or []
-    recharge = result_row.get("recharge_pct_per_hr_by_month") or []
-    discharge = float(result_row.get("discharge_pct_per_hr", 0.0))
-    status = result_row.get("charge_discharge_status_by_month") or []
+    weekly_labels = result_row.get("weekly_labels") or []
+    weekly_soc = result_row.get("weekly_soc") or []
+    weekly_recharge = result_row.get("weekly_recharge_pct_per_hr") or []
+    weekly_discharge = result_row.get("weekly_discharge_pct_per_hr") or []
+    weekly_status = result_row.get("charge_discharge_status_by_week") or []
+    cutoff_pct = float(result_row.get("cutoff_pct", 0.0))
 
-    if len(soc) != 12 or len(recharge) != 12:
+    if not weekly_labels or not weekly_soc or not weekly_recharge or not weekly_discharge:
         st.info("Battery charge/discharge behavior is not available for this device.")
         return
 
-    fig, ax1 = plt.subplots(figsize=(10, 4.5))
-    y_max = 100
+    fig = go.Figure()
 
-    for i, state in enumerate(status):
-        color = "#ecfdf3" if state == "green" else "#fef3f2"
-        ax1.axvspan(i - 0.5, i + 0.5, color=color, alpha=0.7, zorder=0)
+    # background weekly deficit/recovery shading
+    for i, state in enumerate(weekly_status):
+        x0 = i - 0.5
+        x1 = i + 0.5
+        fill = 'rgba(16,185,129,0.10)' if state == 'green' else 'rgba(239,68,68,0.10)'
+        fig.add_vrect(x0=x0, x1=x1, fillcolor=fill, line_width=0, layer='below')
 
-    ax1.plot(MONTHS, soc, marker="o", linewidth=2)
-    ax1.set_ylabel("Average battery SoC (%)")
-    ax1.set_ylim(0, y_max)
-    ax1.set_xlabel("Month")
-    ax1.grid(True, axis="y", alpha=0.25)
+    fig.add_trace(go.Scatter(
+        x=list(range(len(weekly_labels))),
+        y=weekly_soc,
+        mode='lines+markers',
+        name='Estimated battery SoC',
+        yaxis='y1',
+        hovertemplate='Week: %{text}<br>Battery SoC: %{y:.1f}%<extra></extra>',
+        text=weekly_labels,
+    ))
 
-    ax2 = ax1.twinx()
-    ax2.plot(MONTHS, recharge, linestyle="--", marker="o", linewidth=1.8)
-    ax2.plot(MONTHS, [discharge] * 12, linestyle=":", linewidth=1.8)
-    ax2.set_ylabel("Charge / discharge speed (%/hr)")
-    top = max(max(recharge) if recharge else 0, discharge) * 1.35
-    ax2.set_ylim(0, max(1, top))
+    fig.add_trace(go.Scatter(
+        x=list(range(len(weekly_labels))),
+        y=weekly_recharge,
+        mode='lines',
+        name='Recharge speed',
+        yaxis='y2',
+        hovertemplate='Week: %{text}<br>Recharge: %{y:.2f}%/hr<extra></extra>',
+        text=weekly_labels,
+    ))
 
-    fig.tight_layout()
-    st.pyplot(fig, use_container_width=True)
+    fig.add_trace(go.Scatter(
+        x=list(range(len(weekly_labels))),
+        y=weekly_discharge,
+        mode='lines',
+        name='Discharge speed',
+        yaxis='y2',
+        hovertemplate='Week: %{text}<br>Discharge: %{y:.2f}%/hr<extra></extra>',
+        text=weekly_labels,
+        line=dict(dash='dot'),
+    ))
 
-    st.caption(
-        "Green months indicate that solar recharge is sufficient to recover or maintain battery charge. "
-        "Red months indicate a battery deficit regime: the light consumes stored battery energy faster than it is replenished. "
-        "If this deficit persists and reserve is insufficient, the unit may reach cut-off and blackout risk increases."
+    fig.add_hline(y=cutoff_pct, line_dash='dash', line_color='red', yref='y1', annotation_text=f'Cut-off {cutoff_pct:.0f}%')
+
+    tick_positions = [i for i,lbl in enumerate(weekly_labels) if lbl.endswith('-W1')]
+    tick_text = [weekly_labels[i].split('-')[0] for i in tick_positions]
+
+    y2max = max(max(weekly_recharge), max(weekly_discharge)) if weekly_recharge and weekly_discharge else 1.0
+    fig.update_layout(
+        height=380,
+        margin=dict(l=10, r=10, t=10, b=10),
+        xaxis=dict(
+            title='Week',
+            tickmode='array',
+            tickvals=tick_positions,
+            ticktext=tick_text,
+        ),
+        yaxis=dict(title='Estimated battery SoC (%)', range=[0, 100]),
+        yaxis2=dict(title='Charge / discharge speed (%/hr)', overlaying='y', side='right', range=[0, max(1.0, y2max*1.35)]),
+        legend=dict(orientation='h'),
+        hovermode='x unified',
     )
 
+    st.plotly_chart(fig, use_container_width=True)
+
+    lowest = result_row.get('lowest_soc_pct')
+    weeks_in_deficit = result_row.get('weeks_in_deficit')
+    if lowest is not None or weeks_in_deficit is not None:
+        c1, c2 = st.columns(2)
+        with c1:
+            if lowest is not None:
+                st.caption(f"Lowest estimated battery level: {float(lowest):.1f}%")
+        with c2:
+            if weeks_in_deficit is not None:
+                st.caption(f"Weeks in battery-deficit regime: {int(weeks_in_deficit)}")
+
+    st.caption(
+        "Green weeks indicate that solar recharge is sufficient to recover or maintain battery charge. "
+        "Red weeks indicate a battery deficit regime: the light consumes stored battery energy faster than it is replenished. "
+        "If this deficit persists and reserve is insufficient, the unit may reach cut-off and blackout risk increases."
+    )
 
 def render_device_capability_cards(results: dict):
     st.markdown("## Device-level performance breakdown")
@@ -310,7 +362,7 @@ def render_device_capability_cards(results: dict):
                 title="Battery basis used in simulation",
             )
 
-            st.markdown("### Battery charge vs discharge behavior")
+            st.markdown("### Weekly battery charge vs discharge behavior")
             _render_charge_discharge_chart(r)
 
             _render_key_value_table(

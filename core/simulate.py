@@ -179,6 +179,12 @@ def _battery_behavior_metrics(monthly_gen_wh_day, batt_wh, cutoff_pct, power_w, 
     monthly_soc_end = []
     monthly_status = []
 
+    weekly_labels = []
+    weekly_soc = []
+    weekly_recharge_pct_per_hr = []
+    weekly_discharge_pct_per_hr = []
+    weekly_status = []
+
     soc = 100.0
     cutoff_floor = float(cutoff_pct)
 
@@ -187,29 +193,63 @@ def _battery_behavior_metrics(monthly_gen_wh_day, batt_wh, cutoff_pct, power_w, 
         recharge_pct_per_hr_by_month.append(recharge_pct_per_hr)
 
         net_pct_per_day = (recharge_pct_per_hr * 24.0) - (discharge_pct_per_hr * float(required_hrs))
-        soc_end = soc + net_pct_per_day * _days_in_month_non_leap(i)
+        dim = _days_in_month_non_leap(i)
+        soc_start = soc
+        soc_end = soc + net_pct_per_day * dim
         soc_end = min(100.0, soc_end)
         soc_end = max(cutoff_floor, soc_end)
 
-        monthly_soc_avg.append((soc + soc_end) / 2.0)
+        monthly_soc_avg.append((soc_start + soc_end) / 2.0)
         monthly_soc_end.append(soc_end)
-        monthly_status.append("green" if recharge_pct_per_hr >= discharge_pct_per_hr else "red")
+        month_state = 'green' if recharge_pct_per_hr >= discharge_pct_per_hr else 'red'
+        monthly_status.append(month_state)
+
+        # derive week-level trajectory from month-level balance using real week buckets from day counts
+        days_remaining = dim
+        month_start_soc = soc_start
+        week_no = 1
+        while days_remaining > 0:
+            week_days = min(7, days_remaining)
+            week_end_soc = month_start_soc + net_pct_per_day * week_days
+            week_end_soc = min(100.0, week_end_soc)
+            week_end_soc = max(cutoff_floor, week_end_soc)
+            week_avg_soc = (month_start_soc + week_end_soc) / 2.0
+
+            weekly_labels.append(f"{MONTHS[i-1]}-W{week_no}")
+            weekly_soc.append(week_avg_soc)
+            weekly_recharge_pct_per_hr.append(recharge_pct_per_hr)
+            weekly_discharge_pct_per_hr.append(discharge_pct_per_hr)
+            weekly_status.append(month_state)
+
+            month_start_soc = week_end_soc
+            days_remaining -= week_days
+            week_no += 1
+
         soc = soc_end
 
     avg_recharge_pct_per_hr = sum(
         recharge_pct_per_hr_by_month[i] * _days_in_month_non_leap(i + 1) for i in range(12)
     ) / sum(_days_in_month_non_leap(i + 1) for i in range(12))
 
-    return {
-        "usable_battery_wh": usable_battery_wh,
-        "discharge_pct_per_hr": discharge_pct_per_hr,
-        "recharge_pct_per_hr_by_month": recharge_pct_per_hr_by_month,
-        "avg_recharge_pct_per_hr": avg_recharge_pct_per_hr,
-        "monthly_soc_avg": monthly_soc_avg,
-        "monthly_soc_end": monthly_soc_end,
-        "monthly_status": monthly_status,
-    }
+    lowest_soc_pct = min(weekly_soc) if weekly_soc else min(monthly_soc_avg) if monthly_soc_avg else 100.0
+    weeks_in_deficit = sum(1 for s in weekly_status if s == 'red')
 
+    return {
+        'usable_battery_wh': usable_battery_wh,
+        'discharge_pct_per_hr': discharge_pct_per_hr,
+        'recharge_pct_per_hr_by_month': recharge_pct_per_hr_by_month,
+        'avg_recharge_pct_per_hr': avg_recharge_pct_per_hr,
+        'monthly_soc_avg': monthly_soc_avg,
+        'monthly_soc_end': monthly_soc_end,
+        'monthly_status': monthly_status,
+        'weekly_labels': weekly_labels,
+        'weekly_soc': weekly_soc,
+        'weekly_recharge_pct_per_hr': weekly_recharge_pct_per_hr,
+        'weekly_discharge_pct_per_hr': weekly_discharge_pct_per_hr,
+        'weekly_status': weekly_status,
+        'lowest_soc_pct': lowest_soc_pct,
+        'weeks_in_deficit': weeks_in_deficit,
+    }
 
 def build_pvgis_meta(lat, lon, resolved_cfg, tilt, azim):
     dataset = dataset_label()
@@ -442,6 +482,9 @@ def simulate_for_devices(
 
         battery_type, cutoff_pct = _infer_battery_basis(resolved)
         monthly_generation_wh_day = _monthly_generation_used_in_simulation(lat, lon, resolved, tilt, azim)
+        if not monthly_generation_wh_day or max(monthly_generation_wh_day) <= 1e-9:
+            # fallback: use sustainable monthly operating energy already solved by SHScalc path
+            monthly_generation_wh_day = [float(x) for x in monthly_energy_wh]
         behavior = _battery_behavior_metrics(
             monthly_gen_wh_day=monthly_generation_wh_day,
             batt_wh=resolved["batt"],
@@ -491,6 +534,13 @@ def simulate_for_devices(
             "soc_monthly_avg": behavior["monthly_soc_avg"],
             "soc_monthly_end": behavior["monthly_soc_end"],
             "charge_discharge_status_by_month": behavior["monthly_status"],
+            "weekly_labels": behavior["weekly_labels"],
+            "weekly_soc": behavior["weekly_soc"],
+            "weekly_recharge_pct_per_hr": behavior["weekly_recharge_pct_per_hr"],
+            "weekly_discharge_pct_per_hr": behavior["weekly_discharge_pct_per_hr"],
+            "charge_discharge_status_by_week": behavior["weekly_status"],
+            "lowest_soc_pct": behavior["lowest_soc_pct"],
+            "weeks_in_deficit": behavior["weeks_in_deficit"],
 
             "faa_reference": "FAA AC 150/5345-50B §3.4.2.2",
             "faa_3sunhours_energy_wh": faa_3sunhours_energy_wh,

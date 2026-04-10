@@ -6,7 +6,6 @@ import streamlit as st
 import plotly.graph_objects as go
 
 from ui.result_helpers import (
-    MONTHS,
     battery_reserve_hours,
     device_blackout_days,
     format_achievable_hours,
@@ -141,24 +140,27 @@ def _render_key_value_table(rows, title=None):
                 )
 
 
-
 def _render_charge_discharge_chart(result_row):
-    reserve = result_row.get("weekly_usable_reserve_pct") or []
-    recharge = result_row.get("weekly_recharge_pct_per_hr") or []
-    discharge = result_row.get("weekly_discharge_pct_per_hr") or []
-    status = result_row.get("weekly_status") or []
-    labels = result_row.get("weekly_labels") or [f"W{i}" for i in range(1, len(reserve) + 1)]
+    weeks = result_row.get("weekly_labels") or []
+    reserve = result_row.get("weekly_reserve_pct") or []
+    charge = result_row.get("weekly_charge_pct") or []
+    discharge = result_row.get("weekly_discharge_pct") or []
+    charge_hr = result_row.get("weekly_charge_pct_per_hr") or []
+    discharge_hr = result_row.get("weekly_discharge_pct_per_hr") or []
+    reserve_start = result_row.get("weekly_reserve_start_pct") or reserve
+    reserve_end = result_row.get("weekly_reserve_end_pct") or reserve
+    deficit_flags = result_row.get("weekly_deficit_flags") or []
 
-    if not reserve or not recharge or not discharge:
+    if not weeks or not reserve or not charge or not discharge:
         st.info("Battery charge/discharge behavior is not available for this device.")
         return
 
     fig = go.Figure()
 
-    for i, state in enumerate(status):
-        if i >= len(labels):
-            break
-        color = "rgba(34,197,94,0.10)" if state == "green" else "rgba(239,68,68,0.10)"
+    # Background shading by deficit/surplus week
+    for i, week in enumerate(weeks):
+        is_deficit = bool(deficit_flags[i]) if i < len(deficit_flags) else False
+        color = "rgba(239,68,68,0.10)" if is_deficit else "rgba(34,197,94,0.08)"
         fig.add_vrect(
             x0=i - 0.5,
             x1=i + 0.5,
@@ -167,59 +169,109 @@ def _render_charge_discharge_chart(result_row):
             layer="below",
         )
 
-    fig.add_trace(go.Scatter(
-        x=labels,
-        y=reserve,
-        mode="lines+markers",
-        name="Usable battery reserve",
-        hovertemplate="Week %{x}<br>Usable reserve %{y:.1f}%<extra></extra>",
+    common_custom = list(zip(
+        reserve_start,
+        reserve_end,
+        charge_hr if charge_hr else [0.0] * len(weeks),
+        discharge_hr if discharge_hr else [0.0] * len(weeks),
     ))
 
-    fig.add_trace(go.Scatter(
-        x=labels,
-        y=recharge,
-        mode="lines",
-        name="Recharge speed",
-        yaxis="y2",
-        hovertemplate="Week %{x}<br>Recharge %{y:.2f}%/hr<extra></extra>",
-    ))
+    fig.add_trace(
+        go.Bar(
+            x=list(range(len(weeks))),
+            y=charge,
+            name="Recharge (%/day)",
+            marker=dict(color="rgba(34,197,94,0.85)"),
+            customdata=common_custom,
+            hovertemplate=(
+                "<b>%{text}</b><br>"
+                "Recharge: +%{y:.1f}%/day<br>"
+                "Approx. recharge rate: %{customdata[2]:.2f}%/h<br>"
+                "Reserve: %{customdata[0]:.1f}% → %{customdata[1]:.1f}%"
+                "<extra></extra>"
+            ),
+            text=weeks,
+            offsetgroup="charge",
+        )
+    )
 
-    fig.add_trace(go.Scatter(
-        x=labels,
-        y=discharge,
-        mode="lines",
-        name="Discharge speed",
-        yaxis="y2",
-        hovertemplate="Week %{x}<br>Discharge %{y:.2f}%/hr<extra></extra>",
-    ))
+    fig.add_trace(
+        go.Bar(
+            x=list(range(len(weeks))),
+            y=discharge,
+            name="Discharge (%/day)",
+            marker=dict(color="rgba(239,68,68,0.80)"),
+            customdata=common_custom,
+            hovertemplate=(
+                "<b>%{text}</b><br>"
+                "Discharge: -%{y:.1f}%/day<br>"
+                "Approx. discharge rate: %{customdata[3]:.2f}%/h<br>"
+                "Reserve: %{customdata[0]:.1f}% → %{customdata[1]:.1f}%"
+                "<extra></extra>"
+            ),
+            text=weeks,
+            offsetgroup="discharge",
+        )
+    )
 
-    zero_idx = next((i for i, v in enumerate(reserve) if v <= 0.0 + 1e-9), None)
-    if zero_idx is not None and zero_idx < len(labels):
-        fig.add_trace(go.Scatter(
-            x=[labels[zero_idx]],
-            y=[reserve[zero_idx]],
-            mode="markers",
-            name="Reserve exhausted",
-            marker=dict(size=10, symbol="x"),
-            hovertemplate="Week %{x}<br>Usable reserve exhausted<extra></extra>",
-        ))
+    fig.add_trace(
+        go.Scatter(
+            x=list(range(len(weeks))),
+            y=reserve,
+            mode="lines+markers",
+            name="Usable battery reserve (%)",
+            line=dict(width=3),
+            marker=dict(size=6),
+            customdata=common_custom,
+            hovertemplate=(
+                "<b>%{text}</b><br>"
+                "Usable reserve: %{y:.1f}%<br>"
+                "Recharge: +%{customdata[2]:.2f}%/h<br>"
+                "Discharge: -%{customdata[3]:.2f}%/h<br>"
+                "Reserve change: %{customdata[0]:.1f}% → %{customdata[1]:.1f}%"
+                "<extra></extra>"
+            ),
+            text=weeks,
+        )
+    )
+
+    zero_points_x = [i for i, v in enumerate(reserve) if float(v) <= 0.001]
+    zero_points_y = [reserve[i] for i in zero_points_x]
+    if zero_points_x:
+        fig.add_trace(
+            go.Scatter(
+                x=zero_points_x,
+                y=zero_points_y,
+                mode="markers",
+                name="Reserve exhausted",
+                marker=dict(size=9, symbol="x"),
+                hovertemplate="<b>%{text}</b><br>Usable reserve exhausted (0%)<extra></extra>",
+                text=[weeks[i] for i in zero_points_x],
+            )
+        )
+
+    tickvals = list(range(0, len(weeks), 4))
+    ticktext = [weeks[i] for i in tickvals]
 
     fig.update_layout(
         title="Weekly usable battery reserve, recharge and discharge behavior",
-        xaxis=dict(title="Week", tickangle=0),
-        yaxis=dict(title="Usable battery reserve (%)", range=[0, 100]),
-        yaxis2=dict(
-            title="Recharge / discharge speed (%/hr)",
-            overlaying="y",
-            side="right",
-            rangemode="tozero",
+        barmode="group",
+        height=420,
+        xaxis=dict(
+            title="Week",
+            tickmode="array",
+            tickvals=tickvals,
+            ticktext=ticktext,
         ),
-        legend=dict(orientation="h"),
-        margin=dict(l=20, r=20, t=50, b=20),
-        hovermode="x unified",
+        yaxis=dict(
+            title="Usable battery reserve (%)",
+            range=[0, 100],
+        ),
+        legend=dict(orientation="h", y=1.12, x=0),
+        margin=dict(l=20, r=20, t=70, b=20),
     )
 
-    st.plotly_chart(fig, width='stretch')
+    st.plotly_chart(fig, use_container_width=True)
 
     st.caption(
         "0% on this chart means usable battery reserve is exhausted and the device has reached its operational cut-off threshold. "
@@ -363,9 +415,11 @@ def render_device_capability_cards(results: dict):
             _render_key_value_table(
                 [
                     ("Lowest usable reserve reached", format_percent(r.get("lowest_usable_reserve_pct"), 1)),
-                    ("Weeks in battery-deficit regime", str(r.get("weeks_in_deficit", "N/A"))),
-                    ("Average annual discharge speed", format_percent(r.get("discharge_pct_per_hr"), 2) + "/hr"),
-                    ("Average annual recharge speed", format_percent(r.get("avg_recharge_pct_per_hr"), 2) + "/hr"),
+                    ("Weeks in battery-deficit regime", str(int(r.get("weeks_in_deficit", 0)))),
+                    ("Average daily energy in", format_energy_wh(r.get("avg_daily_energy_in_wh"))),
+                    ("Average daily energy out", format_energy_wh(r.get("avg_daily_energy_out_wh"))),
+                    ("Average annual recharge rate", format_percent(r.get("avg_recharge_pct_per_hr"), 2) + "/h"),
+                    ("Average annual discharge rate", format_percent(r.get("discharge_pct_per_hr"), 2) + "/h"),
                 ]
             )
 

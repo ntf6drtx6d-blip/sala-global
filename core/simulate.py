@@ -5,6 +5,7 @@
 import os
 import time
 import calendar
+import math
 from urllib.parse import urlencode
 
 from core.devices import DEVICES, SOLAR_ENGINES
@@ -158,183 +159,234 @@ def _infer_battery_basis(resolved):
 
 
 
-def _monthly_generation_used_in_simulation(lat, lon, resolved_cfg, tilt, azim):
+def _extract_generation_wh_day_from_shs_monthly(monthly_rows):
+    keys = ("E_d", "Ed", "E_day", "Eday", "Eload", "E_l", "E_gen")
+    values = []
+    for row in monthly_rows:
+        value = None
+        for key in keys:
+            if key in row:
+                value = row.get(key)
+                break
+        try:
+            values.append(float(value))
+        except Exception:
+            values.append(0.0)
+    return values
+
+
+def _monthly_generation_used_in_simulation(lat, lon, resolved_cfg, tilt, azim, shs_monthly_rows=None):
     """
-    Prefer PVcalc monthly Wh/day because it reflects the same panel geometry used in simulation.
-    If PVcalc fails or returns an all-zero/invalid profile, fall back to the offered result basis
-    (monthly_energy_wh passed later) so the explanatory battery graph never shows a fake zero recharge.
+    Prefer the same SHScalc monthly result basis already used by the off-grid evaluation.
+    Fall back to PVcalc only when SHScalc monthly rows do not expose daily energy.
     """
+    if shs_monthly_rows:
+        shs_values = _extract_generation_wh_day_from_shs_monthly(shs_monthly_rows)
+        if any(v > 0 for v in shs_values):
+            return shs_values
+
     try:
-        monthly = pvcalc_monthly_wh_per_day(
+        values = pvcalc_monthly_wh_per_day(
             lat=lat,
             lon=lon,
             pv_wp=float(resolved_cfg["pv"]),
             tilt_deg=float(tilt),
             aspect_deg=float(azim),
         )
-        if monthly and len(monthly) == 12 and any(float(x) > 0 for x in monthly):
-            return [float(x) for x in monthly]
+        if any(v > 0 for v in values):
+            return values
     except Exception:
         pass
-    return None
+
+    return [0.0] * 12
 
 
-def _monthly_generation_fallback_from_offered_result(monthly_energy_wh, required_hrs, power_w):
+def _estimate_daylight_hours_by_month(lat):
     """
-    Fallback when PVcalc monthly production is unavailable.
-    Use the offered-result monthly energy basis (max sustainable daily energy) as a conservative proxy
-    instead of showing zero recharge.
+    Simple astronomy approximation for mid-month daylight duration.
+    Enough for explanatory rate display. Does not create a second simulation truth.
     """
+    lat_rad = math.radians(float(lat))
+    month_mid_days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]
     out = []
-    req_daily_wh = max(float(required_hrs), 0.0) * max(float(power_w), 0.0)
-    for x in monthly_energy_wh or []:
-        try:
-            v = float(x)
-        except Exception:
-            v = 0.0
-        # keep at least the required daily energy if the monthly sustainable result already exceeds it
-        out.append(max(v, 0.0, req_daily_wh if v >= req_daily_wh else v))
-    return out if len(out) == 12 else [0.0] * 12
+    for n in month_mid_days:
+        decl = math.radians(23.44) * math.sin(2 * math.pi * (284 + n) / 365.0)
+        x = -math.tan(lat_rad) * math.tan(decl)
+        x = max(-1.0, min(1.0, x))
+        day_len = 24.0 * math.acos(x) / math.pi
+        out.append(max(1.0, min(23.0, day_len)))
+    return out
 
 
-def _derive_weekly_behavior(
+def _distribute_zero_days(days_in_month, zero_days):
+    zero_days = max(0, min(int(zero_days), int(days_in_month)))
+    if zero_days == 0:
+        return set()
+    if zero_days >= days_in_month:
+        return set(range(days_in_month))
+    # spread as evenly as possible, 0-indexed
+    return {min(days_in_month - 1, round((i + 0.5) * days_in_month / zero_days - 1)) for i in range(zero_days)}
+
+
+def _aggregate_weekly(series):
+    out = []
+    for i in range(0, len(series), 7):
+        chunk = series[i:i + 7]
+        if chunk:
+            out.append(sum(chunk) / len(chunk))
+    return out
+
+
+def _aggregate_weekly_last(series):
+    out = []
+    for i in range(0, len(series), 7):
+        chunk = series[i:i + 7]
+        if chunk:
+            out.append(chunk[-1])
+    return out
+
+
+def _expand_monthly_to_daily(values):
+    daily = []
+    for mi, value in enumerate(values, start=1):
+        daily.extend([float(value)] * _days_in_month_non_leap(mi))
+    return daily
+
+
+def _weighted_average_monthly(values):
+    total_days = sum(_days_in_month_non_leap(i + 1) for i in range(12))
+    if total_days <= 0:
+        return 0.0
+    return sum(float(values[i]) * _days_in_month_non_leap(i + 1) for i in range(12)) / total_days
+
+
+def _battery_behavior_metrics(
     monthly_gen_wh_day,
     batt_wh,
     cutoff_pct,
     power_w,
     required_hrs,
-    empty_battery_days_by_month,
+    monthly_empty_battery_days=None,
+    lat=None,
 ):
     """
-    Build a weekly explanatory layer aligned with the offered monthly result.
+    Build a graph-friendly battery behavior layer that is constrained by the same
+    monthly off-grid empty-battery result used in the feasibility engine.
 
-    0% on the graph means usable reserve exhausted (cut-off reached), not chemical battery zero.
-    The monthly empty-battery counts from the main PVGIS off-grid result are enforced so the graph
-    does not contradict the offered feasibility result.
+    0% on the graph = usable reserve exhausted (operational cut-off reached).
     """
     usable_battery_wh = max(0.001, float(batt_wh) * (1.0 - float(cutoff_pct) / 100.0))
-    discharge_pct_per_hr = float(power_w) / usable_battery_wh * 100.0
-    load_wh_per_day = max(float(required_hrs), 0.0) * max(float(power_w), 0.0)
+    discharge_day_wh = max(float(power_w), 0.0) * max(float(required_hrs), 0.0)
+    discharge_pct_per_day = discharge_day_wh / usable_battery_wh * 100.0
+    discharge_pct_per_hr = discharge_pct_per_day / max(float(required_hrs), 1e-6) if required_hrs else 0.0
 
-    daily_reserve_pct = []
-    daily_recharge_pct_per_hr = []
-    daily_discharge_pct_per_hr = []
-    daily_status = []
+    monthly_empty_battery_days = monthly_empty_battery_days or [0] * 12
+    daylight_hours = _estimate_daylight_hours_by_month(lat if lat is not None else 0.0)
 
-    reserve_wh = usable_battery_wh
-
-    month_day_ranges = []
-    idx = 0
-    for mi in range(12):
-        dim = _days_in_month_non_leap(mi + 1)
-        month_day_ranges.append((idx, idx + dim))
-        gen_wh_day = float(monthly_gen_wh_day[mi]) if mi < len(monthly_gen_wh_day) else 0.0
-        recharge_pct_per_hr = gen_wh_day / usable_battery_wh / 24.0 * 100.0
-
-        for _ in range(dim):
-            reserve_wh = max(0.0, min(usable_battery_wh, reserve_wh + gen_wh_day - load_wh_per_day))
-            reserve_pct = reserve_wh / usable_battery_wh * 100.0
-            daily_reserve_pct.append(reserve_pct)
-            daily_recharge_pct_per_hr.append(recharge_pct_per_hr)
-            daily_discharge_pct_per_hr.append(discharge_pct_per_hr)
-            daily_status.append("green" if recharge_pct_per_hr >= discharge_pct_per_hr else "red")
-        idx += dim
-
-    # Enforce monthly blackout exposure from the source-of-truth PVGIS off-grid result.
-    # If the explanatory reserve curve does not hit zero as often as the offered result says,
-    # set the lowest-reserve days in that month to 0 so the chart remains aligned.
-    for mi in range(12):
-        target_zero_days = 0
-        if mi < len(empty_battery_days_by_month):
-            try:
-                target_zero_days = int(empty_battery_days_by_month[mi])
-            except Exception:
-                target_zero_days = 0
-        if target_zero_days <= 0:
-            continue
-        start, end = month_day_ranges[mi]
-        month_vals = daily_reserve_pct[start:end]
-        current_zero_days = sum(1 for v in month_vals if v <= 0.0 + 1e-9)
-        missing = max(0, target_zero_days - current_zero_days)
-        if missing <= 0:
-            continue
-        # pick the lowest-reserve days first
-        order = sorted(range(len(month_vals)), key=lambda j: month_vals[j])
-        for local_idx in order[:missing]:
-            daily_reserve_pct[start + local_idx] = 0.0
-
-    def _agg(series):
-        out = []
-        for i in range(0, len(series), 7):
-            chunk = series[i:i+7]
-            if chunk:
-                out.append(sum(chunk) / len(chunk))
-        return out
-
-    weekly_reserve_pct = _agg(daily_reserve_pct)
-    weekly_recharge_pct_per_hr = _agg(daily_recharge_pct_per_hr)
-    weekly_discharge_pct_per_hr = _agg(daily_discharge_pct_per_hr)
-
-    weekly_status = []
-    for i in range(0, len(daily_status), 7):
-        chunk = daily_status[i:i+7]
-        if not chunk:
-            continue
-        weekly_status.append("red" if chunk.count("red") >= chunk.count("green") else "green")
-
-    weekly_labels = [f"W{k}" for k in range(1, len(weekly_reserve_pct) + 1)]
-    lowest_usable_reserve_pct = min(daily_reserve_pct) if daily_reserve_pct else 0.0
-    weeks_in_deficit = sum(1 for x in weekly_status if x == "red")
-
-    return {
-        "weekly_labels": weekly_labels,
-        "weekly_usable_reserve_pct": weekly_reserve_pct,
-        "weekly_recharge_pct_per_hr": weekly_recharge_pct_per_hr,
-        "weekly_discharge_pct_per_hr": weekly_discharge_pct_per_hr,
-        "weekly_status": weekly_status,
-        "lowest_usable_reserve_pct": lowest_usable_reserve_pct,
-        "weeks_in_deficit": weeks_in_deficit,
-    }
-
-
-def _battery_behavior_metrics(monthly_gen_wh_day, batt_wh, cutoff_pct, power_w, required_hrs):
-    usable_battery_wh = max(0.001, float(batt_wh) * (1.0 - float(cutoff_pct) / 100.0))
-    discharge_pct_per_hr = float(power_w) / usable_battery_wh * 100.0
-
+    charge_day_pct_by_month = []
     recharge_pct_per_hr_by_month = []
-    monthly_soc_avg = []
-    monthly_soc_end = []
+    monthly_reserve_avg = []
+    monthly_reserve_end = []
     monthly_status = []
 
-    soc = 100.0
-    cutoff_floor = float(cutoff_pct)
+    reserve = 100.0
+    daily_reserve = []
+    daily_charge_pct = []
+    daily_discharge_pct = []
+    daily_charge_pct_per_hr = []
+    daily_discharge_pct_per_hr = []
+    daily_week_status = []
+    daily_week_labels = []
+    daily_reserve_start = []
+    daily_reserve_end = []
 
-    for i, gen_wh_day in enumerate(monthly_gen_wh_day, start=1):
-        recharge_pct_per_hr = float(gen_wh_day) / usable_battery_wh / 24.0 * 100.0
+    week_counter = 1
+
+    for mi, gen_wh_day in enumerate(monthly_gen_wh_day, start=1):
+        days = _days_in_month_non_leap(mi)
+        charge_day_pct = max(float(gen_wh_day), 0.0) / usable_battery_wh * 100.0
+        charge_day_pct_by_month.append(charge_day_pct)
+
+        daylight = max(1.0, daylight_hours[mi - 1])
+        recharge_pct_per_hr = charge_day_pct / daylight
         recharge_pct_per_hr_by_month.append(recharge_pct_per_hr)
 
-        net_pct_per_day = (recharge_pct_per_hr * 24.0) - (discharge_pct_per_hr * float(required_hrs))
-        soc_end = soc + net_pct_per_day * _days_in_month_non_leap(i)
-        soc_end = min(100.0, soc_end)
-        soc_end = max(cutoff_floor, soc_end)
+        month_status = "green" if charge_day_pct >= discharge_pct_per_day else "red"
+        monthly_status.append(month_status)
 
-        monthly_soc_avg.append((soc + soc_end) / 2.0)
-        monthly_soc_end.append(soc_end)
-        monthly_status.append("green" if recharge_pct_per_hr >= discharge_pct_per_hr else "red")
-        soc = soc_end
+        zero_targets = _distribute_zero_days(days, monthly_empty_battery_days[mi - 1])
 
-    avg_recharge_pct_per_hr = sum(
-        recharge_pct_per_hr_by_month[i] * _days_in_month_non_leap(i + 1) for i in range(12)
-    ) / sum(_days_in_month_non_leap(i + 1) for i in range(12))
+        reserve_values_month = []
+        for di in range(days):
+            reserve_start = reserve
+
+            if di in zero_targets:
+                reserve = 0.0
+            else:
+                reserve = reserve + charge_day_pct - discharge_pct_per_day
+                reserve = min(100.0, reserve)
+                # if source-of-truth says no empty days in this month, do not allow explanatory layer
+                # to invent extra empties
+                floor = 0.1 if int(monthly_empty_battery_days[mi - 1]) == 0 else 0.0
+                reserve = max(floor, reserve)
+
+            reserve_values_month.append(reserve)
+
+            daily_reserve_start.append(reserve_start)
+            daily_reserve_end.append(reserve)
+            daily_reserve.append(reserve)
+            daily_charge_pct.append(charge_day_pct)
+            daily_discharge_pct.append(discharge_pct_per_day)
+            daily_charge_pct_per_hr.append(recharge_pct_per_hr)
+            daily_discharge_pct_per_hr.append(discharge_pct_per_hr)
+            daily_week_status.append(month_status)
+            daily_week_labels.append(week_counter)
+            if len(daily_reserve) % 7 == 0:
+                week_counter += 1
+
+        monthly_reserve_avg.append(sum(reserve_values_month) / len(reserve_values_month) if reserve_values_month else reserve)
+        monthly_reserve_end.append(reserve)
+
+    weekly_labels = [f"W{i}" for i in range(1, len(_aggregate_weekly(daily_reserve)) + 1)]
+    weekly_reserve_pct = _aggregate_weekly(daily_reserve)
+    weekly_charge_pct = _aggregate_weekly(daily_charge_pct)
+    weekly_discharge_pct = _aggregate_weekly(daily_discharge_pct)
+    weekly_charge_pct_per_hr = _aggregate_weekly(daily_charge_pct_per_hr)
+    weekly_discharge_pct_per_hr = _aggregate_weekly(daily_discharge_pct_per_hr)
+    weekly_reserve_start = _aggregate_weekly(daily_reserve_start)
+    weekly_reserve_end = _aggregate_weekly_last(daily_reserve_end)
+    weekly_deficit_flags = [c < d for c, d in zip(weekly_charge_pct, weekly_discharge_pct)]
+
+    avg_recharge_pct_per_hr = _weighted_average_monthly(recharge_pct_per_hr_by_month)
+    avg_charge_day_pct = _weighted_average_monthly(charge_day_pct_by_month)
 
     return {
         "usable_battery_wh": usable_battery_wh,
         "discharge_pct_per_hr": discharge_pct_per_hr,
         "recharge_pct_per_hr_by_month": recharge_pct_per_hr_by_month,
         "avg_recharge_pct_per_hr": avg_recharge_pct_per_hr,
-        "monthly_soc_avg": monthly_soc_avg,
-        "monthly_soc_end": monthly_soc_end,
+        "charge_day_pct_by_month": charge_day_pct_by_month,
+        "avg_charge_day_pct": avg_charge_day_pct,
+        "discharge_pct_per_day": discharge_pct_per_day,
+        "monthly_soc_avg": monthly_reserve_avg,
+        "monthly_soc_end": monthly_reserve_end,
         "monthly_status": monthly_status,
+
+        "weekly_labels": weekly_labels,
+        "weekly_reserve_pct": weekly_reserve_pct,
+        "weekly_charge_pct": weekly_charge_pct,
+        "weekly_discharge_pct": weekly_discharge_pct,
+        "weekly_charge_pct_per_hr": weekly_charge_pct_per_hr,
+        "weekly_discharge_pct_per_hr": weekly_discharge_pct_per_hr,
+        "weekly_reserve_start_pct": weekly_reserve_start,
+        "weekly_reserve_end_pct": weekly_reserve_end,
+        "weekly_deficit_flags": weekly_deficit_flags,
+
+        "lowest_usable_reserve_pct": min(daily_reserve) if daily_reserve else 100.0,
+        "weeks_in_deficit": sum(1 for x in weekly_deficit_flags if x),
+        "avg_daily_energy_in_wh": _weighted_average_monthly(monthly_gen_wh_day),
+        "avg_daily_energy_out_wh": discharge_day_wh,
+        "daylight_hours_by_month": daylight_hours,
     }
 
 
@@ -435,6 +487,7 @@ def max_wh_for_month_fast(lat, lon, pv_wp, batt_wh, tilt, aspect, mi):
     return int(best)
 
 
+
 def get_empty_battery_stats_for_required_mode(lat, lon, resolved, required_hrs, tilt, aspect):
     daily_wh = float(required_hrs) * max(float(resolved["power"]), 0.05)
 
@@ -463,7 +516,7 @@ def get_empty_battery_stats_for_required_mode(lat, lon, resolved, required_hrs, 
 
     overall_pct = weighted_pct_sum / total_days if total_days else 0.0
 
-    return pct_by_month, days_by_month, overall_pct
+    return monthly, pct_by_month, days_by_month, overall_pct
 
 
 def simulate_for_devices(
@@ -554,7 +607,7 @@ def simulate_for_devices(
         status = "PASS" if all(h >= required_hrs - 1e-6 for h in hours) else "FAIL"
         fail_months = [MONTHS[i] for i, h in enumerate(hours) if h + 1e-6 < required_hrs]
 
-        empty_battery_pct_by_month, empty_battery_days_by_month, overall_empty_battery_pct = get_empty_battery_stats_for_required_mode(
+        shs_monthly_rows, empty_battery_pct_by_month, empty_battery_days_by_month, overall_empty_battery_pct = get_empty_battery_stats_for_required_mode(
             lat=lat,
             lon=lon,
             resolved=resolved,
@@ -568,23 +621,17 @@ def simulate_for_devices(
             pvgis_meta.update(resolved.get("avlite_meta", {}))
 
         battery_type, cutoff_pct = _infer_battery_basis(resolved)
-        monthly_generation_wh_day = _monthly_generation_used_in_simulation(lat, lon, resolved, tilt, azim)
-        if monthly_generation_wh_day is None or not any(float(x) > 0 for x in monthly_generation_wh_day):
-            monthly_generation_wh_day = _monthly_generation_fallback_from_offered_result(monthly_energy_wh, required_hrs, resolved["power"])
+        monthly_generation_wh_day = _monthly_generation_used_in_simulation(
+            lat, lon, resolved, tilt, azim, shs_monthly_rows=shs_monthly_rows
+        )
         behavior = _battery_behavior_metrics(
             monthly_gen_wh_day=monthly_generation_wh_day,
             batt_wh=resolved["batt"],
             cutoff_pct=cutoff_pct,
             power_w=resolved["power"],
             required_hrs=required_hrs,
-        )
-        weekly_behavior = _derive_weekly_behavior(
-            monthly_gen_wh_day=monthly_generation_wh_day,
-            batt_wh=resolved["batt"],
-            cutoff_pct=cutoff_pct,
-            power_w=resolved["power"],
-            required_hrs=required_hrs,
-            empty_battery_days_by_month=empty_battery_days_by_month,
+            monthly_empty_battery_days=empty_battery_days_by_month,
+            lat=lat,
         )
         effective_pv_used = float(resolved.get("equivalent_panel_wp", resolved["pv"]))
         faa_3sunhours_energy_wh = effective_pv_used * 3.0
@@ -625,16 +672,26 @@ def simulate_for_devices(
             "discharge_pct_per_hr": behavior["discharge_pct_per_hr"],
             "recharge_pct_per_hr_by_month": behavior["recharge_pct_per_hr_by_month"],
             "avg_recharge_pct_per_hr": behavior["avg_recharge_pct_per_hr"],
+            "discharge_pct_per_day": behavior["discharge_pct_per_day"],
+            "charge_day_pct_by_month": behavior["charge_day_pct_by_month"],
+            "avg_charge_day_pct": behavior["avg_charge_day_pct"],
+            "avg_daily_energy_in_wh": behavior["avg_daily_energy_in_wh"],
+            "avg_daily_energy_out_wh": behavior["avg_daily_energy_out_wh"],
             "soc_monthly_avg": behavior["monthly_soc_avg"],
             "soc_monthly_end": behavior["monthly_soc_end"],
             "charge_discharge_status_by_month": behavior["monthly_status"],
-            "weekly_labels": weekly_behavior["weekly_labels"],
-            "weekly_usable_reserve_pct": weekly_behavior["weekly_usable_reserve_pct"],
-            "weekly_recharge_pct_per_hr": weekly_behavior["weekly_recharge_pct_per_hr"],
-            "weekly_discharge_pct_per_hr": weekly_behavior["weekly_discharge_pct_per_hr"],
-            "weekly_status": weekly_behavior["weekly_status"],
-            "lowest_usable_reserve_pct": weekly_behavior["lowest_usable_reserve_pct"],
-            "weeks_in_deficit": weekly_behavior["weeks_in_deficit"],
+            "weekly_labels": behavior["weekly_labels"],
+            "weekly_reserve_pct": behavior["weekly_reserve_pct"],
+            "weekly_charge_pct": behavior["weekly_charge_pct"],
+            "weekly_discharge_pct": behavior["weekly_discharge_pct"],
+            "weekly_charge_pct_per_hr": behavior["weekly_charge_pct_per_hr"],
+            "weekly_discharge_pct_per_hr": behavior["weekly_discharge_pct_per_hr"],
+            "weekly_reserve_start_pct": behavior["weekly_reserve_start_pct"],
+            "weekly_reserve_end_pct": behavior["weekly_reserve_end_pct"],
+            "weekly_deficit_flags": behavior["weekly_deficit_flags"],
+            "lowest_usable_reserve_pct": behavior["lowest_usable_reserve_pct"],
+            "weeks_in_deficit": behavior["weeks_in_deficit"],
+            "daylight_hours_by_month": behavior["daylight_hours_by_month"],
 
             "faa_reference": "FAA AC 150/5345-50B §3.4.2.2",
             "faa_3sunhours_energy_wh": faa_3sunhours_energy_wh,

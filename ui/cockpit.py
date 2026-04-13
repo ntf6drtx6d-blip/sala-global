@@ -221,10 +221,3 @@ def _run_simulation(progress_callback=None):
     st.session_state.trigger_run = False
     st.session_state.run_stage = "Completed"
     st.session_state.run_progress = 100
-
-
-# --- Added: UI state reset to restore buttons after simulation ---
-def reset_state():
-    import streamlit as st
-    st.session_state["running"] = False
-    st.session_state["trigger_run"] = False

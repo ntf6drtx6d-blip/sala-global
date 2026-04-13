@@ -718,35 +718,3 @@ def simulate_for_devices(
             overall = "FAIL"
 
     return results, overall, worst_name, worst_gap, slope
-
-
-# ======== SAFE ADDITIONS FOR GRAPH (NO BREAK) ========
-
-def compute_monthly_percentages(monthly_generation_wh_day, usable_battery_wh, power_w, hours):
-    generated_pct = []
-    consumed_pct = []
-
-    for g in monthly_generation_wh_day:
-        generated_pct.append((g / usable_battery_wh) * 100)
-        consumed_pct.append((power_w * hours) / usable_battery_wh * 100)
-
-    return generated_pct, consumed_pct
-
-
-def build_reserve(monthly_generated_pct, monthly_consumed_pct, monthly_empty_days):
-    reserve = []
-    current = 100
-
-    for m in range(12):
-        empty_days = int(monthly_empty_days[m])
-
-        if empty_days > 0:
-            current = 0
-        else:
-            current = min(100, current + (monthly_generated_pct[m] - monthly_consumed_pct[m]) * 30)
-
-        reserve.append(current)
-
-    return reserve
-
-# ======== END SAFE ADDITIONS ========

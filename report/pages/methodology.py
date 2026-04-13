@@ -49,16 +49,11 @@ def build_methodology(data):
     story.append(_card([
         Paragraph("Interpretation", CARD_TITLE),
         Spacer(1, 4),
-        Paragraph("Solar AGL is assessed as an energy system defined by generation, storage, and consumption. "
-                  "The report evaluates whether the selected configuration can sustain the required operating profile under annual location-specific solar conditions.", BODY)
+        Paragraph("Solar AGL is assessed as an energy system defined by generation, storage, and consumption. The report evaluates whether the selected configuration can sustain the required operating profile under annual location-specific solar conditions.", BODY)
     ], PAGE_WIDTH))
 
-    story.append(Spacer(1, 115))
+    story.append(Spacer(1, 18))
     footer = Table([[Paragraph(data["footer_note"], FOOTER), Paragraph("Page 5", FOOTER)]], colWidths=[430, 85])
-    footer.setStyle(TableStyle([
-        ("LINEABOVE", (0, 0), (-1, -1), 0.7, BORDER),
-        ("TOPPADDING", (0, 0), (-1, -1), 6),
-        ("ALIGN", (1, 0), (1, 0), "RIGHT"),
-    ]))
+    footer.setStyle(TableStyle([("LINEABOVE", (0, 0), (-1, -1), 0.7, BORDER), ("TOPPADDING", (0, 0), (-1, -1), 6), ("ALIGN", (1, 0), (1, 0), "RIGHT")]))
     story.append(footer)
     return story

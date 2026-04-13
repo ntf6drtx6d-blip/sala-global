@@ -1,13 +1,12 @@
 from pathlib import Path
 from reportlab.platypus import Paragraph, Spacer, Table, TableStyle, Image, PageBreak
-from reportlab.lib import colors
 
 from ..styles import (
     TITLE, BODY, SMALL, SMALL_BOLD, BODY_BOLD, FOOTER,
-    PRIMARY, PRIMARY_DARK, PRIMARY_SOFT, GREEN, GREEN_SOFT, AMBER, AMBER_SOFT,
-    RED, RED_SOFT, BORDER, WHITE, PAGE_WIDTH, SPACE_2, SPACE_3, SPACE_4
+    PRIMARY_SOFT, GREEN, GREEN_SOFT, AMBER, AMBER_SOFT, RED, RED_SOFT,
+    BORDER, WHITE, PAGE_WIDTH, SPACE_2, SPACE_3
 )
-
+from ..assets.maps import generate_static_map
 
 ASSET_DIR = Path(__file__).resolve().parents[1] / "assets"
 
@@ -42,12 +41,16 @@ def build_cover(data):
         ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
     ]))
     story.append(header)
-    story.append(Spacer(1, 54))
+    story.append(Spacer(1, 18))
 
     story.append(Paragraph("Solar Airfield Lighting<br/>Feasibility Study", TITLE))
     story.append(Spacer(1, SPACE_2))
     story.append(Paragraph(data["methodology_note"], BODY))
-    story.append(Spacer(1, 26))
+    story.append(Spacer(1, 14))
+
+    map_path = generate_static_map(data["lat"], data["lon"], width=700, height=380, zoom=9)
+    map_img = Image(map_path)
+    map_img._restrictSize(205, 118)
 
     meta_rows = [
         [Paragraph("<b>Project / Airport</b>", SMALL), Paragraph(data["airport_name"], BODY)],
@@ -57,35 +60,39 @@ def build_cover(data):
         [Paragraph("<b>Date</b>", SMALL), Paragraph(data["date"], BODY)],
         [Paragraph("<b>Document ID</b>", SMALL), Paragraph(data["report_id"], BODY)],
     ]
-    meta = Table(meta_rows, colWidths=[150, 365])
+    meta = Table(meta_rows, colWidths=[130, 180])
     meta.setStyle(TableStyle([
         ("GRID", (0, 0), (-1, -1), 0.6, BORDER),
         ("BACKGROUND", (0, 0), (0, -1), PRIMARY_SOFT),
         ("LEFTPADDING", (0, 0), (-1, -1), 8),
         ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-        ("TOPPADDING", (0, 0), (-1, -1), 7),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]))
-    story.append(meta)
-    story.append(Spacer(1, 34))
+
+    top = Table([[map_img, meta]], colWidths=[205, 310])
+    top.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    story.append(top)
+    story.append(Spacer(1, 14))
 
     fill, line = _status_palette(data["cover_verdict"])
-    verdict = Table([[
-        Paragraph(f"<b>{data['cover_verdict']}</b>", BODY_BOLD),
-        Paragraph(data["cover_statement"], BODY),
-    ]], colWidths=[110, 405])
+    verdict = Table([[(Paragraph(f"<b>{data['cover_verdict']}</b>", BODY_BOLD)), Paragraph(data["cover_statement"], BODY)]], colWidths=[110, 405])
     verdict.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), fill),
-        ("BOX", (0, 0), (-1, -1), 1.2, line),
+        ("BOX", (0, 0), (-1, -1), 1.0, line),
         ("LEFTPADDING", (0, 0), (-1, -1), 12),
         ("RIGHTPADDING", (0, 0), (-1, -1), 12),
-        ("TOPPADDING", (0, 0), (-1, -1), 12),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+        ("TOPPADDING", (0, 0), (-1, -1), 10),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
     ]))
     story.append(verdict)
-    story.append(Spacer(1, 150))
+    story.append(Spacer(1, 18))
 
     footer = Table([[Paragraph(data["footer_note"], FOOTER), Paragraph("Page 1", FOOTER)]], colWidths=[430, 85])
     footer.setStyle(TableStyle([
@@ -95,5 +102,4 @@ def build_cover(data):
     ]))
     story.append(footer)
     story.append(PageBreak())
-
     return story

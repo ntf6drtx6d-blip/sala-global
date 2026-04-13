@@ -1,5 +1,5 @@
 from reportlab.platypus import Paragraph, Spacer, Table, TableStyle, PageBreak
-from ..styles import TITLE, CARD_TITLE, BODY, BODY_BOLD, SMALL, FOOTER, GREEN_SOFT, AMBER_SOFT, RED_SOFT, GREEN, AMBER, RED, WHITE, BORDER
+from ..styles import TITLE, BODY, BODY_BOLD, SMALL, FOOTER, GREEN_SOFT, AMBER_SOFT, RED_SOFT, GREEN, AMBER, RED, WHITE, BORDER
 
 
 def _status_palette(label: str):
@@ -51,16 +51,13 @@ def _device_card(d):
 
 def build_device_details(data):
     story = [Paragraph("Device Detail Page", TITLE), Spacer(1, 14)]
-    for idx, d in enumerate(data["devices"]):
+    for d in data["devices"]:
         story.append(_device_card(d))
         story.append(Spacer(1, 10))
-    story.append(Spacer(1, 90))
+
+    story.append(Spacer(1, 18))
     footer = Table([[Paragraph(data["footer_note"], FOOTER), Paragraph("Page 4", FOOTER)]], colWidths=[430, 85])
-    footer.setStyle(TableStyle([
-        ("LINEABOVE", (0, 0), (-1, -1), 0.7, BORDER),
-        ("TOPPADDING", (0, 0), (-1, -1), 6),
-        ("ALIGN", (1, 0), (1, 0), "RIGHT"),
-    ]))
+    footer.setStyle(TableStyle([("LINEABOVE", (0, 0), (-1, -1), 0.7, BORDER), ("TOPPADDING", (0, 0), (-1, -1), 6), ("ALIGN", (1, 0), (1, 0), "RIGHT")]))
     story.append(footer)
     story.append(PageBreak())
     return story

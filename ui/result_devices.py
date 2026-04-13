@@ -17,6 +17,10 @@ from ui.result_helpers import (
 )
 
 
+MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+          "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
 def render_kpi_card(
     title: str,
     value: str,
@@ -140,27 +144,43 @@ def _render_key_value_table(rows, title=None):
                 )
 
 
-def _render_charge_discharge_chart(result_row):
-    weeks = result_row.get("weekly_labels") or []
-    reserve = result_row.get("weekly_reserve_pct") or []
-    charge = result_row.get("weekly_charge_pct") or []
-    discharge = result_row.get("weekly_discharge_pct") or []
-    charge_hr = result_row.get("weekly_charge_pct_per_hr") or []
-    discharge_hr = result_row.get("weekly_discharge_pct_per_hr") or []
-    reserve_start = result_row.get("weekly_reserve_start_pct") or reserve
-    reserve_end = result_row.get("weekly_reserve_end_pct") or reserve
-    deficit_flags = result_row.get("weekly_deficit_flags") or []
+def _monthly_graph_data(result_row):
+    reserve = result_row.get("soc_monthly_end") or result_row.get("soc_monthly_avg") or []
+    generated = result_row.get("charge_day_pct_by_month") or []
+    discharge_day = result_row.get("discharge_pct_per_day")
+    empty_days = result_row.get("empty_battery_days_by_month") or [0] * 12
+    daylight = result_row.get("daylight_hours_by_month") or [0] * 12
+    recharge_hr = result_row.get("recharge_pct_per_hr_by_month") or [0] * 12
+    discharge_hr = float(result_row.get("discharge_pct_per_hr", 0.0))
+    if discharge_day is None:
+        discharge = [0.0] * 12
+    else:
+        discharge = [float(discharge_day)] * 12
 
-    if not weeks or not reserve or not charge or not discharge:
+    # normalize lengths
+    reserve = list(reserve)[:12] + [None] * max(0, 12 - len(reserve))
+    generated = list(generated)[:12] + [0.0] * max(0, 12 - len(generated))
+    discharge = list(discharge)[:12] + [0.0] * max(0, 12 - len(discharge))
+    empty_days = list(empty_days)[:12] + [0] * max(0, 12 - len(empty_days))
+    daylight = list(daylight)[:12] + [0.0] * max(0, 12 - len(daylight))
+    recharge_hr = list(recharge_hr)[:12] + [0.0] * max(0, 12 - len(recharge_hr))
+
+    return reserve, generated, discharge, empty_days, daylight, recharge_hr, discharge_hr
+
+
+def _render_charge_discharge_chart(result_row):
+    reserve, generated, discharge, empty_days, daylight, recharge_hr, discharge_hr = _monthly_graph_data(result_row)
+
+    if not reserve or not generated:
         st.info("Battery charge/discharge behavior is not available for this device.")
         return
 
     fig = go.Figure()
 
-    # Background shading by deficit/surplus week
-    for i, week in enumerate(weeks):
-        is_deficit = bool(deficit_flags[i]) if i < len(deficit_flags) else False
-        color = "rgba(239,68,68,0.10)" if is_deficit else "rgba(34,197,94,0.08)"
+    # Month shading: surplus vs deficit based on generated/consumed daily %
+    for i, month in enumerate(MONTHS):
+        is_deficit = generated[i] < discharge[i]
+        color = "rgba(239,68,68,0.08)" if is_deficit else "rgba(34,197,94,0.06)"
         fig.add_vrect(
             x0=i - 0.5,
             x1=i + 0.5,
@@ -169,114 +189,118 @@ def _render_charge_discharge_chart(result_row):
             layer="below",
         )
 
-    common_custom = list(zip(
-        reserve_start,
-        reserve_end,
-        charge_hr if charge_hr else [0.0] * len(weeks),
-        discharge_hr if discharge_hr else [0.0] * len(weeks),
+    custom = list(zip(
+        generated,
+        discharge,
+        [g - d for g, d in zip(generated, discharge)],
+        empty_days,
+        recharge_hr,
+        [discharge_hr] * 12,
+        daylight,
     ))
 
     fig.add_trace(
-        go.Bar(
-            x=list(range(len(weeks))),
-            y=charge,
-            name="Recharge (%/day)",
-            marker=dict(color="rgba(34,197,94,0.85)"),
-            customdata=common_custom,
+        go.Scatter(
+            x=MONTHS,
+            y=reserve,
+            name="Usable battery reserve (%)",
+            mode="lines+markers",
+            line=dict(width=3),
+            marker=dict(size=7),
+            yaxis="y1",
+            customdata=custom,
             hovertemplate=(
-                "<b>%{text}</b><br>"
-                "Recharge: +%{y:.1f}%/day<br>"
-                "Approx. recharge rate: %{customdata[2]:.2f}%/h<br>"
-                "Reserve: %{customdata[0]:.1f}% → %{customdata[1]:.1f}%"
+                "<b>%{x}</b><br>"
+                "Battery reserve: %{y:.1f}%<br>"
+                "Generated: %{customdata[0]:.1f}%/day<br>"
+                "Consumed: %{customdata[1]:.1f}%/day<br>"
+                "Net: %{customdata[2]:+.1f}%/day<br>"
+                "Empty battery days: %{customdata[3]}<br>"
+                "Recharge rate: %{customdata[4]:.2f}%/h × %{customdata[6]:.1f} h daylight<br>"
+                "Discharge rate: %{customdata[5]:.2f}%/h"
                 "<extra></extra>"
             ),
-            text=weeks,
-            offsetgroup="charge",
-        )
-    )
-
-    fig.add_trace(
-        go.Bar(
-            x=list(range(len(weeks))),
-            y=discharge,
-            name="Discharge (%/day)",
-            marker=dict(color="rgba(239,68,68,0.80)"),
-            customdata=common_custom,
-            hovertemplate=(
-                "<b>%{text}</b><br>"
-                "Discharge: -%{y:.1f}%/day<br>"
-                "Approx. discharge rate: %{customdata[3]:.2f}%/h<br>"
-                "Reserve: %{customdata[0]:.1f}% → %{customdata[1]:.1f}%"
-                "<extra></extra>"
-            ),
-            text=weeks,
-            offsetgroup="discharge",
         )
     )
 
     fig.add_trace(
         go.Scatter(
-            x=list(range(len(weeks))),
-            y=reserve,
+            x=MONTHS,
+            y=generated,
+            name="Generated (% of battery/day)",
             mode="lines+markers",
-            name="Usable battery reserve (%)",
-            line=dict(width=3),
+            line=dict(width=2),
             marker=dict(size=6),
-            customdata=common_custom,
+            yaxis="y2",
+            customdata=custom,
             hovertemplate=(
-                "<b>%{text}</b><br>"
-                "Usable reserve: %{y:.1f}%<br>"
-                "Recharge: +%{customdata[2]:.2f}%/h<br>"
-                "Discharge: -%{customdata[3]:.2f}%/h<br>"
-                "Reserve change: %{customdata[0]:.1f}% → %{customdata[1]:.1f}%"
+                "<b>%{x}</b><br>"
+                "Generated: %{y:.1f}%/day<br>"
+                "Recharge rate: %{customdata[4]:.2f}%/h × %{customdata[6]:.1f} h daylight"
                 "<extra></extra>"
             ),
-            text=weeks,
         )
     )
 
-    zero_points_x = [i for i, v in enumerate(reserve) if float(v) <= 0.001]
-    zero_points_y = [reserve[i] for i in zero_points_x]
-    if zero_points_x:
+    fig.add_trace(
+        go.Scatter(
+            x=MONTHS,
+            y=discharge,
+            name="Consumed (% of battery/day)",
+            mode="lines+markers",
+            line=dict(width=2),
+            marker=dict(size=6),
+            yaxis="y2",
+            customdata=custom,
+            hovertemplate=(
+                "<b>%{x}</b><br>"
+                "Consumed: %{y:.1f}%/day<br>"
+                "Discharge rate: %{customdata[5]:.2f}%/h"
+                "<extra></extra>"
+            ),
+        )
+    )
+
+    zero_months = [MONTHS[i] for i, v in enumerate(reserve) if v is not None and float(v) <= 0.001]
+    zero_vals = [v for v in reserve if v is not None and float(v) <= 0.001]
+    if zero_months:
         fig.add_trace(
             go.Scatter(
-                x=zero_points_x,
-                y=zero_points_y,
+                x=zero_months,
+                y=zero_vals,
                 mode="markers",
                 name="Reserve exhausted",
                 marker=dict(size=9, symbol="x"),
-                hovertemplate="<b>%{text}</b><br>Usable reserve exhausted (0%)<extra></extra>",
-                text=[weeks[i] for i in zero_points_x],
+                hovertemplate="<b>%{x}</b><br>Usable reserve exhausted (0%)<extra></extra>",
+                yaxis="y1",
             )
         )
 
-    tickvals = list(range(0, len(weeks), 4))
-    ticktext = [weeks[i] for i in tickvals]
-
     fig.update_layout(
-        title="Weekly usable battery reserve, recharge and discharge behavior",
-        barmode="group",
-        height=420,
-        xaxis=dict(
-            title="Week",
-            tickmode="array",
-            tickvals=tickvals,
-            ticktext=ticktext,
-        ),
+        title="Battery charge vs discharge behavior",
+        height=430,
+        xaxis=dict(title="Month"),
         yaxis=dict(
             title="Usable battery reserve (%)",
             range=[0, 100],
         ),
+        yaxis2=dict(
+            title="Generated / consumed (% of usable battery per day)",
+            overlaying="y",
+            side="right",
+            rangemode="tozero",
+        ),
         legend=dict(orientation="h", y=1.12, x=0),
         margin=dict(l=20, r=20, t=70, b=20),
+        hovermode="x unified",
     )
 
     st.plotly_chart(fig, use_container_width=True)
 
     st.caption(
         "0% on this chart means usable battery reserve is exhausted and the device has reached its operational cut-off threshold. "
-        "Green weeks indicate that recharge is sufficient to recover or maintain reserve. "
-        "Red weeks indicate a battery-deficit regime: the light consumes stored reserve faster than it is replenished."
+        "Green months indicate that generated energy is sufficient to recover or maintain reserve. "
+        "Red months indicate that the device consumes stored reserve faster than it is replenished."
     )
 
 
@@ -412,14 +436,20 @@ def render_device_capability_cards(results: dict):
             st.markdown("### Battery charge vs discharge behavior")
             _render_charge_discharge_chart(r)
 
+            worst_month_idx = 0
+            empties = r.get("empty_battery_days_by_month") or [0] * 12
+            if empties:
+                worst_month_idx = max(range(min(12, len(empties))), key=lambda i: empties[i])
+
+            gen_by_month = r.get("monthly_generation_wh_day") or [None] * 12
+            out_by_day = r.get("avg_daily_energy_out_wh")
+
             _render_key_value_table(
                 [
                     ("Lowest usable reserve reached", format_percent(r.get("lowest_usable_reserve_pct"), 1)),
-                    ("Weeks in battery-deficit regime", str(int(r.get("weeks_in_deficit", 0)))),
-                    ("Average daily energy in", format_energy_wh(r.get("avg_daily_energy_in_wh"))),
-                    ("Average daily energy out", format_energy_wh(r.get("avg_daily_energy_out_wh"))),
-                    ("Average annual recharge rate", format_percent(r.get("avg_recharge_pct_per_hr"), 2) + "/h"),
-                    ("Average annual discharge rate", format_percent(r.get("discharge_pct_per_hr"), 2) + "/h"),
+                    ("Blackout days / year", str(int(blackout_days or 0))),
+                    ("Worst month generated energy", f"{MONTHS[worst_month_idx]} — {format_energy_wh(gen_by_month[worst_month_idx] if worst_month_idx < len(gen_by_month) else None)}"),
+                    ("Required energy", format_energy_wh(out_by_day)),
                 ]
             )
 

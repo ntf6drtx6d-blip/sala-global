@@ -8,7 +8,7 @@ import streamlit as st
 from streamlit.errors import StreamlitSecretNotFoundError
 
 from core.i18n import AVAILABLE_LANGUAGES, month_label, month_labels, t
-from core.db import init_db, create_user, user_exists, save_study, get_user_by_email
+from core.db import init_db, upsert_user, save_study, get_user_by_email
 from core.auth import hash_password, init_auth_state, is_logged_in, is_admin, logout
 
 from ui.setup import render_setup
@@ -220,14 +220,14 @@ def bootstrap_admin_user():
     if not admin_email or not admin_password:
         return
 
-    if not user_exists(admin_email):
-        create_user(
-            email=admin_email,
-            password_hash=hash_password(admin_password),
-            role="admin",
-            full_name=admin_full_name,
-            organization=admin_organization,
-        )
+    upsert_user(
+        email=admin_email,
+        password_hash=hash_password(admin_password),
+        role="admin",
+        full_name=admin_full_name,
+        organization=admin_organization,
+        is_active=True,
+    )
 
 
 def refresh_study_ready_from_state():

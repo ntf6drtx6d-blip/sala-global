@@ -182,6 +182,33 @@ def create_user(email, password_hash, role="user", full_name=None, organization=
         return existing["id"] if existing else None
 
 
+def upsert_user(
+    email,
+    password_hash,
+    role="user",
+    full_name=None,
+    organization=None,
+    is_active=True,
+):
+    with db_cursor() as (_, cur):
+        cur.execute(
+            """
+            INSERT INTO users (email, password_hash, role, is_active, full_name, organization)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (email) DO UPDATE SET
+                password_hash = EXCLUDED.password_hash,
+                role = EXCLUDED.role,
+                is_active = EXCLUDED.is_active,
+                full_name = EXCLUDED.full_name,
+                organization = EXCLUDED.organization
+            RETURNING id
+            """,
+            (email, password_hash, role, is_active, full_name, organization),
+        )
+        row = cur.fetchone()
+        return row["id"] if row else None
+
+
 def get_user_by_email(email):
     with db_cursor() as (_, cur):
         cur.execute("SELECT * FROM users WHERE email = %s", (email,))

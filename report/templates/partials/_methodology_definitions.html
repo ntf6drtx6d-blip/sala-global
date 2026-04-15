@@ -1,0 +1,32 @@
+<h2 class="page-title">{{ report.i18n['report.assessment_definitions'] }}</h2>
+<div class="section-stack">
+  <article class="card">
+    <div class="section-title">{{ report.i18n['report.assessment_definitions_inner'] }}</div>
+    <div class="definition-grid">
+      <div class="definition-tile">
+        <div class="definition-label">{{ report.i18n['report.daily_operation'] }}</div>
+        <div class="definition-copy">{{ report.i18n['report.def_daily_operation_copy'] }}</div>
+      </div>
+      <div class="definition-tile">
+        <div class="definition-label">{{ report.i18n['report.battery_autonomy'] }}</div>
+        <div class="definition-copy">{{ report.i18n['report.def_battery_autonomy_copy'] }}</div>
+      </div>
+      <div class="definition-tile">
+        <div class="definition-label">{{ report.i18n['report.zero_battery_days'] }}</div>
+        <div class="definition-copy">{{ report.i18n['report.def_zero_battery_copy'] }}</div>
+      </div>
+      <div class="definition-tile">
+        <div class="definition-label">{{ report.i18n['report.acceptance_rule'] }}</div>
+        <div class="definition-copy">{{ report.i18n['report.def_acceptance_copy'] }}</div>
+      </div>
+    </div>
+  </article>
+
+  <article class="card">
+    <div class="methodology-logo-row methodology-logo-row-spaced">
+      <div class="section-title">{{ report.i18n['report.interpretation'] }}</div>
+      <img class="method-logo-jrc" src="{{ report.logo_jrc }}" alt="European Commission Joint Research Centre" />
+    </div>
+    <p class="body-copy">{{ report.i18n['report.interpretation_copy'] }}</p>
+  </article>
+</div>

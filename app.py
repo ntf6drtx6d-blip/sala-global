@@ -6,6 +6,7 @@ import base64
 import hashlib
 import streamlit as st
 
+from core.i18n import AVAILABLE_LANGUAGES, month_label, month_labels, t
 from core.db import init_db, create_user, user_exists, save_study, get_user_by_email
 from core.auth import hash_password, init_auth_state, is_logged_in, is_admin, logout
 
@@ -166,6 +167,8 @@ def init_state():
     defaults = {
         "airport_label": "",
         "airport_query": "",
+        "airport_icao": "",
+        "language": "en",
         "lat": 40.416775,
         "lon": -3.703790,
         "required_hours": 12.0,
@@ -176,7 +179,7 @@ def init_state():
         "results": None,
         "overall": None,
         "pdf_bytes": None,
-        "pdf_name": "sala_standardized_feasibility_study.pdf",
+        "pdf_name": "SALA_report.pdf",
         "elapsed": None,
         "search_message": "",
         "map_click_info": "",
@@ -236,6 +239,16 @@ def refresh_study_ready_from_state():
 
 
 def apply_global_styles():
+    auth_hide_css = ""
+    if is_logged_in():
+        auth_hide_css = """
+        .sala-login-head-wrap,
+        .sala-login-card,
+        .sala-footer-note {
+            display: none !important;
+        }
+        """
+
     st.markdown(
         """
         <style>
@@ -378,11 +391,13 @@ def apply_global_styles():
         """,
         unsafe_allow_html=True,
     )
+    if auth_hide_css:
+        st.markdown(f"<style>{auth_hide_css}</style>", unsafe_allow_html=True)
 
 
 def _display_name_from_email(email: str) -> str:
     if not email:
-        return "Account"
+        return t("ui.account", st.session_state.get("language"))
 
     local = email.split("@")[0]
     parts = local.replace(".", " ").replace("_", " ").split()
@@ -408,22 +423,33 @@ def render_header():
 
     with c2:
         st.markdown(
-            '<div class="main-title">SALA Standardized Feasibility Study for Solar AGL</div>',
+            f'<div class="main-title">{t("app.title", st.session_state.get("language"))}</div>',
             unsafe_allow_html=True,
         )
 
     with c3:
+        current_lang = st.session_state.get("language", "en")
+        selected_lang = st.selectbox(
+            t("ui.language", current_lang),
+            options=list(AVAILABLE_LANGUAGES.keys()),
+            index=list(AVAILABLE_LANGUAGES.keys()).index(current_lang) if current_lang in AVAILABLE_LANGUAGES else 0,
+            format_func=lambda code: AVAILABLE_LANGUAGES[code],
+            key="ui_language_selector",
+            label_visibility="collapsed",
+        )
+        st.session_state.language = selected_lang
         email = st.session_state.get("auth_email", "")
         role = st.session_state.get("auth_role", "")
         display_name = _display_name_from_email(email)
         user_label = f"{display_name}"
 
         with st.popover(user_label, use_container_width=True):
-            st.markdown("**My profile**")
-            st.write(f"Email: {email}")
-            st.write(f"Role: {role}")
+            lang = st.session_state.get("language", "en")
+            st.markdown(f"**{t('ui.my_profile', lang)}**")
+            st.write(f"{t('ui.email', lang)}: {email}")
+            st.write(f"{t('ui.role', lang)}: {role}")
 
-            if st.button("Log out", key="logout_from_popover", use_container_width=True):
+            if st.button(t("ui.log_out", lang), key="logout_from_popover", use_container_width=True):
                 logout_and_forget()
 
 
@@ -437,8 +463,9 @@ def _trigger_simulation():
 
 
 def render_top_action_bar():
+    lang = st.session_state.get("language", "en")
     st.markdown('<div class="top-action-wrap">', unsafe_allow_html=True)
-    st.markdown('<div class="top-action-title">Actions</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="top-action-title">{t("ui.actions", lang)}</div>', unsafe_allow_html=True)
 
     ready = bool(st.session_state.get("study_ready", False))
     has_results = st.session_state.get("results") is not None
@@ -453,9 +480,9 @@ def render_top_action_bar():
     }
 
     if is_running:
-        st.markdown("**Simulation in progress**")
+        st.markdown(f"**{t('ui.simulation_in_progress', lang)}**")
         st.markdown(
-            "<div class='secondary-note' style='margin-top:0;'>Using PVGIS (JRC, European Commission) as the solar-data basis.</div>",
+            f"<div class='secondary-note' style='margin-top:0;'>{t('ui.pvgis_basis_note', lang)}</div>",
             unsafe_allow_html=True,
         )
 
@@ -470,7 +497,7 @@ def render_top_action_bar():
         action_state["trust_note"] = st.empty()
 
         pct = int(st.session_state.get("run_progress", 0))
-        stage = st.session_state.get("run_stage", "Preparing simulation")
+        stage = st.session_state.get("run_stage", t("ui.initializing_simulation", lang))
 
         action_state["progress_bar"].progress(pct)
         action_state["progress_text"].markdown(
@@ -478,7 +505,7 @@ def render_top_action_bar():
             unsafe_allow_html=True,
         )
         action_state["stage_text"].markdown(
-            f"<div class='secondary-note'><b>Current step:</b> {stage}</div>",
+            f"<div class='secondary-note'><b>{t('ui.current_step', lang)}</b> {stage}</div>",
             unsafe_allow_html=True,
         )
 
@@ -491,7 +518,7 @@ def render_top_action_bar():
                 ]
             )
         else:
-            log_html = "<div style='color:#667085;'>Initializing simulation...</div>"
+            log_html = f"<div style='color:#667085;'>{t('ui.initializing_simulation', lang)}</div>"
 
         action_state["status_box"].markdown(
             f"""
@@ -504,7 +531,7 @@ def render_top_action_bar():
                 box-shadow:0 2px 10px rgba(16,24,40,0.04);
             ">
                 <div style="font-size:0.88rem;font-weight:700;color:#344054;margin-bottom:8px;">
-                    Live calculation status
+                    {t('ui.live_calculation_status', lang)}
                 </div>
                 {log_html}
             </div>
@@ -513,7 +540,7 @@ def render_top_action_bar():
         )
 
         action_state["trust_note"].markdown(
-            """
+            f"""
             <div style="
                 margin-top:10px;
                 border:1px solid #d6e4ff;
@@ -524,7 +551,7 @@ def render_top_action_bar():
                 font-size:0.93rem;
                 line-height:1.45;
             ">
-                <b>Transparent method:</b> SALA uses PVGIS as an independent solar-data source and applies a standardized off-grid feasibility logic to the selected operating profile and device configuration.
+                <b>{t('ui.transparent_method_title', lang)}</b> {t('ui.transparent_method_body', lang)}
             </div>
             """,
             unsafe_allow_html=True,
@@ -535,7 +562,7 @@ def render_top_action_bar():
 
         with c1:
             if st.button(
-                "Run simulation",
+                t("ui.run_simulation", lang),
                 type="primary",
                 use_container_width=True,
                 disabled=not ready,
@@ -546,12 +573,12 @@ def render_top_action_bar():
         with c2:
             if ready:
                 st.markdown(
-                    '<div class="secondary-note">Setup is complete. You can start the feasibility check.</div>',
+                    f'<div class="secondary-note">{t("ui.setup_complete_ready", lang)}</div>',
                     unsafe_allow_html=True,
                 )
             else:
                 st.markdown(
-                    '<div class="secondary-note">Select an airport or study point and at least one device to enable simulation.</div>',
+                    f'<div class="secondary-note">{t("ui.select_location_to_enable", lang)}</div>',
                     unsafe_allow_html=True,
                 )
 
@@ -561,10 +588,10 @@ def render_top_action_bar():
         with c1:
             if st.session_state.get("pdf_bytes") is not None:
                 st.download_button(
-                    "📄 Download PDF report",
+                    f"📄 {t('ui.download_pdf_report', lang)}",
                     data=st.session_state.get("pdf_bytes"),
                     file_name=st.session_state.get(
-                        "pdf_name", "sala_standardized_feasibility_study.pdf"
+                        "pdf_name", "SALA_report.pdf"
                     ),
                     mime="application/pdf",
                     use_container_width=True,
@@ -573,7 +600,7 @@ def render_top_action_bar():
 
         with c2:
             if st.button(
-                "Run updated simulation",
+                t("ui.run_updated_simulation", lang),
                 type="primary",
                 use_container_width=True,
                 disabled=not ready,
@@ -583,14 +610,14 @@ def render_top_action_bar():
 
         with c3:
             if st.button(
-                "Start new study",
+                t("ui.start_new_study", lang),
                 use_container_width=True,
                 key="top_start_new_study",
             ):
                 reset_study()
 
         st.markdown(
-            '<div class="secondary-note">You can keep the same location, update devices or operating profile, and run the study again.</div>',
+            f'<div class="secondary-note">{t("ui.keep_location_note", lang)}</div>',
             unsafe_allow_html=True,
         )
 
@@ -634,7 +661,7 @@ def maybe_save_current_study():
         worst_blackout_days=days,
         worst_blackout_pct=pct,
         result_summary=result_summary,
-        pdf_name=st.session_state.get("pdf_name", "sala_standardized_feasibility_study.pdf"),
+        pdf_name=st.session_state.get("pdf_name", "SALA_report.pdf"),
         pdf_bytes=st.session_state.get("pdf_bytes"),
     )
 
@@ -642,8 +669,10 @@ def maybe_save_current_study():
 
 
 def _extract_energy_flow_payload(results, required_hours, overall, selected_ids):
-    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
-              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    raw_months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    lang = st.session_state.get("language", "en")
+    months = month_labels(lang)
 
     selected_device_name = "Selected configuration"
     if selected_ids:
@@ -697,7 +726,7 @@ def _extract_energy_flow_payload(results, required_hours, overall, selected_ids)
 
     if worst_pct is not None:
         worst_days = round(365 * worst_pct / 100.0)
-        worst_blackout_risk = f"{worst_days} days/year"
+        worst_blackout_risk = f"{worst_days} {t('ui.days_per_year_unit', lang)}"
 
     monthly_reserve_candidates = [
         first_result.get("monthly_reserve_pct"),
@@ -766,7 +795,7 @@ def _extract_energy_flow_payload(results, required_hours, overall, selected_ids)
     if reserve_pct:
         lowest_reserve_pct = min(reserve_pct)
         worst_idx = reserve_pct.index(lowest_reserve_pct)
-        worst_month = months[worst_idx]
+        worst_month = month_label(raw_months[worst_idx], lang)
 
     device_name_candidates = [
         first_result.get("device_name"),
@@ -793,14 +822,15 @@ def _extract_energy_flow_payload(results, required_hours, overall, selected_ids)
 
 
 def render_calculator_app():
+    lang = st.session_state.get("language", "en")
     if st.session_state.get("running", False):
-        with st.expander("Show study setup", expanded=False):
-            st.caption("Inputs are temporarily locked while the simulation is running.")
+        with st.expander(t("ui.show_study_setup", lang), expanded=False):
+            st.caption(t("ui.inputs_locked", lang))
             render_setup(disabled=True)
     elif not st.session_state.get("results"):
         render_setup(disabled=False)
     else:
-        with st.expander("Show study setup", expanded=False):
+        with st.expander(t("ui.show_study_setup", lang), expanded=False):
             render_setup(disabled=False)
 
     refresh_study_ready_from_state()
@@ -825,7 +855,7 @@ def render_calculator_app():
 
             if action_state["stage_text"] is not None:
                 action_state["stage_text"].markdown(
-                    f"<div class='secondary-note'><b>Current step:</b> {stage}</div>",
+                    f"<div class='secondary-note'><b>{t('ui.current_step', lang)}</b> {stage}</div>",
                     unsafe_allow_html=True,
                 )
 
@@ -839,7 +869,7 @@ def render_calculator_app():
                         ]
                     )
                 else:
-                    log_html = "<div style='color:#667085;'>Initializing simulation...</div>"
+                    log_html = f"<div style='color:#667085;'>{t('ui.initializing_simulation', lang)}</div>"
 
                 action_state["status_box"].markdown(
                     f"""
@@ -852,7 +882,7 @@ def render_calculator_app():
                         box-shadow:0 2px 10px rgba(16,24,40,0.04);
                     ">
                         <div style="font-size:0.88rem;font-weight:700;color:#344054;margin-bottom:8px;">
-                            Live calculation status
+                            {t('ui.live_calculation_status', lang)}
                         </div>
                         {log_html}
                     </div>
@@ -866,7 +896,7 @@ def render_calculator_app():
         maybe_save_current_study()
 
         results = st.session_state.get("results")
-        tab_results, tab_energy = st.tabs(["Study Results", "Energy Flow"])
+        tab_results, tab_energy = st.tabs([t("tabs.study_results", lang), t("tabs.energy_flow", lang)])
 
         with tab_results:
             render_result()
@@ -913,7 +943,8 @@ render_header()
 user_id = st.session_state.get("auth_user_id")
 
 if is_admin():
-    tab_calc, tab_my, tab_admin = st.tabs(["Feasibility Study", "My studies", "Admin"])
+    lang = st.session_state.get("language", "en")
+    tab_calc, tab_my, tab_admin = st.tabs([t("tabs.feasibility", lang), t("tabs.my_studies", lang), t("tabs.admin", lang)])
 
     with tab_calc:
         render_calculator_app()
@@ -924,7 +955,8 @@ if is_admin():
     with tab_admin:
         render_admin_panel()
 else:
-    tab_calc, tab_my = st.tabs(["Feasibility Study", "My studies"])
+    lang = st.session_state.get("language", "en")
+    tab_calc, tab_my = st.tabs([t("tabs.feasibility", lang), t("tabs.my_studies", lang)])
 
     with tab_calc:
         render_calculator_app()

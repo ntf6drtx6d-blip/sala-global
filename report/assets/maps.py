@@ -1,5 +1,5 @@
 from pathlib import Path
-import io
+import os
 import tempfile
 
 import requests
@@ -36,7 +36,53 @@ def _fallback_map(lat: float, lon: float, width: int = 700, height: int = 380) -
     return tmp.name
 
 
+def _google_static_map(lat: float, lon: float, width: int, height: int, zoom: int) -> str | None:
+    api_key = os.environ.get("GOOGLE_STATIC_MAPS_API_KEY")
+    if not api_key:
+        return None
+    url = (
+        "https://maps.googleapis.com/maps/api/staticmap"
+        f"?center={lat},{lon}"
+        f"&zoom={zoom}"
+        f"&size={width}x{height}"
+        "&scale=2"
+        "&maptype=roadmap"
+        f"&markers=color:red|{lat},{lon}"
+        f"&key={api_key}"
+    )
+    resp = requests.get(url, timeout=12)
+    resp.raise_for_status()
+    if resp.content:
+        return _save_bytes_to_tmp(resp.content)
+    return None
+
+
+def _mapbox_static_map(lat: float, lon: float, width: int, height: int, zoom: int) -> str | None:
+    token = os.environ.get("MAPBOX_STATIC_MAPS_TOKEN")
+    if not token:
+        return None
+    url = (
+        "https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/"
+        f"pin-s+e11d48({lon},{lat})/{lon},{lat},{zoom},0/{width}x{height}"
+        f"?access_token={token}"
+    )
+    resp = requests.get(url, timeout=12)
+    resp.raise_for_status()
+    if resp.content:
+        return _save_bytes_to_tmp(resp.content)
+    return None
+
+
 def generate_static_map(lat: float, lon: float, width: int = 700, height: int = 380, zoom: int = 9):
+    zoom = min(max(int(zoom), 10), 12)
+    try:
+        for provider in (_google_static_map, _mapbox_static_map):
+            path = provider(lat, lon, width, height, zoom)
+            if path:
+                return path
+    except Exception:
+        pass
+
     url = (
         "https://staticmap.openstreetmap.de/staticmap.php"
         f"?center={lat},{lon}&zoom={zoom}&size={width}x{height}"

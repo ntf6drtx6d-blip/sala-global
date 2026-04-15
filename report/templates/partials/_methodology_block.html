@@ -1,0 +1,82 @@
+<h2 class="page-title">{{ report.i18n['report.methodology'] }}</h2>
+<div class="section-stack">
+  <article class="card methodology-hero">
+    <p class="body-copy methodology-copy">{{ report.i18n['report.offgrid_copy'] }}</p>
+
+    <div class="methodology-trust-grid">
+      <article class="trust-panel trust-panel-weather">
+        <div class="trust-panel-kicker">{{ report.i18n['report.offgrid_kicker'] }}</div>
+        <div class="trust-panel-title">{{ report.i18n['report.offgrid_title'] }}</div>
+        <div class="trust-panel-copy">{{ report.i18n['report.offgrid_copy'] }}</div>
+        <div class="trust-badge-row">
+          <div class="method-badge">
+            <span class="method-icon">☁</span>
+            <span>ERA5 meteorological database</span>
+          </div>
+          <div class="method-badge">
+            <span class="method-icon">⏳</span>
+            <span>{{ report.i18n['report.weather_badge'] }}</span>
+          </div>
+        </div>
+        <div class="weather-icon-row">
+          <span class="weather-icon weather-icon-small">☀</span>
+          <span class="weather-icon weather-icon-small">☁</span>
+          <span class="weather-icon weather-icon-small">☂</span>
+          <span class="weather-icon weather-icon-small">≋</span>
+        </div>
+        <div class="trust-panel-footnote">{{ report.i18n['report.weather_footnote'] }}</div>
+      </article>
+
+      <article class="trust-panel trust-panel-solar">
+        <div class="trust-panel-kicker">{{ report.i18n['report.solar_kicker'] }}</div>
+        <div class="trust-panel-title">{{ report.i18n['report.solar_title'] }}</div>
+        <div class="trust-panel-copy">{{ report.i18n['report.solar_copy'] }}</div>
+        <div class="trust-badge-row trust-badge-row-single">
+          <div class="method-badge method-badge-strong">
+            <span class="method-icon">🛰</span>
+            <span>{{ report.i18n['report.satellite_dataset'] }}</span>
+          </div>
+        </div>
+        <div class="dataset-line">{{ report.i18n['report.simulation_engine_dataset'].format(dataset=report.pvgis_dataset_display) }}</div>
+      </article>
+    </div>
+
+    <div class="methodology-logo-row">
+      <div class="method-source-note">{{ report.i18n['report.methodology_reference'] }}</div>
+      <img class="method-logo-jrc" src="{{ report.logo_jrc }}" alt="European Commission Joint Research Centre" />
+    </div>
+    <div class="dataset-highlight">
+      <div class="dataset-label">{{ report.i18n['report.methodology.primary_dataset'] }}</div>
+      <div class="dataset-badge-row">
+        <div class="dataset-badge dataset-badge-primary">
+          <div class="dataset-badge-kicker">{{ report.i18n['report.primary_source'] }}</div>
+          <div class="dataset-badge-title">PVGIS-SARAH3</div>
+          <div class="dataset-badge-copy">{{ report.i18n['report.dataset_copy_primary'] }}</div>
+        </div>
+        <div class="dataset-badge dataset-badge-secondary">
+          <div class="dataset-badge-kicker">{{ report.i18n['report.meteorological_database'] }}</div>
+          <div class="dataset-badge-title">ERA5</div>
+          <div class="dataset-badge-copy">{{ report.i18n['report.dataset_copy_meteo'] }}</div>
+        </div>
+      </div>
+      <div class="dataset-supporting-copy">{{ report.i18n['report.dataset_supporting_copy'] }}</div>
+    </div>
+    <div class="dataset-highlight">
+      <div class="dataset-label">{{ report.i18n['report.methodology.lighting_input_source'] }}</div>
+      <div class="dataset-badge-row {% if (report.contains_s4ga and not report.contains_avlite) or (report.contains_avlite and not report.contains_s4ga) %}dataset-badge-row-single{% endif %}">
+        {% if report.contains_s4ga %}
+          <div class="dataset-badge dataset-badge-primary">
+            <div class="dataset-badge-title">{{ report.i18n['report.device_source_info'].format(brand='S4GA (Poland)') }}</div>
+            <div class="dataset-badge-copy">{{ report.i18n['report.status_line'].format(status=report.i18n['ui.verified_by_sala']) }}</div>
+          </div>
+        {% endif %}
+        {% if report.contains_avlite %}
+          <div class="dataset-badge dataset-badge-secondary">
+            <div class="dataset-badge-title">{{ report.i18n['report.device_source_info'].format(brand='Avlite (Australia)') }}</div>
+            <div class="dataset-badge-copy">{{ report.i18n['report.status_line'].format(status=report.i18n['ui.estimated_by_sala']) }}</div>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </article>
+</div>

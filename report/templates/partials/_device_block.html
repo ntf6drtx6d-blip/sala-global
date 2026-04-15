@@ -1,0 +1,57 @@
+<section class="report-page device-page">
+  {% include 'partials/_header.html' %}
+  <article class="device-section avoid-break">
+    <div class="device-header-row">
+      <h2 class="device-name">{{ device.name }}</h2>
+      <div class="status-pill status-{{ device.annual_result_status }}">{{ device.result_label }}</div>
+    </div>
+
+    <div class="kpi-row kpi-row-4 avoid-break">
+      {% for card in device.kpis %}
+        {% include 'partials/_kpi_card.html' %}
+      {% endfor %}
+    </div>
+
+    <div class="interpretation-line status-{{ device.annual_result_status }}">{{ device.interpretation_line }}</div>
+
+    <div class="grid two-col device-basis-row avoid-break">
+      <article class="card basis-card">
+        <div class="section-title">{{ report.i18n['report.battery'] }}</div>
+        <div class="info-list">
+          <div class="info-row"><span>{{ report.i18n['report.technology'] }}</span><strong>{{ device.battery_type }}</strong></div>
+          <div class="info-row"><span>{{ report.i18n['report.battery_autonomy'] }}</span><strong>{% if device.battery_autonomy_hours is not none %}{{ '%.1f'|format(device.battery_autonomy_hours) }} h{% else %}N/A{% endif %}</strong></div>
+          <div class="info-row"><span>{{ report.i18n['report.total_capacity'] }}</span><strong>{{ '%.1f'|format(device.total_battery_wh) }} Wh</strong></div>
+          <div class="info-row"><span>{{ report.i18n['report.usable_window'] }}</span><strong>{{ '%.1f'|format(device.usable_battery_wh) }} Wh</strong></div>
+          <div class="info-row"><span>{{ report.i18n['report.cutoff'] }}</span><strong>{{ '%.0f'|format(device.cutoff_pct) }}%</strong></div>
+        </div>
+      </article>
+
+      <article class="card basis-card">
+        <div class="section-title">{{ report.i18n['report.solar'] }}</div>
+        <div class="info-list">
+          <div class="info-row"><span>{{ report.i18n['report.configuration'] }}</span><strong>{{ device.solar_configuration or 'Configured array' }}</strong></div>
+          <div class="info-row"><span>{{ report.i18n['report.nominal_power'] }}</span><strong>{{ '%.1f'|format(device.nominal_power_wp) }} Wp</strong></div>
+          {% if device.is_single_panel %}
+            <div class="info-row"><span>{{ report.i18n['report.single_panel_tilt'] }}</span><strong>{{ '%.0f'|format(device.single_panel_tilt_deg) }}°</strong></div>
+          {% else %}
+            <div class="info-row"><span>{{ report.i18n['report.effective_power'] }}</span><strong>{{ '%.1f'|format(device.effective_power_wp) }} Wp</strong></div>
+            <div class="info-row"><span>{{ report.i18n['report.effective_ratio'] }}</span><strong>{{ '%.0f'|format(device.effective_ratio_pct) }}%</strong></div>
+            <div class="info-row"><span>{{ report.i18n['report.equivalent_tilt'] }}</span><strong>{{ '%.0f'|format(device.equivalent_tilt_deg) }}°</strong></div>
+          {% endif %}
+        </div>
+      </article>
+    </div>
+
+    <article class="card chart-block avoid-break">
+      <div class="section-title">{{ report.i18n['report.daily_battery_energy_balance'] }}</div>
+      <div class="plotly-chart">{{ device.chart_html | safe }}</div>
+      <div class="chart-explainer">
+        {{ report.i18n['report.daily_battery_explainer'] }}
+      </div>
+      {% if device.generated_consumed_close %}
+        <div class="chart-note">{{ report.i18n['report.chart_note_close_balance'] }}</div>
+      {% endif %}
+    </article>
+  </article>
+  <div class="page-footer"><span>{{ report.footer_note }}</span><span>{{ report.i18n['report.page'] }} {{ device.page_number }} of {{ report.total_pages }}</span></div>
+</section>

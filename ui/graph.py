@@ -4,11 +4,18 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+from core.i18n import month_label, month_labels, t
 
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+
+
+def _month_label_expr(lang: str) -> str:
+    labels = month_labels(lang)
+    quoted = ",".join(f"'{label}'" for label in labels)
+    return f"[{quoted}][datum.value-1]"
 
 
 def short_device_label(full_name: str) -> str:
@@ -71,6 +78,7 @@ def _monthly_blackout_days_from_pct(monthly_pct):
 
 
 def build_blackout_df(results: dict) -> pd.DataFrame:
+    lang = st.session_state.get("language", "en")
     rows = []
 
     for device_name, r in results.items():
@@ -106,23 +114,57 @@ def build_blackout_df(results: dict) -> pd.DataFrame:
 
             rows.append({
                 "Month": month,
+                "MonthLabel": month_label(month, lang),
                 "MonthIndex": i + 1,
                 "Device": label,
                 "EmptyBatteryPct": float(monthly_pct[i]),
                 "EstimatedBlackoutDays": days_val,
                 "MonthDays": MONTH_DAYS[i],
                 "StatusBand": status_band,
-                "Meaning": (
-                    f"Estimated days with battery at 0% in {month}: {days_val:.1f}. "
-                    f"Share of month with empty battery: {float(monthly_pct[i]):.1f}%. "
-                    f"Calendar month length: {MONTH_DAYS[i]} days."
+                "Meaning": t(
+                    "ui.blackout_meaning",
+                    lang,
+                    month=month_label(month, lang),
+                    days=days_val,
+                    pct=float(monthly_pct[i]),
+                    month_days=MONTH_DAYS[i],
                 ),
             })
 
     return pd.DataFrame(rows)
 
 
+def _render_blackout_detail_table(blackout_df: pd.DataFrame, visible_devices: list[str]):
+    detail_df = blackout_df[blackout_df["Device"].isin(visible_devices)].copy()
+    if detail_df.empty or float(detail_df["EstimatedBlackoutDays"].max()) <= 0:
+        return
+
+    detail_df = detail_df.groupby("Device", group_keys=False).filter(
+        lambda frame: float(frame["EstimatedBlackoutDays"].sum()) > 0
+    )
+    if detail_df.empty:
+        return
+
+    pivot = detail_df.pivot(index="Device", columns="Month", values="EstimatedBlackoutDays").reindex(columns=MONTHS)
+    pivot = pivot.fillna(0.0)
+    pivot.insert(0, "Annual days / year", detail_df.groupby("Device")["EstimatedBlackoutDays"].sum().round(1))
+    pivot = pivot.reset_index()
+    lang = st.session_state.get("language", "en")
+    rename_map = {"Device": t("ui.device", lang), "Annual days / year": t("ui.days_per_year_unit", lang)}
+    rename_map.update({month: month_label(month, lang) for month in MONTHS})
+    pivot = pivot.rename(columns=rename_map)
+
+    with st.expander(t("ui.monthly_0_battery_days", lang), expanded=False):
+        st.caption(t("ui.blackout_detail_caption", lang))
+        st.dataframe(
+            pivot.style.format({col: "{:.1f}" for col in pivot.columns if col != t("ui.device", lang)}),
+            width="stretch",
+            hide_index=True,
+        )
+
+
 def build_monthly_df(results: dict, required_hrs: float) -> pd.DataFrame:
+    lang = st.session_state.get("language", "en")
     rows = []
 
     for device_name, r in results.items():
@@ -143,21 +185,28 @@ def build_monthly_df(results: dict, required_hrs: float) -> pd.DataFrame:
                 status_band = "near-threshold" if abs(gap) < 0.5 else "below"
 
             if reserve is not None:
-                meaning = (
-                    f"Required: {required:.1f} hrs/day. "
-                    f"Achieved in {month}: {hours:.1f} hrs/day. "
-                    f"Gap: {gap:+.1f} hrs/day. "
-                    f"Battery reserve: {reserve:.1f} hrs."
+                meaning = t(
+                    "ui.required_achieved_gap_full",
+                    lang,
+                    required=required,
+                    month=month_label(month, lang),
+                    hours=hours,
+                    gap=gap,
+                    reserve=reserve,
                 )
             else:
-                meaning = (
-                    f"Required: {required:.1f} hrs/day. "
-                    f"Achieved in {month}: {hours:.1f} hrs/day. "
-                    f"Gap: {gap:+.1f} hrs/day."
+                meaning = t(
+                    "ui.required_achieved_gap",
+                    lang,
+                    required=required,
+                    month=month_label(month, lang),
+                    hours=hours,
+                    gap=gap,
                 )
 
             rows.append({
                 "Month": month,
+                "MonthLabel": month_label(month, lang),
                 "MonthIndex": i + 1,
                 "MonthStart": i + 0.55,
                 "MonthEnd": i + 1.45,
@@ -173,61 +222,88 @@ def build_monthly_df(results: dict, required_hrs: float) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _render_operating_profile_detail_table(chart_df: pd.DataFrame, visible_devices: list[str], required_hours: float):
+    plot_df = chart_df[chart_df["Device"].isin(visible_devices)].copy()
+    if plot_df.empty:
+        return
+
+    month_order = {month: idx for idx, month in enumerate(MONTHS)}
+    lang = st.session_state.get("language", "en")
+    target_row = {t("ui.device", lang): t("ui.defined_compliance_target", lang)}
+    for month in MONTHS:
+        target_row[month] = f"{required_hours:.1f}h"
+
+    rows = [target_row]
+    for device in plot_df["Device"].drop_duplicates():
+        device_df = plot_df[plot_df["Device"] == device].copy()
+        device_df["MonthOrder"] = device_df["Month"].map(month_order)
+        device_df = device_df.sort_values("MonthOrder")
+        row = {t("ui.device", lang): device}
+        for _, item in device_df.iterrows():
+            row[item["Month"]] = f"{float(item['Hours']):.1f}h ({float(item['Gap']):+.1f})"
+        rows.append(row)
+
+    table_df = pd.DataFrame(rows, columns=[t("ui.device", lang), *MONTHS]).fillna("—")
+    table_df = table_df.rename(columns={month: month_label(month, lang) for month in MONTHS})
+
+    lang = st.session_state.get("language", "en")
+    with st.expander(t("ui.detailed_operating_profile_table", lang), expanded=False):
+        st.caption(t("ui.operating_profile_table_caption", lang))
+        st.dataframe(table_df, width="stretch", hide_index=True)
+
+
 def render_blackout_graph(results: dict, visible_devices: list[str]):
-    st.markdown("## Monthly 0% battery days by device")
+    lang = st.session_state.get("language", "en")
+    month_tick_labels = month_labels(lang)
+    st.markdown(f"## {t('ui.monthly_0_battery_days', lang)}")
 
     required_hours = float(st.session_state.get("required_hours", 0))
     if required_hours > 0:
-        st.caption(
-            f"Shows, for each selected device, how many days per month the battery is expected to reach 0% "
-            f"under the selected airport lighting requirement of {required_hours:.0f} hrs/day."
-        )
+        st.caption(t("ui.blackout_chart_caption_with_hours", lang, hours=required_hours))
     else:
-        st.caption(
-            "Shows, for each selected device, how many days per month the battery is expected to reach 0%."
-        )
+        st.caption(t("ui.blackout_chart_caption", lang))
 
     blackout_df = build_blackout_df(results)
 
     if blackout_df.empty:
-        st.info("Monthly empty-battery data is not available in the current simulation output.")
+        st.info(t("ui.no_empty_battery_data", lang))
         return
 
     plot_df = blackout_df[blackout_df["Device"].isin(visible_devices)].copy()
 
     if plot_df.empty:
-        st.info("No devices selected for display.")
+        st.info(t("ui.no_devices_selected", lang))
         return
 
     if float(plot_df["EstimatedBlackoutDays"].max()) <= 0:
-        st.info("No selected device is expected to reach 0% battery in any month.")
+        st.info(t("ui.no_zero_battery_months", lang))
         return
 
     y_max = max(5, float(plot_df["EstimatedBlackoutDays"].max()) + 2)
 
     tooltip_fields = [
-        alt.Tooltip("Device:N", title="Device"),
-        alt.Tooltip("Month:N", title="Month"),
-        alt.Tooltip("EstimatedBlackoutDays:Q", title="0% battery days", format=".1f"),
-        alt.Tooltip("EmptyBatteryPct:Q", title="Share of month with empty battery", format=".1f"),
-        alt.Tooltip("MonthDays:Q", title="Days in month", format=".0f"),
-        alt.Tooltip("Meaning:N", title="Interpretation"),
+        alt.Tooltip("Device:N", title=t("ui.device", lang)),
+        alt.Tooltip("MonthLabel:N", title=t("ui.month", lang)),
+        alt.Tooltip("EstimatedBlackoutDays:Q", title=t("ui.monthly_0_battery_days", lang), format=".1f"),
+        alt.Tooltip("EmptyBatteryPct:Q", title=t("ui.share_of_month_empty", lang), format=".1f"),
+        alt.Tooltip("MonthDays:Q", title=t("ui.days_in_month", lang), format=".0f"),
+        alt.Tooltip("Meaning:N", title=t("ui.interpretation", lang)),
     ]
 
     bars = alt.Chart(plot_df).mark_bar(
         opacity=0.55,
         size=22
     ).encode(
-        x=alt.X("Month:N", sort=MONTHS, axis=alt.Axis(title="Month", labelAngle=0)),
+        x=alt.X("MonthLabel:N", sort=month_tick_labels, axis=alt.Axis(title=t("ui.month", lang), labelAngle=0)),
         y=alt.Y(
             "EstimatedBlackoutDays:Q",
-            title="Days",
+            title=t("ui.days", lang),
             scale=alt.Scale(domain=[0, y_max])
         ),
         xOffset=alt.XOffset("Device:N"),
         color=alt.Color(
             "Device:N",
-            title="Device",
+            title=t("ui.device", lang),
             scale=alt.Scale(scheme="tableau10"),
         ),
         tooltip=tooltip_fields,
@@ -237,14 +313,14 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
         point=True,
         strokeWidth=2.2
     ).encode(
-        x=alt.X("Month:N", sort=MONTHS),
+        x=alt.X("MonthLabel:N", sort=month_tick_labels),
         y=alt.Y(
             "EstimatedBlackoutDays:Q",
             scale=alt.Scale(domain=[0, y_max])
         ),
         color=alt.Color(
             "Device:N",
-            title="Device",
+            title=t("ui.device", lang),
             scale=alt.Scale(scheme="tableau10"),
         ),
         detail="Device:N",
@@ -252,7 +328,7 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
     )
 
     zero_line_df = pd.DataFrame({
-        "Month": MONTHS,
+        "MonthLabel": month_tick_labels,
         "Target": [0] * 12,
     })
 
@@ -261,14 +337,14 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
         strokeDash=[8, 4],
         strokeWidth=2.0
     ).encode(
-        x=alt.X("Month:N", sort=MONTHS),
+        x=alt.X("MonthLabel:N", sort=month_tick_labels),
         y=alt.Y("Target:Q", scale=alt.Scale(domain=[0, y_max])),
     )
 
     zero_label_df = pd.DataFrame({
-        "Month": ["Dec"],
+        "MonthLabel": [month_tick_labels[-1]],
         "Target": [0],
-        "Text": ["Target = 0 days"],
+        "Text": [t("ui.target_zero_days", lang)],
     })
 
     zero_label = alt.Chart(zero_label_df).mark_text(
@@ -279,7 +355,7 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
         fontWeight="bold",
         color="#dc2626"
     ).encode(
-        x=alt.X("Month:N", sort=MONTHS),
+        x=alt.X("MonthLabel:N", sort=month_tick_labels),
         y=alt.Y("Target:Q", scale=alt.Scale(domain=[0, y_max])),
         text="Text:N",
     )
@@ -296,12 +372,13 @@ def render_blackout_graph(results: dict, visible_devices: list[str]):
     st.altair_chart(chart, use_container_width=True)
 
     st.caption(
-        "Any value above 0 indicates expected full battery depletion on at least some days in that month "
-        "under the selected airport lighting requirement."
+        t("ui.zero_battery_days_explainer", lang)
     )
+    _render_blackout_detail_table(blackout_df, visible_devices)
 
 
 def render_graph():
+    lang = st.session_state.get("language", "en")
     results = st.session_state.get("results", {})
     if not results:
         return
@@ -310,28 +387,28 @@ def render_graph():
     chart_df = build_monthly_df(results, required_hours)
 
     if chart_df.empty:
-        st.info("Graph data is not available in the current simulation output.")
+        st.info(t("ui.graph_data_unavailable", lang))
         return
 
     device_labels = list(chart_df["Device"].unique())
 
     visible_devices = st.multiselect(
-        "Devices shown on graph",
+        t("ui.devices_shown_on_graph", lang),
         device_labels,
         default=device_labels,
-        help="Untick devices to hide them from the graphs.",
+        help=t("ui.devices_shown_help", lang),
         key="graph_devices_filter",
     )
 
     render_blackout_graph(results, visible_devices)
 
-    st.markdown("## Annual operating profile")
-    st.caption("12-month solar performance from January to December.")
+    st.markdown(f"## {t('ui.annual_operating_profile', lang)}")
+    st.caption(t("ui.solar_performance_caption", lang))
 
     plot_df = chart_df[chart_df["Device"].isin(visible_devices)].copy()
 
     if plot_df.empty:
-        st.info("No devices selected for display.")
+        st.info(t("ui.no_devices_selected", lang))
         return
 
     green_df = plot_df[plot_df["StatusBand"] == "met"].copy()
@@ -342,9 +419,9 @@ def render_graph():
         "MonthIndex:Q",
         scale=alt.Scale(domain=[0.5, 12.5]),
         axis=alt.Axis(
-            title="Month",
+            title=t("ui.month", lang),
             values=list(range(1, 13)),
-            labelExpr="['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][datum.value-1]",
+            labelExpr=_month_label_expr(lang),
             labelAngle=0,
             domain=True,
             domainWidth=2.5,
@@ -362,7 +439,7 @@ def render_graph():
         "Hours:Q",
         scale=alt.Scale(domain=[0, 24]),
         axis=alt.Axis(
-            title="Achieved operating hours per day",
+            title=t("ui.achieved_operating_hours_per_day", lang),
             domain=True,
             domainWidth=2,
             domainColor="#9CA3AF",
@@ -384,9 +461,9 @@ def render_graph():
             "MonthStart:Q",
             scale=alt.Scale(domain=[0.5, 12.5]),
             axis=alt.Axis(
-                title="Month",
+                title=t("ui.month", lang),
                 values=list(range(1, 13)),
-                labelExpr="['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][datum.value-1]",
+                labelExpr=_month_label_expr(lang),
                 labelAngle=0,
                 domain=True,
                 domainWidth=2.5,
@@ -403,7 +480,7 @@ def render_graph():
         y=alt.Y(
             "RequiredHours:Q",
             scale=alt.Scale(domain=[0, 24]),
-            title="Achieved operating hours per day"
+            title=t("ui.achieved_operating_hours_per_day", lang)
         ),
         y2="Hours:Q",
         detail="Device:N",
@@ -439,18 +516,18 @@ def render_graph():
         y=y_axis,
         color=alt.Color(
             "Device:N",
-            title="Selected devices",
+            title=t("ui.selected_devices", lang),
             scale=alt.Scale(scheme="tableau10"),
             legend=alt.Legend(orient="top-right"),
         ),
         tooltip=[
-            alt.Tooltip("Device:N", title="Device"),
-            alt.Tooltip("Month:N", title="Month"),
-            alt.Tooltip("RequiredHours:Q", title="Required hours", format=".1f"),
-            alt.Tooltip("Hours:Q", title="Achieved hours", format=".1f"),
-            alt.Tooltip("Gap:Q", title="Gap vs requirement", format="+.1f"),
-            alt.Tooltip("BatteryReserve:Q", title="Battery reserve", format=".1f"),
-            alt.Tooltip("Meaning:N", title="Interpretation"),
+            alt.Tooltip("Device:N", title=t("ui.device", lang)),
+            alt.Tooltip("MonthLabel:N", title=t("ui.month", lang)),
+            alt.Tooltip("RequiredHours:Q", title=t("ui.required_hours", lang), format=".1f"),
+            alt.Tooltip("Hours:Q", title=t("ui.achieved_hours", lang), format=".1f"),
+            alt.Tooltip("Gap:Q", title=t("ui.gap_vs_requirement", lang), format="+.1f"),
+            alt.Tooltip("BatteryReserve:Q", title=t("ui.battery_reserve", lang), format=".1f"),
+            alt.Tooltip("Meaning:N", title=t("ui.interpretation", lang)),
         ],
     )
 
@@ -467,7 +544,7 @@ def render_graph():
         x=alt.X("MonthIndex:Q", scale=alt.Scale(domain=[0.5, 12.5])),
         y=alt.Y("Required:Q", scale=alt.Scale(domain=[0, 24])),
         tooltip=[
-            alt.Tooltip("Required:Q", title="Required hours", format=".1f")
+            alt.Tooltip("Required:Q", title=t("ui.required_hours", lang), format=".1f")
         ],
     )
 
@@ -500,7 +577,7 @@ def render_graph():
     req_label_df = pd.DataFrame({
         "MonthIndex": [0.9],
         "Required": [required_hours],
-        "Text": ["Required operation"],
+        "Text": [t("ui.required_operation", lang)],
     })
 
     req_label = alt.Chart(req_label_df).mark_text(
@@ -519,7 +596,7 @@ def render_graph():
     req_value_label_df = pd.DataFrame({
         "MonthIndex": [10.8],
         "Required": [required_hours],
-        "Text": [f"{required_hours:.1f} hrs/day"],
+        "Text": [f"{required_hours:.1f} {t('ui.hours_per_day_unit', lang)}"],
     })
 
     req_value_label = alt.Chart(req_value_label_df).mark_text(
@@ -557,7 +634,7 @@ def render_graph():
     zero_label_df = pd.DataFrame({
         "MonthIndex": [0.8],
         "Zero": [0],
-        "Text": ["0 hrs/day"],
+        "Text": [t("ui.zero_hours_per_day", lang)],
     })
 
     zero_label = alt.Chart(zero_label_df).mark_text(
@@ -575,7 +652,7 @@ def render_graph():
     chart_note_df = pd.DataFrame({
         "MonthIndex": [6.5],
         "Hours": [23.2],
-        "Text": ["Dashed line = required airport lighting operation"],
+        "Text": [t("ui.required_line_note", lang)],
     })
 
     chart_note = alt.Chart(chart_note_df).mark_text(
@@ -622,17 +699,17 @@ def render_graph():
     st.altair_chart(chart, use_container_width=True)
 
     st.markdown(
-        """
+        f"""
         <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:8px;font-size:0.95rem;color:#475467;">
-            <div><span style="display:inline-block;width:14px;height:14px;background:#16a34a;opacity:0.7;border-radius:3px;margin-right:6px;"></span>Requirement met</div>
-            <div><span style="display:inline-block;width:14px;height:14px;background:#f59e0b;opacity:0.7;border-radius:3px;margin-right:6px;"></span>Near threshold (&lt; 0.5 hrs/day shortfall)</div>
-            <div><span style="display:inline-block;width:14px;height:14px;background:#dc2626;opacity:0.7;border-radius:3px;margin-right:6px;"></span>Below requirement</div>
+            <div><span style="display:inline-block;width:14px;height:14px;background:#16a34a;opacity:0.7;border-radius:3px;margin-right:6px;"></span>{t("ui.requirement_met", lang)}</div>
+            <div><span style="display:inline-block;width:14px;height:14px;background:#f59e0b;opacity:0.7;border-radius:3px;margin-right:6px;"></span>{t("ui.near_threshold_shortfall", lang)}</div>
+            <div><span style="display:inline-block;width:14px;height:14px;background:#dc2626;opacity:0.7;border-radius:3px;margin-right:6px;"></span>{t("ui.below_requirement", lang)}</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
     st.caption(
-        "Hover any point to compare required hours, achieved hours, gap versus requirement, and battery reserve. "
-        "Battery reserve means battery-only fallback capability without solar input."
+        t("ui.hover_profile_explainer", lang)
     )
+    _render_operating_profile_detail_table(chart_df, visible_devices, required_hours)

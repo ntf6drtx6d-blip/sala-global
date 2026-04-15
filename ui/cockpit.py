@@ -9,6 +9,7 @@ import streamlit as st
 
 from core.simulate import simulate_for_devices
 from core.devices import DEVICES
+from core.i18n import t
 from report.report import make_pdf
 EU_LOGO_PATH = "logo_en.gif"
 
@@ -37,8 +38,9 @@ def short_device_label_from_id(device_id):
 
 
 def pvgis_short_card():
+    lang = st.session_state.get("language", "en")
     st.markdown(
-        """
+        f"""
         <div style="
             border:1px solid #d9e2ef;
             border-radius:14px;
@@ -47,12 +49,12 @@ def pvgis_short_card():
             margin-top:4px;
             margin-bottom:8px;">
             <div style="font-weight:700; color:#12355b; margin-bottom:5px;">
-                Powered by PVGIS
+                {t("ui.powered_by_pvgis", lang)}
             </div>
             <div style="font-size:0.90rem; color:#475467; line-height:1.45;">
-                <b>PVGIS — Photovoltaic Geographical Information System</b><br/>
-                Joint Research Centre, European Commission<br/>
-                Dataset: <b>PVGIS-SARAH3</b>
+                <b>{t("ui.pvgis_full_name", lang)}</b><br/>
+                {t("ui.pvgis_jrc_line", lang)}<br/>
+                {t("ui.pvgis_dataset_line", lang, dataset="<b>PVGIS-SARAH3</b>")}
             </div>
         </div>
         """,
@@ -60,6 +62,7 @@ def pvgis_short_card():
     )
 
 def reset_study():
+    lang = st.session_state.get("language", "en")
     auth_keys = {
         "auth_ok": st.session_state.get("auth_ok", False),
         "auth_user_id": st.session_state.get("auth_user_id"),
@@ -71,10 +74,12 @@ def reset_study():
     keep = {
         "airport_label": "",
         "airport_query": "",
+        "airport_icao": "",
+        "language": st.session_state.get("language", "en"),
         "lat": st.session_state.get("lat", 40.416775),
         "lon": st.session_state.get("lon", -3.703790),
         "required_hours": 12.0,
-        "operating_profile_mode": "Custom hours per day",
+        "operating_profile_mode": t("ui.mode_custom", lang),
         "selected_ids": [],
         "selected_simulation_keys": [],
         "per_device_config": {},
@@ -85,11 +90,11 @@ def reset_study():
         "results": None,
         "overall": None,
         "pdf_bytes": None,
-        "pdf_name": "sala_standardized_feasibility_study.pdf",
+        "pdf_name": "SALA_report.pdf",
         "elapsed": None,
         "running": False,
         "run_progress": 0,
-        "run_stage": "Ready",
+        "run_stage": t("ui.ready", lang),
         "run_log": [],
         "trigger_run": False,
         "study_saved_for_current_result": False,
@@ -107,8 +112,9 @@ def reset_study():
 
 
 def _run_simulation(progress_callback=None):
+    lang = st.session_state.get("language", "en")
     st.session_state.running = True
-    st.session_state.run_stage = "Preparing simulation"
+    st.session_state.run_stage = t("ui.preparing_simulation", lang)
     st.session_state.run_progress = 0
     st.session_state.run_log = []
 
@@ -119,16 +125,16 @@ def _run_simulation(progress_callback=None):
 
     def render_stage(percent):
         if percent < 10:
-            return "Validating study inputs"
+            return t("ui.stage_validating_inputs", lang)
         elif percent < 25:
-            return "Preparing PVGIS requests"
+            return t("ui.stage_preparing_requests", lang)
         elif percent < 45:
-            return "Requesting solar and off-grid data from PVGIS"
+            return t("ui.stage_requesting_data", lang)
         elif percent < 70:
-            return "Checking monthly performance"
+            return t("ui.stage_checking_monthly", lang)
         elif percent < 90:
-            return "Calculating annual feasibility"
-        return "Generating results"
+            return t("ui.stage_calculating_feasibility", lang)
+        return t("ui.stage_generating_results", lang)
 
     def push_progress(percent, stage):
         percent = max(0, min(100, int(percent)))
@@ -137,17 +143,18 @@ def _run_simulation(progress_callback=None):
         if progress_callback:
             progress_callback(percent, stage)
 
-    add_log("Checking selected airport inputs.")
-    push_progress(5, "Validating study inputs")
+    add_log(t("ui.log_checking_airport_inputs", lang))
+    push_progress(5, t("ui.stage_validating_inputs", lang))
 
-    add_log("Preparing PVGIS request parameters.")
-    push_progress(12, "Preparing PVGIS requests")
+    add_log(t("ui.log_preparing_request_parameters", lang))
+    push_progress(12, t("ui.stage_preparing_requests", lang))
 
     loc = {
         "lat": st.session_state.lat,
         "lon": st.session_state.lon,
         "label": st.session_state.airport_label or f"{st.session_state.lat:.4f}, {st.session_state.lon:.4f}",
         "country": st.session_state.get("airport_country", ""),
+        "icao": st.session_state.get("airport_icao", ""),
     }
 
     started = time.time()
@@ -159,15 +166,15 @@ def _run_simulation(progress_callback=None):
         push_progress(percent, stage)
 
         if done == 1:
-            add_log("Connecting to PVGIS — Photovoltaic Geographical Information System.")
-            add_log("Using the Joint Research Centre, European Commission engine.")
+            add_log(t("ui.log_connecting_pvgis", lang))
+            add_log(t("ui.log_using_jrc_engine", lang))
 
         if month_name == "Jan":
-            add_log(f"Starting annual assessment for {device_name}.")
+            add_log(t("ui.log_starting_annual_assessment", lang, device_name=device_name))
         if month_name == "Jun":
-            add_log(f"Reviewing mid-year off-grid performance for {device_name}.")
+            add_log(t("ui.log_reviewing_midyear", lang, device_name=device_name))
         if month_name == "Dec":
-            add_log(f"Checking winter performance for {device_name}.")
+            add_log(t("ui.log_checking_winter", lang, device_name=device_name))
 
     results, overall, worst_name, worst_gap, slope = simulate_for_devices(
         loc=loc,
@@ -180,20 +187,23 @@ def _run_simulation(progress_callback=None):
 
     elapsed = time.time() - started
 
-    push_progress(92, "Calculating annual feasibility")
-    add_log("PVGIS responses received for all selected configurations.")
-    add_log("Preparing annual feasibility conclusion.")
+    push_progress(92, t("ui.stage_calculating_feasibility", lang))
+    add_log(t("ui.log_pvgis_responses_received", lang))
+    add_log(t("ui.log_preparing_conclusion", lang))
 
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
         tmp_path = tmp.name
 
-    make_pdf(
+    pdf_name = make_pdf(
         results=results,
         overall=overall,
+        language=st.session_state.get("language", "en"),
         airport_label=st.session_state.airport_label,
+        airport_icao=st.session_state.get("airport_icao", ""),
         created_at=datetime.now(ZoneInfo("Europe/Madrid")).strftime("%Y-%m-%d %H:%M"),
         author_name=st.session_state.get("auth_full_name") or st.session_state.get("auth_email", ""),
         required_hours=st.session_state.required_hours,
+        operating_profile_mode=st.session_state.get("operating_profile_mode", t("ui.mode_custom", lang)),
         output_path=tmp_path,
         lat=st.session_state.lat,
         lon=st.session_state.lon,
@@ -208,17 +218,17 @@ def _run_simulation(progress_callback=None):
     except Exception:
         pass
 
-    push_progress(100, "Generating results")
-    add_log("Simulation complete.")
-    add_log(f"Total elapsed time: {format_seconds(elapsed)}.")
+    push_progress(100, t("ui.stage_generating_results", lang))
+    add_log(t("ui.log_simulation_complete", lang))
+    add_log(t("ui.log_total_elapsed", lang, elapsed=format_seconds(elapsed)))
 
     st.session_state.results = results
     st.session_state.overall = overall
     st.session_state.pdf_bytes = pdf_bytes
-    st.session_state.pdf_name = "sala_standardized_feasibility_study.pdf"
+    st.session_state.pdf_name = pdf_name or "SALA_report.pdf"
     st.session_state.elapsed = elapsed
     st.session_state.running = False
     st.session_state.trigger_run = False
-    st.session_state.run_stage = "Completed"
+    st.session_state.run_stage = t("ui.completed", lang)
     st.session_state.run_progress = 100
     st.rerun()

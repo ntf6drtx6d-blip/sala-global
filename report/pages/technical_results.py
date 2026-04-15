@@ -1,42 +1,43 @@
-from reportlab.platypus import Paragraph, Spacer, Table, TableStyle, Image, PageBreak
-from ..styles import TITLE, CARD_TITLE, SMALL, FOOTER, WHITE, BORDER, PAGE_WIDTH, SPACE_3
+from reportlab.platypus import Paragraph, Spacer, Image, PageBreak
+from ..layout import card, page_footer, page_title
+from ..styles import CARD_TITLE, SMALL, PAGE_WIDTH, SPACE_3
 from ..assets.charts import generate_blackout_chart, generate_profile_chart
 
 
-def _card(items, width, bg=WHITE, border=BORDER, padding=10):
-    t = Table([[i] for i in items], colWidths=[width])
-    t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), bg),
-        ("BOX", (0, 0), (-1, -1), 0.8, border),
-        ("LEFTPADDING", (0, 0), (-1, -1), padding),
-        ("RIGHTPADDING", (0, 0), (-1, -1), padding),
-        ("TOPPADDING", (0, 0), (-1, -1), padding),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), padding),
-    ]))
-    return t
-
-
 def build_technical(data):
-    story = [Paragraph("Technical Results", TITLE), Spacer(1, SPACE_3)]
+    story = [page_title("Technical Results"), Spacer(1, SPACE_3)]
 
     if data["show_blackout_chart"]:
         blackout_path = generate_blackout_chart(data["devices"])
         img = Image(blackout_path)
         img._restrictSize(495, 180)
-        story.append(_card([Paragraph("Days with 0% battery depletion", CARD_TITLE), Spacer(1, 6), img], PAGE_WIDTH))
+        story.append(card([Paragraph("Days with 0% battery depletion", CARD_TITLE), Spacer(1, 6), img], PAGE_WIDTH))
         story.append(Spacer(1, 10))
     else:
-        story.append(_card([Paragraph("Days with 0% battery depletion", CARD_TITLE), Spacer(1, 4), Paragraph("No battery depletion is expected for any evaluated device.", SMALL)], PAGE_WIDTH))
+        story.append(card([Paragraph("Days with 0% battery depletion", CARD_TITLE), Spacer(1, 4), Paragraph("No battery depletion is expected for any evaluated device.", SMALL)], PAGE_WIDTH))
         story.append(Spacer(1, 10))
 
-    profile_path = generate_profile_chart(data["devices"], data["required_hours"])
-    pimg = Image(profile_path)
-    pimg._restrictSize(495, 210)
-    story.append(_card([Paragraph("Annual operating profile", CARD_TITLE), Spacer(1, 6), pimg], PAGE_WIDTH))
+    if data.get("show_profile_chart", True):
+        profile_path = generate_profile_chart(data["devices"], data["required_hours"])
+        pimg = Image(profile_path)
+        pimg._restrictSize(495, 210)
+        story.append(card([Paragraph("Annual operating profile", CARD_TITLE), Spacer(1, 6), pimg], PAGE_WIDTH))
+    else:
+        story.append(
+            card(
+                [
+                    Paragraph("Annual operating profile", CARD_TITLE),
+                    Spacer(1, 4),
+                    Paragraph(
+                        "The annual operating profile chart is omitted because blackout exposure is zero and battery reserve remains consistently high across the year.",
+                        SMALL,
+                    ),
+                ],
+                PAGE_WIDTH,
+            )
+        )
 
     story.append(Spacer(1, 16))
-    footer = Table([[Paragraph(data["footer_note"], FOOTER), Paragraph("Page 3", FOOTER)]], colWidths=[430, 85])
-    footer.setStyle(TableStyle([("LINEABOVE", (0, 0), (-1, -1), 0.7, BORDER), ("TOPPADDING", (0, 0), (-1, -1), 6), ("ALIGN", (1, 0), (1, 0), "RIGHT")]))
-    story.append(footer)
+    story.append(page_footer(data["footer_note"], "Page 3"))
     story.append(PageBreak())
     return story

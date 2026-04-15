@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="40" viewBox="0 0 160 40" fill="none">
+  <rect x="1" y="1" width="158" height="38" rx="10" fill="#F8FAFF" stroke="#BFD3FF" stroke-width="2"/>
+  <rect x="12" y="10" width="20" height="20" rx="5" fill="#1D4ED8"/>
+  <path d="M18 16.5C18 14.8431 19.3431 13.5 21 13.5H23.5" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M18 23.5C18 25.1569 19.3431 26.5 21 26.5H23.5" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M24.5 13.5H26.5V26.5H24.5" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+  <text x="44" y="26" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" fill="#0F172A">S4GA</text>
+</svg>

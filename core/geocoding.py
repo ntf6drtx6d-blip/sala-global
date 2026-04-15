@@ -1,4 +1,5 @@
 import time
+import re
 import requests
 import streamlit as st
 
@@ -17,6 +18,15 @@ def _rate_limit():
     if elapsed < _MIN_DELAY_SECONDS:
         time.sleep(_MIN_DELAY_SECONDS - elapsed)
     st.session_state["_nominatim_last_call_ts"] = time.time()
+
+
+def _extract_icao_code(*values):
+    for value in values:
+        text = str(value or "")
+        for match in re.findall(r"\b[A-Z]{4}\b", text.upper()):
+            if match not in {"SALA", "PVGI", "PAPI"}:
+                return match
+    return None
 
 
 @st.cache_data(show_spinner=False, ttl=60 * 60 * 24)
@@ -67,5 +77,6 @@ def search_airport(query: str):
         "lat": float(place["lat"]),
         "lon": float(place["lon"]),
         "country": country,
+        "icao": _extract_icao_code(query, display_name, place.get("name")),
         "raw": place,
     }

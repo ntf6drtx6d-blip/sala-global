@@ -7,6 +7,7 @@ import folium
 import streamlit as st
 from streamlit_folium import st_folium
 
+from core.i18n import month_label, t
 from ui.result_helpers import (
     annual_empty_battery_stats,
     count_device_statuses,
@@ -17,6 +18,9 @@ from ui.result_helpers import (
     overall_state,
 )
 from ui.result_devices import render_device_capability_cards
+
+MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+          "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 
 def render_kpi_card(
@@ -57,7 +61,12 @@ def render_kpi_card(
     st.markdown(html, unsafe_allow_html=True)
 
 
-def render_airport_name_box(airport_name: str):
+def render_airport_name_box(airport_name: str, airport_icao: str = ""):
+    lang = st.session_state.get("language", "en")
+    icao_html = (
+        f"<div style='font-size:0.95rem;color:#475467;font-weight:700;margin-top:6px;'>{t('ui.icao_prefix', lang)} {airport_icao}</div>"
+        if airport_icao else ""
+    )
     html = textwrap.dedent(
         """
         <div style="
@@ -67,27 +76,45 @@ def render_airport_name_box(airport_name: str):
             background:#ffffff;
             box-shadow:0 2px 10px rgba(16,24,40,0.04);
             margin-bottom:14px;">
-            <div style="font-size:0.88rem;color:#667085;font-weight:700;margin-bottom:6px;">Airport / study point</div>
+            <div style="font-size:0.88rem;color:#667085;font-weight:700;margin-bottom:6px;">{airport_study_point}</div>
             <div style="font-size:1.35rem;color:#1f2937;font-weight:900;line-height:1.15;">{airport_name}</div>
+            {icao_html}
         </div>
         """
-    ).format(airport_name=airport_name)
+    ).format(
+        airport_name=airport_name,
+        icao_html=icao_html,
+        airport_study_point=t("ui.airport_study_point", lang),
+    )
     st.markdown(html, unsafe_allow_html=True)
 
 
 def render_required_time_card(hours_value: float, mode_text: str):
     rounded_hours = math.ceil(float(hours_value))
     window_text = operating_window_example(hours_value)
+    lang = st.session_state.get("language", "en")
 
     render_kpi_card(
-        "Airport lighting requirement",
-        f"{rounded_hours} hrs/day",
+        t("ui.required_daily_operation", lang),
+        f"{rounded_hours} {t('ui.hours_per_day_unit', lang)}",
         f"{mode_text}<br><span style='color:#344054;font-weight:700;'>{window_text}</span>",
         min_height=220,
     )
 
 
-def render_blackout_card(days_value, pct_value, device_name, required_hours, mode_text, window_text):
+def _worst_device_month(results: dict, device_name: str) -> str | None:
+    row = (results or {}).get(device_name) or {}
+    lang = st.session_state.get("language", "en")
+    values = list(row.get("empty_battery_days_by_month") or [])[:12]
+    values = values + [0] * max(0, 12 - len(values))
+    if not values or max(float(v) for v in values) <= 0:
+        return None
+    idx = max(range(12), key=lambda i: float(values[i]))
+    return month_label(MONTHS[idx], lang)
+
+
+def render_blackout_card(days_value, pct_value, device_name, worst_month):
+    lang = st.session_state.get("language", "en")
     if days_value is None or pct_value is None:
         main = "N/A"
         subtitle = "Worst-device 0% battery exposure not available."
@@ -95,14 +122,13 @@ def render_blackout_card(days_value, pct_value, device_name, required_hours, mod
         border = "#e6eaf0"
         color = "#1f2937"
     else:
-        device_line = f"Worst device: <b>{device_name}</b><br>" if device_name else ""
-        subtitle = (
-            f"{pct_value:.1f}% of the year<br>"
-            f"{device_line}"
-            f"Highest 0% battery exposure found within the selected device set under the selected airport lighting requirement of "
-            f"<b>{math.ceil(float(required_hours))} hrs/day</b> ({window_text})."
-        )
-        main = f"{days_value} days/year"
+        lines = [f"{pct_value:.1f}% of the year"]
+        if device_name:
+            lines.append(f"Worst device: <b>{device_name}</b>")
+        if worst_month:
+            lines.append(f"Worst month: <b>{worst_month}</b>")
+        subtitle = "<br>".join(lines)
+        main = f"{days_value} {t('ui.days_per_year_unit', lang)}"
 
         if int(days_value) == 0:
             bg = "#ecfdf3"
@@ -114,7 +140,7 @@ def render_blackout_card(days_value, pct_value, device_name, required_hours, mod
             color = "#b42318"
 
     render_kpi_card(
-        "Worst device 0% battery days",
+        t("ui.monthly_0_battery_days", lang),
         main,
         subtitle,
         bg=bg,
@@ -126,17 +152,22 @@ def render_blackout_card(days_value, pct_value, device_name, required_hours, mod
 
 def render_device_summary_line(results: dict):
     total, passed, failed = count_device_statuses(results)
+    lang = st.session_state.get("language", "en")
 
     if total <= 1:
         return
 
     if failed == 0:
-        text = f"{passed} of {total} devices meet requirement"
+        text = t("report.devices_meet_requirement", lang, passed=passed, total=total)
         color = "#067647"
         bg = "#ecfdf3"
         border = "#abefc6"
     else:
-        text = f"{failed} of {total} devices below requirement"
+        text = {
+            "en": f"{failed} of {total} devices below requirement",
+            "es": f"{failed} de {total} dispositivos por debajo del requisito",
+            "fr": f"{failed} dispositifs sur {total} en dessous de l’exigence",
+        }.get(lang, f"{failed} of {total} devices below requirement")
         color = "#b42318"
         bg = "#fef3f2"
         border = "#fecdca"
@@ -156,6 +187,55 @@ def render_device_summary_line(results: dict):
     </div>
     """
     st.markdown(html, unsafe_allow_html=True)
+
+
+def render_consumption_basis_block(results: dict):
+    has_avlite = any(str((row or {}).get("system_type", "")).lower() == "avlite_fixture" for row in (results or {}).values())
+    has_s4ga = any(str((row or {}).get("system_type", "")).lower() != "avlite_fixture" for row in (results or {}).values())
+
+    items = []
+    if has_s4ga:
+        items.append(("S4GA", "Verified by SALA"))
+    if has_avlite:
+        items.append(("Avlite", "Estimated by SALA"))
+
+    if not items:
+        return
+
+    rows = "".join(
+        f"""
+        <div style="
+            border:1px solid #d6e4ff;
+            background:#f8fbff;
+            color:#12355b;
+            border-radius:12px;
+            padding:10px 12px;
+            font-size:0.90rem;
+            font-weight:700;
+            line-height:1.45;">
+            <div><strong>Device Source Info:</strong> {brand}</div>
+            <div><strong>Status:</strong> {status}</div>
+        </div>
+        """
+        for brand, status in items
+    )
+
+    st.markdown(
+        f"""
+        <div style="margin-top:16px;">
+            <div style="font-size:0.82rem;color:#667085;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:8px;">
+                Lighting consumption basis
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+                {rows}
+            </div>
+            <div style="font-size:0.84rem;color:#475467;font-weight:700;line-height:1.45;margin-top:8px;">
+                Feasibility study operating demand is assessed at ICAO-compliant light-output level.
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def render_location_map(lat: float, lon: float, airport_name: str):
@@ -190,7 +270,8 @@ def render_location_map(lat: float, lon: float, airport_name: str):
 
 
 def render_result():
-    st.markdown("## Feasibility result")
+    lang = st.session_state.get("language", "en")
+    st.markdown(f"## {t('ui.feasibility_result', lang)}")
 
     results = st.session_state.get("results", {})
     if not results:
@@ -198,8 +279,10 @@ def render_result():
 
     state = overall_state(results)
     days, pct, worst_device_name = annual_empty_battery_stats(results)
+    worst_month = _worst_device_month(results, worst_device_name)
 
     airport_name = st.session_state.get("airport_label", "") or "Selected study point"
+    airport_icao = st.session_state.get("airport_icao", "") or ""
     required_hours = float(st.session_state.get("required_hours", 0))
     mode_name = operating_mode_name()
     window_text = operating_window_example(required_hours)
@@ -222,7 +305,7 @@ def render_result():
     left, right = st.columns([1.05, 1.6], gap="large")
 
     with left:
-        render_airport_name_box(airport_name)
+        render_airport_name_box(airport_name, airport_icao)
         render_location_map(lat, lon, airport_name)
         st.caption(f"{lat:.6f}, {lon:.6f}")
 
@@ -237,7 +320,7 @@ def render_result():
                 box-shadow:0 2px 10px rgba(16,24,40,0.04);
                 margin-bottom:22px;">
                 <div style="font-size:0.92rem;color:#667085;font-weight:700;margin-bottom:10px;">
-                    Overall conclusion
+                    {overall_conclusion}
                 </div>
                 <div style="font-size:2rem;line-height:1.2;font-weight:800;color:{box_fg};margin-bottom:12px;">
                     {headline}
@@ -251,6 +334,7 @@ def render_result():
             border=border,
             box_bg=box_bg,
             box_fg=box_fg,
+            overall_conclusion=t("ui.overall_conclusion", lang),
             headline=overall_conclusion_text(results),
             subtext=overall_interpretation_text(results),
         )
@@ -265,9 +349,7 @@ def render_result():
                 days,
                 pct,
                 worst_device_name,
-                required_hours,
-                mode_name,
-                window_text,
+                worst_month,
             )
 
         render_device_summary_line(results)

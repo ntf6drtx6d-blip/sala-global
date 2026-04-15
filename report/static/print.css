@@ -1,0 +1,87 @@
+@page {
+  size: A4 portrait;
+  margin: 12mm;
+}
+
+html,
+body {
+  background: #ffffff !important;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+.report-shell {
+  width: auto;
+  margin: 0;
+  padding: 0;
+}
+
+.report-page {
+  height: calc(297mm - 24mm);
+  min-height: auto;
+  margin: 0;
+  border-radius: 0;
+  page-break-after: always;
+  break-after: page;
+  border: 0;
+  padding-bottom: 16mm;
+}
+
+.report-page:last-child {
+  page-break-after: auto;
+  break-after: auto;
+}
+
+.report-header,
+.page-title-wrap,
+.grid,
+.kpi-row,
+.summary-strip,
+.device-section,
+.chart-block,
+.device-basis-row,
+.method-grid,
+.section-stack,
+.interpretation-line,
+.device-page,
+.device-page .card {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.kpi-row-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.plotly-chart,
+.chart-image {
+  max-width: 100% !important;
+}
+
+.report-table {
+  font-size: 9px;
+}
+
+.compact-month-table {
+  font-size: 8px;
+}
+
+.definition-tile {
+  min-height: 0;
+}
+
+.device-basis-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.device-page {
+  page-break-after: always;
+  break-after: page;
+}
+
+.page-footer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}

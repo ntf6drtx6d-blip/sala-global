@@ -1,0 +1,7 @@
+<div class="kpi-card status-{{ card.status|default('neutral') }}">
+  <div class="kpi-label">{{ card.title }}</div>
+  <div class="kpi-value">{{ card.value }}</div>
+  {% if card.helper %}
+    <div class="kpi-helper">{{ card.helper }}</div>
+  {% endif %}
+</div>

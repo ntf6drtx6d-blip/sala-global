@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: sala-streamlit-app
+    runtime: python
+    rootDir: .
+    buildCommand: |
+      pip install -r requirements.txt
+    startCommand: >
+      streamlit run app.py
+      --server.headless true
+      --server.port $PORT
+      --browser.gatherUsageStats false
+      --server.fileWatcherType none
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: MAPBOX_STATIC_MAPS_TOKEN
+        sync: false
+      - key: PDF_SERVICE_URL
+        value: http://sala-pdf-service:8765/render
+      - key: AUTH_PERSIST_SECRET
+        sync: false
+
+  - type: pserv
+    name: sala-pdf-service
+    runtime: docker
+    rootDir: .
+    dockerfilePath: ./Dockerfile.pdf
+    envVars:
+      - key: PDF_SERVICE_HOST
+        value: 0.0.0.0
+      - key: PDF_SERVICE_PORT
+        value: 8765
+
+databases:
+  - name: sala-postgres

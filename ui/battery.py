@@ -3,6 +3,8 @@
 import streamlit as st
 import math
 
+from core.i18n import month_labels, t
+
 
 def _min_achievable_hours(r):
     hours = r.get("hours", [])
@@ -23,11 +25,12 @@ def _battery_reserve_hours(r):
 def _format_hours(h):
     if h is None:
         return "—"
+    lang = st.session_state.get("language", "en")
     h = float(h)
     whole = int(h)
     minutes = int(round((h - whole) * 60))
     if minutes == 0:
-        return f"{whole} hrs"
+        return f"{whole} {t('ui.hours_per_day_unit', lang)}"
     return f"{whole}h {minutes:02d}m"
 
 
@@ -61,22 +64,25 @@ def _kpi_card(title, value, subtitle):
 
 
 def _interpretation(required, achievable, reserve):
+    lang = st.session_state.get("language", "en")
     if achievable is None or reserve is None:
-        return "Insufficient data for interpretation."
+        return t("legacy.insufficient_data_interpretation", lang)
 
-    return (
-        f"The system is required to deliver {required:.1f} hrs/day. "
-        f"In the weakest month, it can only guarantee {achievable:.1f} hrs/day. "
-        f"The battery alone provides approximately {reserve:.1f} hrs of fallback without solar input. "
-        f"This means the limitation is driven by insufficient solar energy recovery, not battery size alone."
+    return t(
+        "legacy.battery_interpretation",
+        lang,
+        required=required,
+        achievable=achievable,
+        reserve=reserve,
     )
 
 
 def render_battery_section(results: dict):
     if not results:
         return
+    lang = st.session_state.get("language", "en")
 
-    st.markdown("## Operating requirement vs energy capability")
+    st.markdown(f"## {t('legacy.operating_requirement_vs_capability', lang)}")
 
     required = float(st.session_state.get("required_hours", 0))
 
@@ -91,23 +97,23 @@ def render_battery_section(results: dict):
 
     with c1:
         _kpi_card(
-            "Required operation",
-            f"{required:.0f} hrs/day",
-            "What airport needs",
+            t("legacy.required_operation", lang),
+            f"{required:.0f} {t('ui.hours_per_day_unit', lang)}",
+            t("legacy.what_airport_needs", lang),
         )
 
     with c2:
         _kpi_card(
-            "Achievable (worst month)",
+            t("legacy.achievable_worst_month", lang),
             f"{_format_hours(achievable)}/day",
-            "Lowest guaranteed month",
+            t("legacy.lowest_guaranteed_month", lang),
         )
 
     with c3:
         _kpi_card(
-            "Battery-only reserve",
+            t("legacy.battery_only_reserve", lang),
             _format_hours(reserve),
-            "No-sun fallback capability",
+            t("legacy.no_sun_fallback", lang),
         )
 
     st.markdown(
@@ -129,7 +135,7 @@ def render_battery_section(results: dict):
 
     # ---------- GRAPH ----------
 
-    st.markdown("### Battery depletion pattern")
+    st.markdown(f"### {t('legacy.battery_depletion_pattern', lang)}")
 
     monthly = r.get("monthly_empty_battery_days", [])
 
@@ -138,7 +144,7 @@ def render_battery_section(results: dict):
 
     import plotly.graph_objects as go
 
-    months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+    months = month_labels(lang)
 
     fig = go.Figure()
 
@@ -148,14 +154,14 @@ def render_battery_section(results: dict):
         mode="lines+markers",
         fill="tozeroy",
         line=dict(width=2),
-        name="Empty battery days"
+        name=t("legacy.empty_battery_days", lang)
     ))
 
     fig.update_layout(
         height=260,
         margin=dict(l=20, r=20, t=10, b=20),
         xaxis_title=None,
-        yaxis_title="days/month",
+        yaxis_title=f"{t('ui.days', lang)}/{t('ui.month', lang).lower()}",
         showlegend=False
     )
 

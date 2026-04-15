@@ -1,0 +1,17 @@
+.DS_Store
+.venv/
+.mplconfig/
+.pytest_cache/
+__pycache__/
+.mypy_cache/
+.coverage
+*.pyc
+*.pyo
+*.pyd
+
+.streamlit/secrets.toml
+.env
+.env.local
+
+*.pdf
+data/

@@ -1,12 +1,12 @@
-from reportlab.platypus import SimpleDocTemplate
-from reportlab.lib.pagesizes import A4
+from collections import OrderedDict
+from datetime import datetime
+import re
+import unicodedata
 
 from .data_builder import build_report_data
-from .pages.cover import build_cover
-from .pages.executive_summary import build_summary
-from .pages.technical_results import build_technical
-from .pages.device_details import build_device_details
-from .pages.methodology import build_methodology
+from .html_builder import render_report_html
+from .pdf_renderer import render_pdf
+from core.devices import DEVICES
 
 
 def _coalesce(*values):
@@ -14,6 +14,101 @@ def _coalesce(*values):
         if value is not None:
             return value
     return None
+
+
+def _device_label(device_id):
+    raw = str(device_id)
+    if "||" in raw:
+        _, variant = raw.split("||", 1)
+        return variant
+    try:
+        did = int(raw)
+        device = DEVICES.get(did)
+        if device:
+            return device.get("name") or device.get("code") or raw
+    except Exception:
+        pass
+    return raw
+
+
+def _device_list_text(selected_ids):
+    ordered = OrderedDict()
+    for item in selected_ids or []:
+        label = _device_label(item)
+        ordered[label] = ordered.get(label, 0) + 1
+    if not ordered:
+        return "—"
+    return ", ".join(f"{count} × {label}" for label, count in ordered.items())
+
+
+def sanitize_airport_name(name: str) -> str:
+    text = unicodedata.normalize("NFKD", str(name or "Airport"))
+    text = text.encode("ascii", "ignore").decode("ascii")
+    parts = re.findall(r"[A-Za-z0-9]+", text)
+    if not parts:
+        return "Airport"
+    return "".join(part[:1].upper() + part[1:] for part in parts if part)
+
+
+def format_report_date(dt) -> str:
+    if isinstance(dt, datetime):
+        parsed = dt
+    else:
+        raw = str(dt or "").strip()
+        parsed = None
+        for candidate in (raw, raw.replace("Z", "+00:00")):
+            if not candidate:
+                continue
+            try:
+                parsed = datetime.fromisoformat(candidate)
+                break
+            except Exception:
+                pass
+        if parsed is None:
+            match = re.search(r"(\d{4})-(\d{2})-(\d{2})", raw)
+            if match:
+                parsed = datetime(
+                    int(match.group(1)),
+                    int(match.group(2)),
+                    int(match.group(3)),
+                )
+            else:
+                parsed = datetime.now()
+    return parsed.strftime("%d%b%Y")
+
+
+def _normalize_icao(icao) -> str:
+    raw = re.sub(r"[^A-Za-z0-9]", "", str(icao or "").upper())
+    return raw if len(raw) == 4 else ""
+
+
+def _extract_icao_from_text(*values) -> str:
+    for value in values:
+        text = str(value or "")
+        for match in re.findall(r"\b[A-Z]{4}\b", text.upper()):
+            if match not in {"SALA", "PVGI", "PAPI"}:
+                return match
+    return ""
+
+
+def _language_prefix(language: str) -> str:
+    code = str(language or "en").strip().lower()
+    return {
+        "en": "ENG",
+        "es": "ESP",
+        "fr": "FR",
+    }.get(code, "ENG")
+
+
+def build_pdf_filename(icao, airport_name, report_date, report_id, language="en") -> str:
+    safe_airport = sanitize_airport_name(airport_name)
+    safe_date = format_report_date(report_date)
+    safe_id = str(report_id or "SALA-REPORT").strip() or "SALA-REPORT"
+    safe_icao = _normalize_icao(icao) or _extract_icao_from_text(icao, airport_name)
+    prefix = _language_prefix(language)
+    if safe_icao:
+        return f"{prefix}_SALA_FS_{safe_icao}_{safe_airport}_{safe_date}_{safe_id}.pdf"
+    return f"{prefix}_SALA_FS_{safe_airport}_{safe_date}_{safe_id}.pdf"
 
 
 def make_pdf(
@@ -67,7 +162,12 @@ def make_pdf(
             "lat": lat,
             "lon": lon,
             "country": country,
+            "icao": kwargs.get("airport_icao", "") or kwargs.get("icao", ""),
         }
+    else:
+        loc = dict(loc)
+        if kwargs.get("airport_icao") and not (loc.get("icao") or loc.get("airport_icao")):
+            loc["icao"] = kwargs.get("airport_icao", "")
 
     # --- compatibility with old positional extra args ---
     user_name = kwargs.get("author_name") or kwargs.get("user_name")
@@ -77,7 +177,7 @@ def make_pdf(
         user_name = "User"
 
     if out_path is None:
-        out_path = "sala_standardized_feasibility_study.pdf"
+        out_path = "SALA_report.pdf"
 
     if required_hours is None:
         required_hours = 0
@@ -88,7 +188,14 @@ def make_pdf(
     if overall is None:
         overall = "UNKNOWN"
 
-    data = build_report_data(loc, required_hours, results, overall, user_name)
+    data = build_report_data(
+        loc,
+        required_hours,
+        results,
+        overall,
+        user_name,
+        kwargs.get("language", "en"),
+    )
 
     # override generated metadata if explicitly passed by caller
     if kwargs.get("created_at"):
@@ -100,20 +207,27 @@ def make_pdf(
     if kwargs.get("author_name"):
         data["prepared_for"] = kwargs["author_name"]
 
-    doc = SimpleDocTemplate(
-        out_path,
-        pagesize=A4,
-        leftMargin=40,
-        rightMargin=40,
-        topMargin=28,
-        bottomMargin=24,
+    data["operating_profile_mode"] = kwargs.get("operating_profile_mode", "Custom hours per day")
+    data["selected_devices_text"] = _device_list_text(kwargs.get("selected_ids") or [])
+
+    report_filename = build_pdf_filename(
+        kwargs.get("airport_icao")
+        or data.get("airport_icao")
+        or loc.get("icao")
+        or loc.get("airport_icao")
+        or _extract_icao_from_text(
+            kwargs.get("airport_label"),
+            loc.get("label"),
+        ),
+        data.get("airport_name") or loc.get("label"),
+        data.get("date"),
+        data.get("report_id"),
+        kwargs.get("language", "en"),
     )
+    data["pdf_filename"] = report_filename
+    if out_path in {"sala_standardized_feasibility_study.pdf", "SALA_report.pdf"}:
+        out_path = report_filename
 
-    story = []
-    story += build_cover(data)
-    story += build_summary(data)
-    story += build_technical(data)
-    story += build_device_details(data)
-    story += build_methodology(data)
-
-    doc.build(story)
+    html = render_report_html(data)
+    render_pdf(html, out_path)
+    return report_filename

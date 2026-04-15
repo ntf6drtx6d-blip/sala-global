@@ -1,0 +1,12 @@
+<header class="report-header">
+  <div class="brand-left">
+    {% if report.logo_sala %}<img src="{{ report.logo_sala }}" alt="SALA" class="brand-logo" />{% endif %}
+    <div>
+      <div class="brand-title">SALA Standardized Feasibility Study</div>
+      <div class="brand-subtitle">{{ report.airport_name }}</div>
+    </div>
+  </div>
+  <div class="brand-right">
+    {% if report.logo_jrc %}<img src="{{ report.logo_jrc }}" alt="JRC" class="brand-logo brand-logo-jrc" />{% endif %}
+  </div>
+</header>

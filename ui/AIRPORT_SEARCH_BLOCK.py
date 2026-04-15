@@ -22,6 +22,7 @@ try:
     st.session_state.lat = result["lat"]
     st.session_state.lon = result["lon"]
     st.session_state.airport_country = result.get("country", "-")
+    st.session_state.airport_icao = result.get("icao", "") or ""
     st.session_state.study_point_confirmed = True
     st.session_state.last_airport_query = normalized_query
     st.session_state.search_message = f"Found: {result['display_name']}"

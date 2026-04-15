@@ -186,7 +186,13 @@ def _parse_shs_monthly(data: dict):
     """
     Parse SHScalc JSON into a list[12] of dicts that include at least 'f_e'.
     The API returns per-month metrics; field names vary slightly by version.
-    We normalize to include 'f_e' (fraction of days with empty battery).
+    We normalize to include 'f_e' as a percentage in the 0..100 range.
+
+    PVGIS responses are inconsistent across endpoints/examples: some payloads expose
+    `f_e` as a fraction (0..1), while derived values from `empty_battery_days / days`
+    are naturally fractions as well. The rest of SALA already treats `f_e` as a
+    percentage when converting to annual days or month shares, so we normalize here
+    once to keep every downstream KPI on the same scale.
     """
     try:
         monthly = data["outputs"]["monthly"]
@@ -214,6 +220,8 @@ def _parse_shs_monthly(data: dict):
             fe = float(fe)
         except Exception:
             fe = 0.0
+        if 0.0 <= fe <= 1.0:
+            fe *= 100.0
         nm = dict(m)
         nm["f_e"] = fe
         norm.append(nm)

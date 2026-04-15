@@ -5,6 +5,7 @@ from streamlit_folium import st_folium
 
 from core.devices import DEVICES, SOLAR_ENGINES
 from core.geocoding import search_airport
+from core.i18n import t
 
 
 def _init_setup_defaults():
@@ -47,6 +48,8 @@ def _init_setup_defaults():
             st.session_state.last_airport_query = ""
         if "airport_country" not in st.session_state:
             st.session_state.airport_country = "-"
+        if "airport_icao" not in st.session_state:
+            st.session_state.airport_icao = ""
 
     _refresh_study_ready()
 
@@ -249,21 +252,22 @@ def _apply_operating_profile():
 
 def render_setup(disabled=False):
     _init_setup_defaults()
+    lang = st.session_state.get("language", "en")
 
-    st.markdown("## Study setup")
+    st.markdown(f"## {t('ui.study_setup', lang)}")
 
     left, right = st.columns([1.05, 0.95], gap="large")
 
     with left:
-        st.markdown("### 1. Location")
+        st.markdown(f"### 1. {t('ui.location', lang)}")
 
         airport_row_1, airport_row_2 = st.columns([3.2, 1.1])
 
         with airport_row_1:
             airport_query = st.text_input(
-                "Airport name",
+                t("ui.airport_name", lang),
                 value=st.session_state.get("airport_query", ""),
-                placeholder="e.g. Madrid Barajas Airport",
+                placeholder=t("ui.airport_placeholder", lang),
                 key="airport_query_input",
                 disabled=disabled,
             )
@@ -271,31 +275,30 @@ def render_setup(disabled=False):
         with airport_row_2:
             st.write("")
             st.write("")
-            if st.button("Find airport", use_container_width=True, disabled=disabled):
+            if st.button(t("ui.find_airport", lang), use_container_width=True, disabled=disabled):
                 query = airport_query.strip()
 
                 if not query:
-                    st.session_state.search_message = "Please enter an airport name."
+                    st.session_state.search_message = t("ui.please_enter_airport", lang)
                     st.rerun()
 
                 normalized_query = " ".join(query.lower().split())
                 last_query = st.session_state.get("last_airport_query")
 
                 if last_query == normalized_query and st.session_state.get("study_point_confirmed"):
-                    st.session_state.search_message = "This airport is already loaded."
+                    st.session_state.search_message = t("ui.airport_already_loaded", lang)
                     st.rerun()
 
                 try:
                     result = search_airport(query)
 
                     if not result:
-                        st.session_state.search_message = f"No result found for '{query}'."
+                        st.session_state.search_message = t("ui.no_airport_result", lang, query=query)
                         st.rerun()
 
                     if result.get("error") == "RATE_LIMIT":
                         st.session_state.search_message = (
-                            "Search is temporarily rate-limited by the map service. "
-                            "Please wait a moment and try again."
+                            t("ui.search_rate_limited", lang)
                         )
                         st.rerun()
 
@@ -304,12 +307,12 @@ def render_setup(disabled=False):
                     st.session_state.lat = result["lat"]
                     st.session_state.lon = result["lon"]
                     st.session_state.airport_country = result.get("country", "-")
+                    st.session_state.airport_icao = result.get("icao", "") or ""
                     st.session_state.study_point_confirmed = True
                     st.session_state.last_airport_query = normalized_query
-                    st.session_state.search_message = f"Found: {result['display_name']}"
+                    st.session_state.search_message = t("ui.search_found", lang, display_name=result["display_name"])
                     st.session_state.map_click_info = (
-                        f"Study point set to {st.session_state.airport_label} "
-                        f"({result['lat']:.6f}, {result['lon']:.6f})"
+                        t("ui.study_point_set_to", lang, label=st.session_state.airport_label, lat=result["lat"], lon=result["lon"])
                     )
 
                     if st.session_state.get("operating_profile_mode") == "Dusk to dawn":
@@ -321,25 +324,34 @@ def render_setup(disabled=False):
                 except Exception as e:
                     if "RATE_LIMIT_429" in str(e) or "429" in str(e):
                         st.session_state.search_message = (
-                            "Search is temporarily rate-limited by the map service. "
-                            "Please wait a moment and try again, or use Advanced coordinates."
+                            t("ui.search_rate_limited_advanced", lang)
                         )
                     else:
-                        st.session_state.search_message = f"Search error: {e}"
+                        st.session_state.search_message = t("ui.search_error", lang, error=e)
                     st.rerun()
 
         if st.session_state.search_message:
-            if st.session_state.search_message.startswith("Found:"):
+            if st.session_state.search_message.startswith(t("ui.search_found", lang, display_name="")):
                 st.success(st.session_state.search_message)
             else:
                 st.warning(st.session_state.search_message)
 
-        with st.expander("Advanced coordinates", expanded=False):
+        airport_icao_value = st.text_input(
+            t("ui.icao_optional", lang),
+            value=st.session_state.get("airport_icao", ""),
+            placeholder=t("ui.icao_placeholder", lang),
+            max_chars=4,
+            disabled=disabled,
+            key="airport_icao_input",
+        )
+        st.session_state.airport_icao = "".join(ch for ch in airport_icao_value.upper() if ch.isalnum())[:4]
+
+        with st.expander(t("ui.advanced_coordinates", lang), expanded=False):
             c1, c2 = st.columns(2)
 
             with c1:
                 new_lat = st.number_input(
-                    "Latitude",
+                    t("ui.latitude", lang),
                     min_value=-90.0,
                     max_value=90.0,
                     value=float(st.session_state.lat),
@@ -349,7 +361,7 @@ def render_setup(disabled=False):
 
             with c2:
                 new_lon = st.number_input(
-                    "Longitude",
+                    t("ui.longitude", lang),
                     min_value=-180.0,
                     max_value=180.0,
                     value=float(st.session_state.lon),
@@ -367,27 +379,33 @@ def render_setup(disabled=False):
 
             if coords_changed:
                 st.session_state.study_point_confirmed = True
-                st.session_state.map_click_info = f"Point selected: {new_lat:.6f}, {new_lon:.6f}"
+                st.session_state.map_click_info = t("ui.point_selected", lang, lat=new_lat, lon=new_lon)
                 st.session_state.search_message = ""
                 if st.session_state.get("operating_profile_mode") == "Dusk to dawn":
                     _apply_operating_profile()
                 _refresh_study_ready()
 
-        st.markdown("### 2. Operating profile")
-        st.caption("Define how long the system must operate every day.")
+        st.markdown(f"### 2. {t('ui.operating_profile_section', lang)}")
+        st.caption(t("ui.operating_profile_desc", lang))
 
         mode_options = ["Custom hours per day", "24/7", "Dusk to dawn"]
+        mode_labels = {
+            "Custom hours per day": t("ui.mode_custom", lang),
+            "24/7": t("ui.mode_247", lang),
+            "Dusk to dawn": t("ui.mode_dusk", lang),
+        }
         current_mode = st.session_state.get("operating_profile_mode", "Custom hours per day")
         if current_mode not in mode_options:
             current_mode = "Custom hours per day"
 
         mode = st.radio(
-            "Operating profile",
+            t("ui.operating_profile", lang),
             mode_options,
             horizontal=True,
             index=mode_options.index(current_mode),
             key="operating_profile_mode_radio",
             disabled=disabled,
+            format_func=lambda item: mode_labels[item],
         )
 
         if st.session_state.get("operating_profile_mode") != mode:
@@ -400,51 +418,51 @@ def render_setup(disabled=False):
                 current_custom = 12.0
 
             required_custom = st.number_input(
-                "Planned daily operating hours",
+                t("ui.planned_daily_hours", lang),
                 min_value=0.1,
                 max_value=24.0,
                 value=float(current_custom),
                 step=0.5,
-                help="Total hours per day the lights are expected to operate.",
+                help=t("ui.planned_daily_hours_help", lang),
                 key="required_custom_hours_input",
                 disabled=disabled,
             )
             st.session_state.required_hours = required_custom
-            st.caption("Total hours per day the lights are expected to operate.")
+            st.caption(t("ui.planned_daily_hours_help", lang))
 
         elif mode == "24/7":
             st.session_state.required_hours = 24.0
-            st.info("Applied operating profile: 24.0 hrs/day")
+            st.info(f"{t('ui.applied_profile', lang)} 24.0 {t('ui.hours_per_day_unit', lang)}")
 
         elif mode == "Dusk to dawn":
             if st.session_state.get("study_point_confirmed", False):
                 applied = round(longest_night_hours(st.session_state.lat), 1)
                 st.session_state.required_hours = applied
                 st.info(
-                    f"Applied operating profile: {applied:.1f} hrs/day "
+                    f"{t('ui.applied_profile', lang)} {applied:.1f} {t('ui.hours_per_day_unit', lang)} "
                     f"(based on the longest night at the selected study point)"
                 )
             else:
                 st.session_state.required_hours = None
-                st.warning("Select the study location first to calculate Dusk-to-Dawn operating time.")
+                st.warning(t("ui.select_location_first", lang))
 
         _refresh_study_ready()
 
-        st.markdown("### 3. Manufacturer")
+        st.markdown(f"### 3. {t('ui.manufacturer', lang)}")
 
         manufacturer_options = ["S4GA", "Avlite"]
         current_manufacturers = st.session_state.get("selected_manufacturers", ["S4GA", "Avlite"])
         selected_manufacturers = st.multiselect(
-            "Manufacturers included in this study",
+            t("ui.manufacturers_included", lang),
             manufacturer_options,
             default=current_manufacturers,
             key="selected_manufacturers_multiselect",
             disabled=disabled,
-            help="Choose one or more manufacturers. Device list below will be filtered accordingly.",
+            help=t("ui.manufacturers_included", lang),
         )
         st.session_state.selected_manufacturers = selected_manufacturers
 
-        st.markdown("### 4. Select devices")
+        st.markdown(f"### 4. {t('ui.select_devices', lang)}")
 
         filtered_device_ids = [
             k for k in DEVICES.keys()
@@ -460,7 +478,7 @@ def render_setup(disabled=False):
         ]
 
         selected_labels = st.multiselect(
-            "Devices included in this study",
+            t("ui.devices_included", lang),
             list(device_options.keys()),
             default=default_labels,
             key="selected_devices_multiselect",
@@ -471,7 +489,7 @@ def render_setup(disabled=False):
         st.session_state.selected_ids = selected_ids
 
     with right:
-        st.markdown("### Study point")
+        st.markdown(f"### {t('ui.study_point', lang)}")
 
         fmap = create_map(
             st.session_state.lat,
@@ -499,7 +517,7 @@ def render_setup(disabled=False):
                 st.session_state.lat = clicked_lat
                 st.session_state.lon = clicked_lon
                 st.session_state.study_point_confirmed = True
-                st.session_state.map_click_info = f"Point selected: {clicked_lat:.6f}, {clicked_lon:.6f}"
+                st.session_state.map_click_info = t("ui.point_selected", lang, lat=clicked_lat, lon=clicked_lon)
                 st.session_state.search_message = ""
                 if st.session_state.get("operating_profile_mode") == "Dusk to dawn":
                     _apply_operating_profile()
@@ -511,19 +529,19 @@ def render_setup(disabled=False):
 
         if st.session_state.study_point_confirmed:
             st.caption(
-                f"Study point sent to PVGIS: {st.session_state.lat:.6f}, {st.session_state.lon:.6f}"
+                f"{t('ui.study_point_sent', lang)} {st.session_state.lat:.6f}, {st.session_state.lon:.6f}"
             )
         else:
-            st.caption("Select an airport or click on the map to define the study point.")
+            st.caption(t("ui.select_airport_or_click", lang))
 
 
-    st.markdown("### 5. Configure selected devices")
+    st.markdown(f"### 5. {t('ui.configure_devices', lang)}")
 
     per_device_config = {}
     selected_simulation_keys = []
 
     if not selected_ids:
-        st.caption("Select at least one device to configure.")
+        st.caption(t("ui.select_device_to_configure", lang))
         st.session_state.per_device_config = {}
         st.session_state.selected_simulation_keys = []
         st.session_state.selected_lamp_types = {}
@@ -542,13 +560,13 @@ def render_setup(disabled=False):
                 st.session_state["selected_lamp_types"][did] = _default_lamp_selection(did)
 
             if variants:
-                with st.expander(f"{_device_label(did)} — lamp types", expanded=False):
+                with st.expander(f"{_device_label(did)} — {t('ui.lamp_types', lang)}", expanded=False):
                     c1, c2 = st.columns([1, 1])
                     with c1:
-                        if st.button("Select all", key=f"select_all_variants_{did}", disabled=disabled):
+                        if st.button(t("ui.select_all", lang), key=f"select_all_variants_{did}", disabled=disabled):
                             st.session_state["selected_lamp_types"][did] = variants
                     with c2:
-                        if st.button("Clear", key=f"clear_variants_{did}", disabled=disabled):
+                        if st.button(t("ui.clear", lang), key=f"clear_variants_{did}", disabled=disabled):
                             st.session_state["selected_lamp_types"][did] = []
 
                     chosen = []
@@ -564,9 +582,9 @@ def render_setup(disabled=False):
                             chosen.append(lamp_variant)
                     st.session_state["selected_lamp_types"][did] = chosen
                     if chosen:
-                        st.caption("Each selected lamp type will be simulated separately.")
+                        st.caption(t("ui.each_selected_lamp_type", lang))
                     else:
-                        st.caption("No lamp type selected for this device family.")
+                        st.caption(t("ui.no_lamp_type_selected", lang))
                     active_variants = chosen
             else:
                 active_variants = [None]
@@ -591,10 +609,10 @@ def render_setup(disabled=False):
 
                 with st.expander(display_label, expanded=False):
                     if lamp_variant:
-                        st.caption(f"Selected lamp type: {lamp_variant}")
+                        st.caption(t("ui.selected_lamp_type", lang, lamp_type=lamp_variant))
 
                     power = st.number_input(
-                        "Power (W)",
+                        t("ui.power_w", lang),
                         min_value=0.01,
                         value=float(default_power),
                         step=0.01,
@@ -608,7 +626,7 @@ def render_setup(disabled=False):
                             engine_key = dspec["default_engine"]
 
                         engine_key = st.selectbox(
-                            "Solar Engine",
+                            t("ui.solar_engine", lang),
                             compatible,
                             index=compatible.index(engine_key),
                             key=f"engine_{sim_key}",
@@ -620,7 +638,7 @@ def render_setup(disabled=False):
 
                         if eng.get("batt_ext"):
                             battery_mode = st.radio(
-                                "Battery mode",
+                                t("ui.battery_mode", lang),
                                 ["Std", "Ext"],
                                 horizontal=True,
                                 index=0 if battery_mode == "Std" else 1,
@@ -629,11 +647,11 @@ def render_setup(disabled=False):
                             )
                         else:
                             battery_mode = "Std"
-                            st.caption("Battery mode: Std only for this Solar Engine.")
+                            st.caption(t("ui.std_only_engine", lang))
                     else:
                         engine_key = None
                         battery_mode = "Built-in"
-                        st.caption("This device uses built-in solar panel and battery.")
+                        st.caption(t("ui.built_in_source", lang))
 
                     summary = _engine_summary(did, engine_key, battery_mode)
 
@@ -641,14 +659,14 @@ def render_setup(disabled=False):
                     with m1:
                         st.metric("Power", f"{float(power):.2f} W")
                     with m2:
-                        st.metric("Solar panel", f"{summary['pv']} W")
+                        st.metric(t("ui.solar_panel", lang), f"{summary['pv']} W")
                     with m3:
                         st.metric("Battery", f"{summary['batt']} Wh")
                     with m4:
-                        st.metric("Active source", summary["source_label"])
+                        st.metric(t("ui.active_source", lang), summary["source_label"])
 
                     if system_type == "external_engine":
-                        st.caption(f"Battery mode selected: {summary['battery_mode']}")
+                        st.caption(t("ui.battery_mode_selected", lang, battery_mode=summary["battery_mode"]))
 
                     per_device_config[sim_key] = {
                         "device_id": did,

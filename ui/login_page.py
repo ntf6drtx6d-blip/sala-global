@@ -5,12 +5,16 @@ from pathlib import Path
 import streamlit as st
 from core.auth import login_user
 from core.db import create_access_request
+from core.i18n import t
 
 
 LOGO_PATH = "sala_logo.png"
 
 
 def render_login_page():
+    if bool(st.session_state.get("auth_ok", False)):
+        return
+
     st.markdown(
         """
         <style>
@@ -121,17 +125,18 @@ def render_login_page():
             st.image(LOGO_PATH, width=92)
         with col_title:
             st.markdown(
-                '<div class="sala-login-title">SALA Standardized Feasibility Study for Solar AGL</div>',
+                f'<div class="sala-login-title">{t("app.title", st.session_state.get("language", "en"))}</div>',
                 unsafe_allow_html=True,
             )
     else:
         st.markdown(
-            '<div class="sala-login-title">SALA Standardized Feasibility Study for Solar AGL</div>',
+            f'<div class="sala-login-title">{t("app.title", st.session_state.get("language", "en"))}</div>',
             unsafe_allow_html=True,
         )
 
+    lang = st.session_state.get("language", "en")
     st.markdown(
-        '<div class="sala-login-lock"><span class="sala-login-badge">Member access required</span></div>',
+        f'<div class="sala-login-lock"><span class="sala-login-badge">{t("ui.member_access_required", lang)}</span></div>',
         unsafe_allow_html=True,
     )
 
@@ -139,42 +144,42 @@ def render_login_page():
 
     # Login card
     st.markdown('<div class="sala-login-card">', unsafe_allow_html=True)
-    st.markdown('<div class="sala-section-title">Log in</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sala-section-title">{t("ui.log_in", lang)}</div>', unsafe_allow_html=True)
 
-    email = st.text_input("Email", key="login_email_input")
-    password = st.text_input("Password", type="password", key="login_password_input")
+    email = st.text_input(t("ui.email", lang), key="login_email_input")
+    password = st.text_input(t("ui.password", lang), type="password", key="login_password_input")
 
-    if st.button("Log in", type="primary", use_container_width=True, key="login_submit"):
+    if st.button(t("ui.log_in", lang), type="primary", use_container_width=True, key="login_submit"):
         ok = login_user(email.strip(), password)
         if ok:
-            st.success("Logged in.")
+            st.success(t("ui.logged_in", lang))
             st.rerun()
         else:
-            st.error("Invalid credentials or inactive account.")
+            st.error(t("ui.invalid_credentials", lang))
 
     st.markdown(
-        '<div class="sala-note">Access is granted by SALA.</div>',
+        f'<div class="sala-note">{t("ui.access_granted_by_sala", lang)}</div>',
         unsafe_allow_html=True,
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
     # Request access collapsed underneath
-    with st.expander("Request access", expanded=False):
-        req_name = st.text_input("Full name", key="req_full_name_input")
-        req_email = st.text_input("Work email", key="req_email_input")
-        req_org = st.text_input("Organization", key="req_organization_input")
+    with st.expander(t("ui.request_access", lang), expanded=False):
+        req_name = st.text_input(t("ui.full_name", lang), key="req_full_name_input")
+        req_email = st.text_input(t("ui.work_email", lang), key="req_email_input")
+        req_org = st.text_input(t("ui.organization", lang), key="req_organization_input")
         req_message = st.text_area(
-            "Short message",
+            t("ui.short_message", lang),
             key="req_message_input",
             height=120,
-            placeholder="Who are you and why do you need access?",
+            placeholder=t("ui.access_request_placeholder", lang),
         )
 
-        if st.button("Send access request", use_container_width=True, key="send_access_request"):
+        if st.button(t("ui.send_access_request", lang), use_container_width=True, key="send_access_request"):
             if not req_name.strip():
-                st.error("Please enter your full name.")
+                st.error(t("ui.enter_full_name", lang))
             elif not req_email.strip():
-                st.error("Please enter your email.")
+                st.error(t("ui.enter_email", lang))
             else:
                 create_access_request(
                     full_name=req_name.strip(),
@@ -182,9 +187,9 @@ def render_login_page():
                     organization=req_org.strip() or None,
                     message=req_message.strip() or None,
                 )
-                st.success("Your request has been sent to SALA for review.")
+                st.success(t("ui.request_sent", lang))
 
     st.markdown(
-        '<div class="sala-footer-note">External users can request access below.</div>',
+        f'<div class="sala-footer-note">{t("ui.external_users_request_below", lang)}</div>',
         unsafe_allow_html=True,
     )

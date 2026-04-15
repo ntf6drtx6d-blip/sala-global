@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="{{ report.i18n['report.html_lang'] }}">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ report.i18n['report.title'] }}</title>
+  <style>{{ report.report_css | safe }}</style>
+  <style>{{ report.print_css | safe }}</style>
+</head>
+<body>
+  <main class="report-shell">
+    <section class="report-page cover-page">
+      {% include 'partials/_header.html' %}
+
+      <div class="page-title-wrap">
+        <div>
+          <div class="eyebrow">{{ report.i18n['report.cover_eyebrow'] }}</div>
+          <h1 class="page-title">{{ report.airport_name }}</h1>
+          <div class="page-subtitle">{{ report.i18n['report.cover_subtitle'] }}</div>
+        </div>
+      </div>
+
+      <div class="grid two-col top-grid page-break-avoid">
+        <article class="card hero-card status-{{ report.overall_result_label | lower | replace(' ', '-') }}">
+          <div class="eyebrow">{{ report.i18n['report.overall_conclusion'] }}</div>
+          <div class="hero-title">{{ report.overall_result_title }}</div>
+          <p class="body-copy">{{ report.cover_statement }}</p>
+          <div class="status-strip status-{{ report.overall_result_label | lower | replace(' ', '-') }}">{{ report.cover_verdict }}</div>
+        </article>
+
+        <article class="card summary-card">
+          <div class="eyebrow">{{ report.i18n['report.study_overview'] }}</div>
+          <img class="map-image" src="{{ report.map_image }}" alt="Study map" />
+          <div class="meta-grid">
+            <div><span class="meta-label">{{ report.i18n['report.meta.airport'] }}</span><span class="meta-value">{{ report.airport_name }}</span></div>
+            <div><span class="meta-label">{{ report.i18n['report.meta.icao'] }}</span><span class="meta-value">{{ report.airport_icao or report.i18n['report.meta.not_provided'] }}</span></div>
+            <div><span class="meta-label">{{ report.i18n['report.meta.coordinates'] }}</span><span class="meta-value">{{ report.coordinates }}</span></div>
+            <div><span class="meta-label">{{ report.i18n['report.meta.date'] }}</span><span class="meta-value">{{ report.date }}</span></div>
+            <div><span class="meta-label">{{ report.i18n['report.meta.prepared_for'] }}</span><span class="meta-value">{{ report.prepared_for }}</span></div>
+            <div><span class="meta-label">{{ report.i18n['report.meta.document_id'] }}</span><span class="meta-value meta-value-id">{{ report.report_id_display or report.report_id }}</span></div>
+            <div><span class="meta-label">{{ report.i18n['report.meta.required_operation'] }}</span><span class="meta-value">{{ report.required_operation }}</span></div>
+          </div>
+        </article>
+      </div>
+
+      <div class="kpi-row kpi-row-3 page-break-avoid">
+        {% set card = {
+          'title': report.i18n['report.required_operating_profile'],
+          'value': report.required_operation,
+          'helper': report.i18n['report.defined_compliance_target'],
+          'status': 'neutral'
+        } %}
+        {% include 'partials/_kpi_card.html' %}
+
+        {% set card = {
+          'title': report.i18n['report.blackout_days_year'],
+          'value': report.max_blackout_days,
+          'helper': (
+            'Worst device: ' ~ (report.worst_blackout_device_name|default('Not identified')) ~
+            ', ' ~ ('%.1f'|format(report.worst_blackout_device_pct|default(report.worst_blackout_pct|default(0), true))) ~
+            '% of the year'
+          ) if report.max_blackout_days > 0 else report.i18n['report.no_annual_blackout'],
+          'status': 'success' if report.max_blackout_days == 0 else 'warning' if report.max_blackout_days <= 5 else 'danger'
+        } %}
+        {% include 'partials/_kpi_card.html' %}
+
+        {% set card = {
+          'title': report.i18n['report.devices_meeting_requirement'],
+          'value': report.devices_pass_count ~ ' / ' ~ report.devices_total,
+          'helper': report.i18n['report.fleet_result'],
+          'status': 'neutral'
+        } %}
+        {% include 'partials/_kpi_card.html' %}
+      </div>
+
+      <div class="summary-strip status-{{ 'success' if report.devices_pass_count == report.devices_total else 'warning' if report.devices_fail_count == 0 else 'danger' }}">
+        {{ report.devices_meet_requirement_text }}
+      </div>
+
+      <article class="card analyzed-devices-card page-break-avoid">
+        <div class="eyebrow">{{ report.i18n['report.analyzed_devices'] }}</div>
+        <div class="device-chip-row">
+          {% for name in report.device_names %}
+            <span class="device-chip">{{ name }}</span>
+          {% endfor %}
+        </div>
+      </article>
+
+      <div class="page-footer"><span>{{ report.footer_note }}</span><span>{{ report.i18n['report.page'] }} 1 of {{ report.total_pages }}</span></div>
+    </section>
+
+    <section class="report-page technical-page">
+      {% include 'partials/_header.html' %}
+      <div class="page-title-wrap compact">
+        <div>
+          <div class="eyebrow">{{ report.i18n['report.technical_view'] }}</div>
+          <h2 class="page-title">{{ report.i18n['report.system_performance'] }}</h2>
+        </div>
+      </div>
+
+      <div class="section-stack">
+        <article class="card chart-block page-break-avoid">
+          <div class="section-title">{{ report.i18n['report.monthly_0_battery_days'] }}</div>
+          {% if report.show_blackout_chart %}
+            <div class="plotly-chart">{{ report.blackout_chart_html | safe }}</div>
+            <div class="chart-explainer">{{ report.i18n['report.blackout_chart_explainer'] }}</div>
+          {% else %}
+            <div class="empty-state-message">{{ report.i18n['report.no_0_battery_months'] }}</div>
+          {% endif %}
+        </article>
+
+        <article class="card chart-block page-break-avoid">
+          <div class="section-title">{{ report.i18n['report.annual_operating_profile'] }}</div>
+          <div class="plotly-chart">{{ report.profile_chart_html | safe }}</div>
+          <div class="chart-explainer">{{ report.i18n['report.profile_chart_explainer'] }}</div>
+        </article>
+      </div>
+
+      <div class="page-footer"><span>{{ report.footer_note }}</span><span>{{ report.i18n['report.page'] }} 2 of {{ report.total_pages }}</span></div>
+    </section>
+
+    <section class="report-page technical-page technical-detail-page">
+      {% include 'partials/_header.html' %}
+      <div class="page-title-wrap compact">
+        <div>
+          <div class="eyebrow">{{ report.i18n['report.technical_detail'] }}</div>
+          <h2 class="page-title">{{ report.i18n['report.device_evidence'] }}</h2>
+        </div>
+      </div>
+
+      <div class="section-stack">
+        <article class="card page-break-avoid">
+          <div class="section-title">{{ report.i18n['report.annual_blackout_exposure'] }}</div>
+          <table class="report-table">
+            <thead>
+              <tr>
+                <th>{{ report.i18n['report.table.device'] }}</th>
+                <th>{{ report.i18n['report.table.blackout_days_year'] }}</th>
+                <th>{{ report.i18n['report.table.share_year'] }}</th>
+                <th>{{ report.i18n['report.table.worst_month'] }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in report.blackout_summary_rows|default([], true) %}
+                <tr>
+                  <td>{{ row.name }}</td>
+                  <td>{{ row.annual_days }}</td>
+                  <td>{{ '%.1f'|format(row.share_pct) }}%</td>
+                  <td>{{ row.worst_month_label }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </article>
+
+        <article class="card page-break-avoid">
+          <div class="section-title">{{ report.i18n['report.monthly_operating_profile_by_device'] }}</div>
+          <div class="table-caption">{{ report.i18n['report.monthly_operating_caption'] }}</div>
+          <table class="report-table compact-month-table">
+            <thead>
+              <tr>
+                <th>{{ report.i18n['report.table.device'] }}</th>
+                {% for month in [
+                  report.i18n['report.month.jan'],
+                  report.i18n['report.month.feb'],
+                  report.i18n['report.month.mar'],
+                  report.i18n['report.month.apr'],
+                  report.i18n['report.month.may'],
+                  report.i18n['report.month.jun'],
+                  report.i18n['report.month.jul'],
+                  report.i18n['report.month.aug'],
+                  report.i18n['report.month.sep'],
+                  report.i18n['report.month.oct'],
+                  report.i18n['report.month.nov'],
+                  report.i18n['report.month.dec']
+                ] %}
+                  <th>{{ month }}</th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in report.operating_profile_rows|default([], true) %}
+                <tr class="{% if row.is_target %}target-row{% endif %}">
+                  <td>{{ row.name }}</td>
+                  {% for cell in row.months %}
+                    <td>
+                      <div class="cell-main">{{ '%.1f'|format(cell.hours) }}h</div>
+                      {% if not row.is_target %}
+                        <div class="cell-sub {% if cell.delta >= 0 %}delta-positive{% else %}delta-negative{% endif %}">
+                          {{ '%+.1f'|format(cell.delta) }}
+                        </div>
+                      {% endif %}
+                    </td>
+                  {% endfor %}
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </article>
+      </div>
+
+      <div class="page-footer"><span>{{ report.footer_note }}</span><span>{{ report.i18n['report.page'] }} 3 of {{ report.total_pages }}</span></div>
+    </section>
+
+    {% for device in report.devices %}
+      {% include 'partials/_device_block.html' %}
+    {% endfor %}
+
+    <section class="report-page methodology-page">
+      {% include 'partials/_header.html' %}
+      {% include 'partials/_methodology_block.html' %}
+      <div class="page-footer"><span>{{ report.footer_note }}</span><span>{{ report.i18n['report.page'] }} {{ 4 + report.devices|length }} of {{ report.total_pages }}</span></div>
+    </section>
+
+    <section class="report-page methodology-page">
+      {% include 'partials/_header.html' %}
+      {% include 'partials/_methodology_definitions.html' %}
+      <div class="page-footer"><span>{{ report.footer_note }}</span><span>{{ report.i18n['report.page'] }} {{ 5 + report.devices|length }} of {{ report.total_pages }}</span></div>
+    </section>
+  </main>
+</body>
+</html>

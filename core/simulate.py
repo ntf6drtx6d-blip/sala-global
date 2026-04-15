@@ -260,6 +260,16 @@ def _weighted_average_monthly(values):
     return sum(float(values[i]) * _days_in_month_non_leap(i + 1) for i in range(12)) / total_days
 
 
+def _median(values):
+    clean = sorted(float(v) for v in values)
+    if not clean:
+        return 0.0
+    mid = len(clean) // 2
+    if len(clean) % 2:
+        return clean[mid]
+    return (clean[mid - 1] + clean[mid]) / 2.0
+
+
 def _battery_behavior_metrics(
     monthly_gen_wh_day,
     batt_wh,
@@ -287,6 +297,10 @@ def _battery_behavior_metrics(
     recharge_pct_per_hr_by_month = []
     monthly_reserve_avg = []
     monthly_reserve_end = []
+    monthly_reserve_min = []
+    monthly_reserve_median = []
+    monthly_soc_preclip_min = []
+    monthly_soc_preclip_median = []
     monthly_status = []
 
     reserve = 100.0
@@ -317,20 +331,24 @@ def _battery_behavior_metrics(
         zero_targets = _distribute_zero_days(days, monthly_empty_battery_days[mi - 1])
 
         reserve_values_month = []
+        reserve_values_month_preclip = []
         for di in range(days):
             reserve_start = reserve
 
             if di in zero_targets:
+                preclip_reserve = 0.0
                 reserve = 0.0
             else:
                 reserve = reserve + charge_day_pct - discharge_pct_per_day
                 reserve = min(100.0, reserve)
+                preclip_reserve = reserve
                 # if source-of-truth says no empty days in this month, do not allow explanatory layer
                 # to invent extra empties
                 floor = 0.1 if int(monthly_empty_battery_days[mi - 1]) == 0 else 0.0
                 reserve = max(floor, reserve)
 
             reserve_values_month.append(reserve)
+            reserve_values_month_preclip.append(preclip_reserve)
 
             daily_reserve_start.append(reserve_start)
             daily_reserve_end.append(reserve)
@@ -346,6 +364,10 @@ def _battery_behavior_metrics(
 
         monthly_reserve_avg.append(sum(reserve_values_month) / len(reserve_values_month) if reserve_values_month else reserve)
         monthly_reserve_end.append(reserve)
+        monthly_reserve_min.append(min(reserve_values_month) if reserve_values_month else reserve)
+        monthly_reserve_median.append(_median(reserve_values_month) if reserve_values_month else reserve)
+        monthly_soc_preclip_min.append(min(reserve_values_month_preclip) if reserve_values_month_preclip else reserve)
+        monthly_soc_preclip_median.append(_median(reserve_values_month_preclip) if reserve_values_month_preclip else reserve)
 
     weekly_labels = [f"W{i}" for i in range(1, len(_aggregate_weekly(daily_reserve)) + 1)]
     weekly_reserve_pct = _aggregate_weekly(daily_reserve)
@@ -370,6 +392,10 @@ def _battery_behavior_metrics(
         "discharge_pct_per_day": discharge_pct_per_day,
         "monthly_soc_avg": monthly_reserve_avg,
         "monthly_soc_end": monthly_reserve_end,
+        "monthly_soc_min": monthly_reserve_min,
+        "monthly_soc_median": monthly_reserve_median,
+        "monthly_soc_preclip_min": monthly_soc_preclip_min,
+        "monthly_soc_preclip_median": monthly_soc_preclip_median,
         "monthly_status": monthly_status,
 
         "weekly_labels": weekly_labels,
@@ -457,7 +483,7 @@ def build_pvgis_meta(lat, lon, resolved_cfg, tilt, azim):
 
 
 def max_wh_for_month_fast(lat, lon, pv_wp, batt_wh, tilt, aspect, mi):
-    hi_cap = int(min(20000, max(3 * batt_wh, 8 * pv_wp * 24)))
+    hi_cap = float(min(20000, max(3 * batt_wh, 8 * pv_wp * 24)))
 
     def fe_for(cons_wh_day):
         if cons_wh_day <= 0:
@@ -471,20 +497,24 @@ def max_wh_for_month_fast(lat, lon, pv_wp, batt_wh, tilt, aspect, mi):
         )
         return float(monthly[mi].get("f_e", 0.0))
 
-    lo, hi = 1, hi_cap
-    best = 0
+    # Integer Wh/day steps are too coarse for ultra-low-power fixtures such as Avlite
+    # markers, where 1 Wh/day can represent many operating hours. Use a float binary
+    # search so the "max sustainable hours/day" metric stays aligned with the
+    # empty-battery-day metric derived from the same SHScalc engine.
+    lo, hi = 0.0, hi_cap
+    best = 0.0
 
-    while lo <= hi:
-        mid = (lo + hi) // 2
+    for _ in range(22):
+        mid = (lo + hi) / 2.0
         fe = fe_for(mid)
 
         if fe <= 0.0:
             best = mid
-            lo = mid + 1
+            lo = mid
         else:
-            hi = mid - 1
+            hi = mid
 
-    return int(best)
+    return float(best)
 
 
 
@@ -679,6 +709,10 @@ def simulate_for_devices(
             "avg_daily_energy_out_wh": behavior["avg_daily_energy_out_wh"],
             "soc_monthly_avg": behavior["monthly_soc_avg"],
             "soc_monthly_end": behavior["monthly_soc_end"],
+            "soc_monthly_min": behavior["monthly_soc_min"],
+            "soc_monthly_median": behavior["monthly_soc_median"],
+            "soc_monthly_preclip_min": behavior["monthly_soc_preclip_min"],
+            "soc_monthly_preclip_median": behavior["monthly_soc_preclip_median"],
             "charge_discharge_status_by_month": behavior["monthly_status"],
             "weekly_labels": behavior["weekly_labels"],
             "weekly_reserve_pct": behavior["weekly_reserve_pct"],

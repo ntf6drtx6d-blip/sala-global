@@ -17,7 +17,7 @@ services:
       - key: MAPBOX_STATIC_MAPS_TOKEN
         sync: false
       - key: PDF_SERVICE_URL
-        value: http://sala-pdf-service:8765/render
+        value: http://sala-pdf-service:10000/render
       - key: AUTH_PERSIST_SECRET
         sync: false
 

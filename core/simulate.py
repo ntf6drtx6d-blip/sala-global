@@ -482,19 +482,24 @@ def build_pvgis_meta(lat, lon, resolved_cfg, tilt, azim):
     }
 
 
-def max_wh_for_month_fast(lat, lon, pv_wp, batt_wh, tilt, aspect, mi):
+def max_wh_for_month_fast(lat, lon, pv_wp, batt_wh, tilt, aspect, mi, shs_eval_cache=None):
     hi_cap = float(min(20000, max(3 * batt_wh, 8 * pv_wp * 24)))
+    shs_eval_cache = shs_eval_cache if shs_eval_cache is not None else {}
 
     def fe_for(cons_wh_day):
         if cons_wh_day <= 0:
             return 0.0
 
-        monthly = shs_monthly(
-            lat, lon,
-            pv_wp, batt_wh,
-            float(cons_wh_day),
-            tilt, aspect
-        )
+        cache_key = round(float(cons_wh_day), 6)
+        monthly = shs_eval_cache.get(cache_key)
+        if monthly is None:
+            monthly = shs_monthly(
+                lat, lon,
+                pv_wp, batt_wh,
+                float(cons_wh_day),
+                tilt, aspect
+            )
+            shs_eval_cache[cache_key] = monthly
         return float(monthly[mi].get("f_e", 0.0))
 
     # Integer Wh/day steps are too coarse for ultra-low-power fixtures such as Avlite
@@ -604,6 +609,7 @@ def simulate_for_devices(
 
         hours = []
         monthly_energy_wh = []
+        shs_eval_cache = {}
 
         for mi in range(12):
             best_wh = max_wh_for_month_fast(
@@ -613,7 +619,8 @@ def simulate_for_devices(
                 batt_wh=resolved["batt"],
                 tilt=tilt,
                 aspect=azim,
-                mi=mi
+                mi=mi,
+                shs_eval_cache=shs_eval_cache,
             )
             monthly_energy_wh.append(best_wh)
             hours.append(min(best_wh / max(resolved["power"], 0.05), 24.0))

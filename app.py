@@ -5,6 +5,7 @@ import hmac
 import base64
 import hashlib
 import streamlit as st
+from streamlit.errors import StreamlitSecretNotFoundError
 
 from core.i18n import AVAILABLE_LANGUAGES, month_label, month_labels, t
 from core.db import init_db, create_user, user_exists, save_study, get_user_by_email
@@ -36,6 +37,16 @@ AUTH_QUERY_PARAM = "auth"
 AUTH_TOKEN_TTL_DAYS = 30
 
 
+def _secret_or_env(name: str, default=None):
+    env_value = os.getenv(name)
+    if env_value not in (None, ""):
+        return env_value
+    try:
+        return st.secrets.get(name, default)
+    except StreamlitSecretNotFoundError:
+        return default
+
+
 def _b64url_encode(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("utf-8")
 
@@ -47,9 +58,9 @@ def _b64url_decode(data: str) -> bytes:
 
 def _auth_persist_secret() -> str:
     return (
-        st.secrets.get("AUTH_PERSIST_SECRET")
-        or st.secrets.get("REMEMBER_ME_SECRET")
-        or st.secrets.get("ADMIN_PASSWORD")
+        _secret_or_env("AUTH_PERSIST_SECRET")
+        or _secret_or_env("REMEMBER_ME_SECRET")
+        or _secret_or_env("ADMIN_PASSWORD")
         or "change-this-secret-in-streamlit-secrets"
     )
 
@@ -201,10 +212,10 @@ def init_state():
 def bootstrap_admin_user():
     init_db()
 
-    admin_email = st.secrets.get("ADMIN_EMAIL")
-    admin_password = st.secrets.get("ADMIN_PASSWORD")
-    admin_full_name = st.secrets.get("ADMIN_FULL_NAME", "Admin")
-    admin_organization = st.secrets.get("ADMIN_ORGANIZATION", "SALA")
+    admin_email = _secret_or_env("ADMIN_EMAIL")
+    admin_password = _secret_or_env("ADMIN_PASSWORD")
+    admin_full_name = _secret_or_env("ADMIN_FULL_NAME", "Admin")
+    admin_organization = _secret_or_env("ADMIN_ORGANIZATION", "SALA")
 
     if not admin_email or not admin_password:
         return

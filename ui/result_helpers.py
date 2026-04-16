@@ -96,6 +96,7 @@ def short_device_label(full_name: str) -> str:
 def annual_empty_battery_stats(results: dict):
     worst_name = None
     worst_pct = None
+    worst_days = None
 
     for device_name, r in results.items():
         pct = r.get("overall_empty_battery_pct")
@@ -106,14 +107,16 @@ def annual_empty_battery_stats(results: dict):
         except Exception:
             continue
 
+        days = annual_blackout_days_from_row(r)
+
         if worst_pct is None or pct > worst_pct:
             worst_pct = pct
             worst_name = short_device_label(device_name)
+            worst_days = days
 
     if worst_pct is None:
         return None, None, None
 
-    worst_days = round(365 * worst_pct / 100.0)
     return worst_days, worst_pct, worst_name
 
 
@@ -151,7 +154,16 @@ def battery_reserve_hours(result_row: dict):
 
 
 def device_blackout_days(result_row: dict):
+    return annual_blackout_days_from_row(result_row)
+
+
+def annual_blackout_days_from_row(result_row: dict):
     try:
+        monthly_days = result_row.get("empty_battery_days_by_month")
+        if isinstance(monthly_days, (list, tuple)):
+            values = [float(v) for v in monthly_days if v is not None]
+            if values:
+                return int(round(sum(values)))
         pct = result_row.get("overall_empty_battery_pct")
         if pct is None:
             return None

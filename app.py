@@ -24,7 +24,7 @@ from ui.energy_flow import render_energy_flow
 
 st.set_page_config(
     page_title="SALA Standardized Feasibility Study for Solar AGL",
-    page_icon="sala_logo.png",
+    page_icon="sala_favicon.png",
     layout="wide",
 )
 

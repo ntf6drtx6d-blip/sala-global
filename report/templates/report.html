@@ -36,7 +36,8 @@
             <div><span class="meta-label">{{ report.i18n['report.meta.icao'] }}</span><span class="meta-value">{{ report.airport_icao or report.i18n['report.meta.not_provided'] }}</span></div>
             <div><span class="meta-label">{{ report.i18n['report.meta.coordinates'] }}</span><span class="meta-value">{{ report.coordinates }}</span></div>
             <div><span class="meta-label">{{ report.i18n['report.meta.date'] }}</span><span class="meta-value">{{ report.date }}</span></div>
-            <div><span class="meta-label">{{ report.i18n['report.meta.prepared_for'] }}</span><span class="meta-value">{{ report.prepared_for }}</span></div>
+            <div><span class="meta-label">{{ report.i18n['report.meta.generated_by'] }}</span><span class="meta-value">{{ report.generated_by }}</span></div>
+            <div><span class="meta-label">{{ report.i18n['report.meta.organization'] }}</span><span class="meta-value">{{ report.generated_for_organization or report.i18n['report.meta.not_provided'] }}</span></div>
             <div><span class="meta-label">{{ report.i18n['report.meta.document_id'] }}</span><span class="meta-value meta-value-id">{{ report.report_id_display or report.report_id }}</span></div>
             <div><span class="meta-label">{{ report.i18n['report.meta.required_operation'] }}</span><span class="meta-value">{{ report.required_operation }}</span></div>
           </div>

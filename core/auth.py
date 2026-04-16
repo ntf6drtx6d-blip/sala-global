@@ -53,6 +53,7 @@ def init_auth_state():
         st.session_state.auth_email = None
         st.session_state.auth_role = None
         st.session_state.auth_full_name = None
+        st.session_state.auth_organization = None
 
 
 def is_logged_in():
@@ -69,6 +70,7 @@ def logout():
     st.session_state.auth_email = None
     st.session_state.auth_role = None
     st.session_state.auth_full_name = None
+    st.session_state.auth_organization = None
     st.rerun()
 
 
@@ -89,6 +91,7 @@ def login_user(email: str, password: str) -> bool:
     st.session_state.auth_email = user["email"]
     st.session_state.auth_role = user["role"]
     st.session_state.auth_full_name = user["full_name"]
+    st.session_state.auth_organization = user.get("organization")
 
     update_last_login(user["id"])
     return True

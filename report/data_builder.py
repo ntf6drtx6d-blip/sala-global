@@ -263,7 +263,7 @@ def _pvgis_dataset_display(raw_dataset: str) -> str:
     return " ".join(cleaned.split())
 
 
-def build_report_data(loc, required_hours, results, overall, user_name, language="en"):
+def build_report_data(loc, required_hours, results, overall, user_name, user_organization="", language="en"):
     language = normalize_language(language)
     i18n = get_report_i18n(language)
     now_local_dt = now_local()
@@ -417,7 +417,8 @@ def build_report_data(loc, required_hours, results, overall, user_name, language
         "date": format_timestamp(now_local_dt, include_seconds=False),
         "report_id": f"SALA-{now_utc_dt.strftime('%Y%m%d%H%M%S')}",
         "report_id_display": now_utc_dt.strftime("%Y%m%d%H%M%S"),
-        "prepared_for": user_name,
+        "generated_by": user_name,
+        "generated_for_organization": user_organization,
         "required_operation": f"{float(required_hours):.1f} {t('ui.hours_per_day_unit', language)}",
         "required_hours": float(required_hours),
         "devices": devices,

@@ -74,7 +74,8 @@ def build_cover(data):
         ["Project / Airport", data["airport_name"]],
         ["Coordinates", data["coordinates"]],
         ["Required operating profile", data["required_operation"]],
-        ["Prepared for", data["prepared_for"]],
+        ["Generated with SALA by", data.get("generated_by", "")],
+        ["Organization", data.get("generated_for_organization", "—")],
         ["Document ID", data["report_id"]],
     ]
     story.append(card([quiet_table(meta_rows, widths=[165, 330])], 515, padding=0))

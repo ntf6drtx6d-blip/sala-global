@@ -9,6 +9,7 @@ from streamlit.errors import StreamlitSecretNotFoundError
 
 from core.i18n import AVAILABLE_LANGUAGES, month_label, month_labels, t
 from core.db import init_db, upsert_user, save_study, get_user_by_email
+from core.person import normalize_person_name
 from core.auth import hash_password, init_auth_state, is_logged_in, is_admin, logout
 
 from ui.setup import render_setup
@@ -153,6 +154,7 @@ def restore_login_from_query_token():
     st.session_state.auth_email = user["email"]
     st.session_state.auth_role = user["role"]
     st.session_state.auth_full_name = user["full_name"]
+    st.session_state.auth_organization = user.get("organization")
 
 
 def persist_login_to_query_token():
@@ -222,6 +224,10 @@ def init_state():
         "study_point_confirmed": False,
         "study_ready": False,
         "study_saved_for_current_result": False,
+        "simulation_cache_key": None,
+        "simulation_cache_results": None,
+        "simulation_cache_overall": None,
+        "simulation_cache_pdf_context": None,
     }
 
     for k, v in defaults.items():
@@ -448,7 +454,7 @@ def _display_name_from_email(email: str) -> str:
 def _display_name() -> str:
     full_name = str(st.session_state.get("auth_full_name") or "").strip()
     if full_name:
-        return full_name
+        return normalize_person_name(full_name)
     return _display_name_from_email(st.session_state.get("auth_email", ""))
 
 

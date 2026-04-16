@@ -7,6 +7,7 @@ from .data_builder import build_report_data
 from .html_builder import render_report_html
 from .pdf_renderer import render_pdf
 from core.devices import DEVICES
+from core.person import normalize_person_name
 from core.time_utils import format_timestamp
 
 
@@ -176,6 +177,8 @@ def make_pdf(
         user_name = args[-1]
     if not user_name:
         user_name = "User"
+    user_name = normalize_person_name(user_name)
+    user_organization = kwargs.get("author_organization") or kwargs.get("organization") or ""
 
     if out_path is None:
         out_path = "SALA_report.pdf"
@@ -195,6 +198,7 @@ def make_pdf(
         results,
         overall,
         user_name,
+        user_organization,
         kwargs.get("language", "en"),
     )
 
@@ -206,7 +210,9 @@ def make_pdf(
         data["airport_name"] = kwargs["airport_label"]
 
     if kwargs.get("author_name"):
-        data["prepared_for"] = kwargs["author_name"]
+        data["generated_by"] = normalize_person_name(kwargs["author_name"])
+    if user_organization:
+        data["generated_for_organization"] = user_organization
 
     data["operating_profile_mode"] = kwargs.get("operating_profile_mode", "Custom hours per day")
     data["selected_devices_text"] = _device_list_text(kwargs.get("selected_ids") or [])

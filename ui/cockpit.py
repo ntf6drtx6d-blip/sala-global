@@ -2,12 +2,15 @@
 import os
 import time
 import tempfile
+import json
+import hashlib
 
 import streamlit as st
 
 from core.simulate import simulate_for_devices
 from core.devices import DEVICES
 from core.i18n import t
+from core.person import normalize_person_name
 from core.time_utils import format_clock_timestamp, now_local
 from report.report import make_pdf
 EU_LOGO_PATH = "logo_en.gif"
@@ -24,8 +27,81 @@ def format_seconds(seconds):
     return f"{secs}s"
 
 
+def _profiling_summary(profile):
+    if not profile:
+        return []
+    total = float(profile.get("total_seconds", 0.0) or 0.0)
+    monthly = float(profile.get("monthly_search_total_seconds", 0.0) or 0.0)
+    blackout = float(profile.get("blackout_stats_total_seconds", 0.0) or 0.0)
+    meta = float(profile.get("meta_total_seconds", 0.0) or 0.0)
+    behavior = float(profile.get("behavior_total_seconds", 0.0) or 0.0)
+    lines = [
+        f"Profiling: simulation core {format_seconds(total)}",
+        f"Monthly search: {format_seconds(monthly)}",
+        f"Blackout stats: {format_seconds(blackout)}",
+        f"PVGIS/report metadata: {format_seconds(meta)}",
+        f"Battery behavior/UI metrics: {format_seconds(behavior)}",
+    ]
+    for item in profile.get("device_breakdown", [])[:3]:
+        lines.append(
+            f"{item.get('device_name', 'Device')}: search {format_seconds(item.get('monthly_search_seconds', 0.0))}, "
+            f"blackout {format_seconds(item.get('blackout_stats_seconds', 0.0))}, "
+            f"meta {format_seconds(item.get('meta_seconds', 0.0))}"
+        )
+    return lines
+
+
 def now_ts():
     return format_clock_timestamp(with_timezone=True)
+
+
+def _simulation_signature(lang):
+    payload = {
+        "airport_label": st.session_state.get("airport_label", ""),
+        "airport_icao": st.session_state.get("airport_icao", ""),
+        "lat": st.session_state.get("lat"),
+        "lon": st.session_state.get("lon"),
+        "required_hours": float(st.session_state.get("required_hours", 0) or 0),
+        "operating_profile_mode": st.session_state.get("operating_profile_mode", t("ui.mode_custom", lang)),
+        "selected_ids": st.session_state.get("selected_simulation_keys") or st.session_state.get("selected_ids", []),
+        "per_device_config": st.session_state.get("per_device_config", {}),
+    }
+    raw = json.dumps(payload, sort_keys=True, default=str)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _build_pdf(results, overall, lang):
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+        tmp_path = tmp.name
+
+    pdf_name = make_pdf(
+        results=results,
+        overall=overall,
+        language=lang,
+        airport_label=st.session_state.airport_label,
+        airport_icao=st.session_state.get("airport_icao", ""),
+        created_at=now_local(),
+        author_name=normalize_person_name(
+            st.session_state.get("auth_full_name") or st.session_state.get("auth_email", "")
+        ),
+        author_organization=st.session_state.get("auth_organization", ""),
+        required_hours=st.session_state.required_hours,
+        operating_profile_mode=st.session_state.get("operating_profile_mode", t("ui.mode_custom", lang)),
+        output_path=tmp_path,
+        lat=st.session_state.lat,
+        lon=st.session_state.lon,
+        selected_ids=st.session_state.get("selected_simulation_keys") or st.session_state.selected_ids,
+    )
+
+    with open(tmp_path, "rb") as f:
+        pdf_bytes = f.read()
+
+    try:
+        os.unlink(tmp_path)
+    except Exception:
+        pass
+
+    return pdf_name or "SALA_report.pdf", pdf_bytes
 
 
 def short_device_label_from_id(device_id):
@@ -68,6 +144,7 @@ def reset_study():
         "auth_email": st.session_state.get("auth_email"),
         "auth_role": st.session_state.get("auth_role"),
         "auth_full_name": st.session_state.get("auth_full_name"),
+        "auth_organization": st.session_state.get("auth_organization"),
     }
 
     keep = {
@@ -100,6 +177,10 @@ def reset_study():
         "run_eta_seconds": None,
         "trigger_run": False,
         "study_saved_for_current_result": False,
+        "simulation_cache_key": None,
+        "simulation_cache_results": None,
+        "simulation_cache_overall": None,
+        "simulation_cache_pdf_context": None,
     }
 
     for key in list(st.session_state.keys()):
@@ -115,6 +196,7 @@ def reset_study():
 
 def _run_simulation(progress_callback=None):
     lang = st.session_state.get("language", "en")
+    signature = _simulation_signature(lang)
     st.session_state.running = True
     st.session_state.run_stage = t("ui.preparing_simulation", lang)
     st.session_state.run_progress = 0
@@ -184,47 +266,41 @@ def _run_simulation(progress_callback=None):
         if month_name == "Dec":
             add_log(t("ui.log_checking_winter", lang, device_name=device_name))
 
-    results, overall, worst_name, worst_gap, slope = simulate_for_devices(
-        loc=loc,
-        required_hrs=st.session_state.required_hours,
-        selected_ids=st.session_state.get("selected_simulation_keys") or st.session_state.selected_ids,
-        per_device_config=st.session_state.per_device_config,
-        az_override=None,
-        progress_callback=simulation_progress,
-    )
+    cached_key = st.session_state.get("simulation_cache_key")
+    cached_results = st.session_state.get("simulation_cache_results")
+    cached_overall = st.session_state.get("simulation_cache_overall")
+    reused_simulation = bool(cached_key == signature and cached_results is not None and cached_overall is not None)
 
-    elapsed = time.time() - started
+    if reused_simulation:
+        results = cached_results
+        overall = cached_overall
+        elapsed = 0.0
+        st.session_state.run_elapsed_seconds = 0.0
+        st.session_state.run_eta_seconds = 0.0
+        add_log(t("ui.log_reusing_previous_simulation", lang))
+        push_progress(88, t("ui.stage_calculating_feasibility", lang))
+    else:
+        simulation_profile = {}
+        results, overall, worst_name, worst_gap, slope = simulate_for_devices(
+            loc=loc,
+            required_hrs=st.session_state.required_hours,
+            selected_ids=st.session_state.get("selected_simulation_keys") or st.session_state.selected_ids,
+            per_device_config=st.session_state.per_device_config,
+            az_override=None,
+            progress_callback=simulation_progress,
+            profiling=simulation_profile,
+        )
+        elapsed = time.time() - started
+        st.session_state.simulation_cache_key = signature
+        st.session_state.simulation_cache_results = results
+        st.session_state.simulation_cache_overall = overall
+        for line in _profiling_summary(simulation_profile):
+            add_log(line)
 
     push_progress(92, t("ui.stage_calculating_feasibility", lang))
     add_log(t("ui.log_pvgis_responses_received", lang))
     add_log(t("ui.log_preparing_conclusion", lang))
-
-    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-        tmp_path = tmp.name
-
-    pdf_name = make_pdf(
-        results=results,
-        overall=overall,
-        language=st.session_state.get("language", "en"),
-        airport_label=st.session_state.airport_label,
-        airport_icao=st.session_state.get("airport_icao", ""),
-        created_at=now_local(),
-        author_name=st.session_state.get("auth_full_name") or st.session_state.get("auth_email", ""),
-        required_hours=st.session_state.required_hours,
-        operating_profile_mode=st.session_state.get("operating_profile_mode", t("ui.mode_custom", lang)),
-        output_path=tmp_path,
-        lat=st.session_state.lat,
-        lon=st.session_state.lon,
-        selected_ids=st.session_state.get("selected_simulation_keys") or st.session_state.selected_ids,
-    )
-
-    with open(tmp_path, "rb") as f:
-        pdf_bytes = f.read()
-
-    try:
-        os.unlink(tmp_path)
-    except Exception:
-        pass
+    pdf_name, pdf_bytes = _build_pdf(results, overall, lang)
 
     push_progress(100, t("ui.stage_generating_results", lang))
     add_log(t("ui.log_simulation_complete", lang))

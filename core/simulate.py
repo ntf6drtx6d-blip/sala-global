@@ -14,6 +14,7 @@ from pvgis_client import pvcalc_monthly_wh_per_day, shs_monthly, load_cache, sav
 
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+SHS_BINARY_SEARCH_STEPS = max(10, int(os.getenv("SALA_SHS_BINARY_SEARCH_STEPS", "16")))
 
 
 def _days_in_month_non_leap(month_index_1_based: int) -> int:
@@ -546,7 +547,7 @@ def max_wh_for_month_fast(lat, lon, pv_wp, batt_wh, tilt, aspect, mi, shs_eval_c
     lo, hi = 0.0, hi_cap
     best = 0.0
 
-    for _ in range(22):
+    for _ in range(SHS_BINARY_SEARCH_STEPS):
         mid = (lo + hi) / 2.0
         fe = fe_for(mid)
 
@@ -560,16 +561,21 @@ def max_wh_for_month_fast(lat, lon, pv_wp, batt_wh, tilt, aspect, mi, shs_eval_c
 
 
 
-def get_empty_battery_stats_for_required_mode(lat, lon, resolved, required_hrs, tilt, aspect):
+def get_empty_battery_stats_for_required_mode(lat, lon, resolved, required_hrs, tilt, aspect, shs_eval_cache=None):
     daily_wh = float(required_hrs) * max(float(resolved["power"]), 0.001) + max(float(resolved.get("standby_power_w", 0.0)), 0.0) * 24.0
+    shs_eval_cache = shs_eval_cache if shs_eval_cache is not None else {}
+    cache_key = round(float(daily_wh), 6)
 
-    monthly = shs_monthly(
-        lat, lon,
-        resolved["pv"],
-        resolved["batt"],
-        daily_wh,
-        tilt, aspect
-    )
+    monthly = shs_eval_cache.get(cache_key)
+    if monthly is None:
+        monthly = shs_monthly(
+            lat, lon,
+            resolved["pv"],
+            resolved["batt"],
+            daily_wh,
+            tilt, aspect
+        )
+        shs_eval_cache[cache_key] = monthly
 
     pct_by_month = []
     days_by_month = []
@@ -597,7 +603,8 @@ def simulate_for_devices(
     selected_ids,
     per_device_config=None,
     az_override=None,
-    progress_callback=None
+    progress_callback=None,
+    profiling=None,
 ):
     per_device_config = per_device_config or {}
     DEVICES, _ = get_runtime_catalog()
@@ -630,8 +637,27 @@ def simulate_for_devices(
     total_steps = max(1, len(work_items) * 12)
     completed_steps = 0
     started_at = time.time()
+    if profiling is not None:
+        profiling.clear()
+        profiling.update({
+            "started_at": started_at,
+            "devices_total": len(work_items),
+            "device_breakdown": [],
+            "monthly_search_total_seconds": 0.0,
+            "blackout_stats_total_seconds": 0.0,
+            "meta_total_seconds": 0.0,
+            "behavior_total_seconds": 0.0,
+        })
 
     for source_type, did, resolved in work_items:
+        device_profile = {
+            "device_name": resolved["device_name"],
+            "source_type": source_type,
+            "monthly_search_seconds": 0.0,
+            "blackout_stats_seconds": 0.0,
+            "meta_seconds": 0.0,
+            "behavior_seconds": 0.0,
+        }
         tilt_options = resolved["tilt_options"]
         tilt = tilt_options[0] if resolved["fixed"] else min(tilt_options, key=lambda x: abs(x - slope))
 
@@ -649,6 +675,7 @@ def simulate_for_devices(
         monthly_energy_wh = []
         shs_eval_cache = {}
 
+        search_started = time.time()
         for mi in range(12):
             best_wh = max_wh_for_month_fast(
                 lat=lat,
@@ -680,24 +707,40 @@ def simulate_for_devices(
                     resolved["device_name"],
                     MONTHS[mi]
                 )
+        monthly_search_seconds = time.time() - search_started
+        device_profile["monthly_search_seconds"] = monthly_search_seconds
+        if profiling is not None:
+            profiling["monthly_search_total_seconds"] += monthly_search_seconds
 
         min_margin = min(h - required_hrs for h in hours)
         status = "PASS" if all(h >= required_hrs - 1e-6 for h in hours) else "FAIL"
         fail_months = [MONTHS[i] for i, h in enumerate(hours) if h + 1e-6 < required_hrs]
 
+        blackout_started = time.time()
         shs_monthly_rows, empty_battery_pct_by_month, empty_battery_days_by_month, overall_empty_battery_pct = get_empty_battery_stats_for_required_mode(
             lat=lat,
             lon=lon,
             resolved=resolved,
             required_hrs=required_hrs,
             tilt=tilt,
-            aspect=azim
+            aspect=azim,
+            shs_eval_cache=shs_eval_cache,
         )
+        blackout_seconds = time.time() - blackout_started
+        device_profile["blackout_stats_seconds"] = blackout_seconds
+        if profiling is not None:
+            profiling["blackout_stats_total_seconds"] += blackout_seconds
 
+        meta_started = time.time()
         pvgis_meta = build_pvgis_meta(lat, lon, resolved, tilt, azim)
         if source_type == "avlite":
             pvgis_meta.update(resolved.get("avlite_meta", {}))
+        meta_seconds = time.time() - meta_started
+        device_profile["meta_seconds"] = meta_seconds
+        if profiling is not None:
+            profiling["meta_total_seconds"] += meta_seconds
 
+        behavior_started = time.time()
         battery_type, cutoff_pct = _infer_battery_basis(resolved)
         monthly_generation_wh_day = _monthly_generation_used_in_simulation(
             lat, lon, resolved, tilt, azim, shs_monthly_rows=shs_monthly_rows
@@ -712,6 +755,10 @@ def simulate_for_devices(
             monthly_empty_battery_days=empty_battery_days_by_month,
             lat=lat,
         )
+        behavior_seconds = time.time() - behavior_started
+        device_profile["behavior_seconds"] = behavior_seconds
+        if profiling is not None:
+            profiling["behavior_total_seconds"] += behavior_seconds
         effective_pv_used = float(resolved.get("equivalent_panel_wp", resolved["pv"]))
         faa_3sunhours_energy_wh = effective_pv_used * 3.0
         faa_8h_required_wh = max(float(resolved["power"]), 0.0) * 8.0
@@ -798,6 +845,8 @@ def simulate_for_devices(
             if k in resolved:
                 row[k] = resolved[k]
         results[result_key] = row
+        if profiling is not None:
+            profiling["device_breakdown"].append(device_profile)
 
     worst_name, worst_gap = None, 1e9
     overall = "PASS"
@@ -809,4 +858,6 @@ def simulate_for_devices(
         if r["status"] == "FAIL":
             overall = "FAIL"
 
+    if profiling is not None:
+        profiling["total_seconds"] = time.time() - started_at
     return results, overall, worst_name, worst_gap, slope

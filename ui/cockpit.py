@@ -2,14 +2,13 @@
 import os
 import time
 import tempfile
-from datetime import datetime
-from zoneinfo import ZoneInfo
 
 import streamlit as st
 
 from core.simulate import simulate_for_devices
 from core.devices import DEVICES
 from core.i18n import t
+from core.time_utils import format_clock_timestamp, now_local
 from report.report import make_pdf
 EU_LOGO_PATH = "logo_en.gif"
 
@@ -26,7 +25,7 @@ def format_seconds(seconds):
 
 
 def now_ts():
-    return datetime.now(ZoneInfo("Europe/Madrid")).strftime("%H:%M:%S")
+    return format_clock_timestamp(with_timezone=True)
 
 
 def short_device_label_from_id(device_id):
@@ -96,6 +95,9 @@ def reset_study():
         "run_progress": 0,
         "run_stage": t("ui.ready", lang),
         "run_log": [],
+        "run_started_at": None,
+        "run_elapsed_seconds": None,
+        "run_eta_seconds": None,
         "trigger_run": False,
         "study_saved_for_current_result": False,
     }
@@ -117,6 +119,9 @@ def _run_simulation(progress_callback=None):
     st.session_state.run_stage = t("ui.preparing_simulation", lang)
     st.session_state.run_progress = 0
     st.session_state.run_log = []
+    st.session_state.run_started_at = time.time()
+    st.session_state.run_elapsed_seconds = 0.0
+    st.session_state.run_eta_seconds = None
 
     def add_log(message):
         logs = st.session_state.get("run_log", [])
@@ -138,6 +143,7 @@ def _run_simulation(progress_callback=None):
 
     def push_progress(percent, stage):
         percent = max(0, min(100, int(percent)))
+        percent = max(int(st.session_state.get("run_progress", 0)), percent)
         st.session_state.run_progress = percent
         st.session_state.run_stage = stage
         if progress_callback:
@@ -161,6 +167,8 @@ def _run_simulation(progress_callback=None):
 
     def simulation_progress(done, total, pct, elapsed, eta, device_name, month_name):
         percent = int(pct * 100)
+        st.session_state.run_elapsed_seconds = max(0.0, float(elapsed or 0.0))
+        st.session_state.run_eta_seconds = max(0.0, float(eta or 0.0)) if eta is not None else None
         stage = render_stage(percent)
 
         push_progress(percent, stage)
@@ -200,7 +208,7 @@ def _run_simulation(progress_callback=None):
         language=st.session_state.get("language", "en"),
         airport_label=st.session_state.airport_label,
         airport_icao=st.session_state.get("airport_icao", ""),
-        created_at=datetime.now(ZoneInfo("Europe/Madrid")).strftime("%Y-%m-%d %H:%M"),
+        created_at=now_local(),
         author_name=st.session_state.get("auth_full_name") or st.session_state.get("auth_email", ""),
         required_hours=st.session_state.required_hours,
         operating_profile_mode=st.session_state.get("operating_profile_mode", t("ui.mode_custom", lang)),
@@ -231,4 +239,6 @@ def _run_simulation(progress_callback=None):
     st.session_state.trigger_run = False
     st.session_state.run_stage = t("ui.completed", lang)
     st.session_state.run_progress = 100
+    st.session_state.run_elapsed_seconds = elapsed
+    st.session_state.run_eta_seconds = 0.0
     st.rerun()

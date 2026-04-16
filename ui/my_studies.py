@@ -6,8 +6,9 @@ from collections import OrderedDict
 import streamlit as st
 
 from core.db import list_user_studies
-from core.devices import DEVICES
+from core.catalog import runtime_device_label, runtime_device_variant_label
 from core.i18n import t
+from core.time_utils import format_timestamp
 
 
 def _row_value(row, key, default=None):
@@ -60,15 +61,7 @@ def _result_badge_config(result):
 
 
 def _device_variant_label(device_id, variant):
-    try:
-        did = int(device_id)
-        device = DEVICES.get(did)
-        base = device.get("name") or device.get("code") or str(did) if device else str(did)
-    except Exception:
-        base = str(device_id)
-    if variant:
-        return f"{base} / {variant}"
-    return base
+    return runtime_device_variant_label(device_id, variant)
 
 
 def _format_operating_mode(raw_mode, lang):
@@ -93,19 +86,13 @@ def _device_labels_from_json(raw_value):
             device_id, variant = raw.split("||", 1)
             label = _device_variant_label(device_id, variant)
         else:
-            try:
-                did = int(raw)
-                device = DEVICES.get(did)
-                label = device.get("name") or device.get("code") or str(did) if device else str(did)
-            except Exception:
-                label = raw
+            label = runtime_device_label(raw)
         grouped[label] = grouped.get(label, 0) + 1
     return [f"{count} × {label}" for label, count in grouped.items()]
 
 
 def _format_created_at(value):
-    text = str(value or "—")
-    return text.replace("T", " ")
+    return format_timestamp(value, include_seconds=True)
 
 
 def render_my_studies(user_id):

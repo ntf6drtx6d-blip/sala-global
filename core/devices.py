@@ -10,6 +10,7 @@ SOLAR_ENGINES = {
         "batt_ext": None,
         "tilt_options": [33],
         "fixed": True,
+        "standby_power_w": None,
     },
     "se_mini": {
         "key": "se_mini",
@@ -20,6 +21,7 @@ SOLAR_ENGINES = {
         "batt_ext": None,
         "tilt_options": [33],
         "fixed": True,
+        "standby_power_w": None,
     },
     "se_compact": {
         "key": "se_compact",
@@ -30,6 +32,7 @@ SOLAR_ENGINES = {
         "batt_ext": 2880,
         "tilt_options": [15, 35, 55],
         "fixed": False,
+        "standby_power_w": None,
     },
     "se_max": {
         "key": "se_max",
@@ -40,6 +43,7 @@ SOLAR_ENGINES = {
         "batt_ext": 6000,
         "tilt_options": [15, 35, 55],
         "fixed": False,
+        "standby_power_w": None,
     },
 }
 
@@ -54,6 +58,8 @@ DEVICES = {
         "batt": 216,
         "tilt": 33,
         "fixed": True,
+        "supports_intensity_adjustment": True,
+        "standby_power_w": None,
         "default_lamp_variant": "Runway edge light",
         "lamp_variants": {
             "Runway edge light": {"power_w": 3.3},
@@ -75,6 +81,8 @@ DEVICES = {
         "batt": 216,
         "tilt": 33,
         "fixed": True,
+        "supports_intensity_adjustment": True,
+        "standby_power_w": None,
         "default_lamp_variant": "Runway edge light",
         "lamp_variants": {
             "Runway edge light": {"power_w": 27.0},
@@ -92,6 +100,8 @@ DEVICES = {
         "batt": 54,
         "tilt": 33,
         "fixed": True,
+        "supports_intensity_adjustment": True,
+        "standby_power_w": None,
         "default_lamp_variant": "Runway edge light",
         "lamp_variants": {
             "Runway edge light": {"power_w": 1.48},
@@ -110,6 +120,8 @@ DEVICES = {
         "default_power": 5.0,
         "default_engine": "se_mini",
         "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_max"],
+        "supports_intensity_adjustment": False,
+        "standby_power_w": None,
     },
     5: {
         "code": "PAPI",
@@ -119,6 +131,8 @@ DEVICES = {
         "default_power": 320.0,
         "default_engine": "se_max",
         "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_max"],
+        "supports_intensity_adjustment": False,
+        "standby_power_w": None,
     },
     6: {
         "code": "A-PAPI",
@@ -128,6 +142,8 @@ DEVICES = {
         "default_power": 160.0,
         "default_engine": "se_max",
         "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_max"],
+        "supports_intensity_adjustment": False,
+        "standby_power_w": None,
     },
     7: {
         "code": "RGL",
@@ -137,6 +153,8 @@ DEVICES = {
         "default_power": 3.0,
         "default_engine": "se_mini",
         "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_max"],
+        "supports_intensity_adjustment": False,
+        "standby_power_w": None,
     },
     8: {
         "code": "WDI",
@@ -146,6 +164,8 @@ DEVICES = {
         "default_power": 10.0,
         "default_engine": "se_mini",
         "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_max"],
+        "supports_intensity_adjustment": False,
+        "standby_power_w": None,
     },
     9: {
         "code": "SIGN-L",
@@ -155,6 +175,8 @@ DEVICES = {
         "default_power": 35.0,
         "default_engine": "se_compact",
         "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_max"],
+        "supports_intensity_adjustment": False,
+        "standby_power_w": None,
     },
     10: {
         "code": "SIGN-M",
@@ -164,6 +186,8 @@ DEVICES = {
         "default_power": 22.0,
         "default_engine": "se_compact",
         "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_max"],
+        "supports_intensity_adjustment": False,
+        "standby_power_w": None,
     },
     11: {
         "code": "SIGN-S",
@@ -173,6 +197,8 @@ DEVICES = {
         "default_power": 15.0,
         "default_engine": "se_compact",
         "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_max"],
+        "supports_intensity_adjustment": False,
+        "standby_power_w": None,
     },
 }
 

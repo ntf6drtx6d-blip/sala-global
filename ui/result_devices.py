@@ -173,16 +173,19 @@ def _solar_configuration_summary(result_row):
 
 
 def _lighting_input_source(result_row):
+    lang = st.session_state.get("language", "en")
     if str(result_row.get("system_type", "")).lower() == "avlite_fixture":
         return (
-            "Estimated by SALA",
-            "Avlite device data",
-            "ICAO-compliant operating consumption is estimated by SALA from Avlite documentation and is not manufacturer-verified.",
+            t("ui.estimated_by_sala", lang),
+            "Avlite",
+            t("ui.estimated_basis_copy", lang),
+            "warning",
         )
     return (
-        "Verified by SALA",
-        "S4GA device data",
-        "ICAO-compliant operating consumption is verified by SALA using S4GA device input data.",
+        t("ui.verified_by_sala", lang),
+        "S4GA",
+        t("ui.verified_basis_copy", lang),
+        "success",
     )
 
 
@@ -523,6 +526,44 @@ def render_device_capability_cards(results: dict):
                             ]
                         ),
                     )
+
+                source_status, source_name, source_copy, source_style = _lighting_input_source(result_row)
+                source_palette = STATUS_STYLES.get(source_style, STATUS_STYLES["neutral"])
+                st.markdown(
+                    f"""
+                    <div style="
+                        border:1px solid {source_palette['border']};
+                        background:{source_palette['bg']};
+                        border-radius:16px;
+                        padding:14px 16px;
+                        margin-top:14px;">
+                        <div style="display:flex;justify-content:space-between;gap:14px;align-items:flex-start;flex-wrap:wrap;">
+                            <div>
+                                <div style="font-size:0.84rem;color:#667085;font-weight:800;letter-spacing:0.04em;text-transform:uppercase;">
+                                    {t("ui.light_data_provider", lang)}
+                                </div>
+                                <div style="font-size:1.02rem;color:#101828;font-weight:900;margin-top:6px;">
+                                    {source_name}
+                                </div>
+                            </div>
+                            <div style="
+                                border:1px solid {source_palette['border']};
+                                color:{source_palette['color']};
+                                background:#ffffffb3;
+                                border-radius:999px;
+                                padding:8px 12px;
+                                font-size:0.8rem;
+                                font-weight:800;">
+                                {source_status}
+                            </div>
+                        </div>
+                        <div style="font-size:0.92rem;color:#475467;line-height:1.45;margin-top:10px;">
+                            {source_copy}
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
                 st.markdown(f"### {t('ui.daily_battery_energy_balance', lang)}")
                 render_operational_chart(result_row, metrics)

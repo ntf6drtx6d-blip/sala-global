@@ -19,6 +19,7 @@ import calendar
 from functools import lru_cache
 import requests
 
+from core.catalog import get_runtime_catalog
 from core.devices_avlite import AVLITE_FIXTURES, AVLITE_DEVICES
 
 PVGIS_BASES = [
@@ -55,7 +56,8 @@ def resolve_avlite_fixture(device_id, per_device_config=None):
     per_device_config = per_device_config or {}
     parsed_device_id, user_cfg = _parse_avlite_device_identifier(device_id, per_device_config)
 
-    dspec = AVLITE_DEVICES[parsed_device_id]
+    runtime_devices, _ = get_runtime_catalog()
+    dspec = runtime_devices.get(parsed_device_id, AVLITE_DEVICES.get(parsed_device_id))
     fixture = AVLITE_FIXTURES[dspec["fixture_key"]]
     display_name = user_cfg.get("display_label") or dspec["name"]
 
@@ -267,6 +269,8 @@ def _derive_equivalent_single_plane(lat, lon, total_monthly_wh_day):
 
 def resolve_avlite_equivalent_config(device_id, loc, per_device_config=None):
     fixture_cfg = resolve_avlite_fixture(device_id, per_device_config)
+    per_device_config = per_device_config or {}
+    user_cfg = per_device_config.get(device_id) or per_device_config.get(str(device_id), {})
     lat = float(loc["lat"])
     lon = float(loc["lon"])
 
@@ -296,6 +300,16 @@ def resolve_avlite_equivalent_config(device_id, loc, per_device_config=None):
         "equivalent_single_plane": equiv,
     }
 
+    base_power_100 = float(user_cfg.get("base_power_w", fixture_cfg["power"]))
+    intensity_mode = str(user_cfg.get("intensity_mode", "fixed"))
+    intensity_pct = float(user_cfg.get("intensity_pct", 100.0))
+    mixed_share_pct = float(user_cfg.get("mixed_share_pct", 50.0))
+    mixed_intensity_a = float(user_cfg.get("mixed_intensity_a", 30.0))
+    mixed_intensity_b = float(user_cfg.get("mixed_intensity_b", 100.0))
+    effective_intensity_pct = float(user_cfg.get("effective_intensity_pct", intensity_pct))
+    standby_power_w = float(user_cfg.get("standby_power_w", 0.0) or 0.0)
+    power = float(user_cfg.get("power", base_power_100 * effective_intensity_pct / 100.0))
+
     resolved = {
         "device_id": fixture_cfg["device_id"],
         "device_code": fixture_cfg["device_code"],
@@ -304,7 +318,16 @@ def resolve_avlite_equivalent_config(device_id, loc, per_device_config=None):
         "system_type": "avlite_fixture",
         "engine_key": fixture_cfg["fixture_key"],
         "engine_name": "BUILT-IN",
-        "power": fixture_cfg["power"],
+        "power": power,
+        "base_power_100": base_power_100,
+        "supports_intensity_adjustment": True,
+        "intensity_mode": intensity_mode,
+        "intensity_pct": intensity_pct,
+        "mixed_share_pct": mixed_share_pct,
+        "mixed_intensity_a": mixed_intensity_a,
+        "mixed_intensity_b": mixed_intensity_b,
+        "effective_intensity_pct": effective_intensity_pct,
+        "standby_power_w": standby_power_w,
         "pv": equivalent_wp,
         "batt_std": fixture_cfg["batt_nominal_wh"],
         "batt": fixture_cfg["batt_nominal_wh"],

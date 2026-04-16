@@ -1,6 +1,7 @@
-from datetime import datetime, UTC
+from datetime import UTC
 import math
 from core.i18n import get_report_i18n, month_label, normalize_language, t
+from core.time_utils import format_timestamp, now_local, now_utc
 
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -265,7 +266,8 @@ def _pvgis_dataset_display(raw_dataset: str) -> str:
 def build_report_data(loc, required_hours, results, overall, user_name, language="en"):
     language = normalize_language(language)
     i18n = get_report_i18n(language)
-    now = datetime.now(UTC)
+    now_local_dt = now_local()
+    now_utc_dt = now_utc()
     airport_name = (loc.get("label") or "Study point").strip()
     coords = f"{float(loc.get('lat', 0)):.6f}, {float(loc.get('lon', 0)):.6f}"
 
@@ -412,9 +414,9 @@ def build_report_data(loc, required_hours, results, overall, user_name, language
         "airport_name": airport_name,
         "airport_icao": (str(loc.get("icao", "") or loc.get("airport_icao", "")).upper().strip()),
         "coordinates": coords,
-        "date": now.strftime("%Y-%m-%d %H:%M UTC"),
-        "report_id": f"SALA-{now.strftime('%Y%m%d%H%M%S')}",
-        "report_id_display": now.strftime("%Y%m%d%H%M%S"),
+        "date": format_timestamp(now_local_dt, include_seconds=False),
+        "report_id": f"SALA-{now_utc_dt.strftime('%Y%m%d%H%M%S')}",
+        "report_id_display": now_utc_dt.strftime("%Y%m%d%H%M%S"),
         "prepared_for": user_name,
         "required_operation": f"{float(required_hours):.1f} {t('ui.hours_per_day_unit', language)}",
         "required_hours": float(required_hours),

@@ -246,10 +246,24 @@ def _render_operating_profile_detail_table(chart_df: pd.DataFrame, visible_devic
     table_df = pd.DataFrame(rows, columns=[t("ui.device", lang), *MONTHS]).fillna("—")
     table_df = table_df.rename(columns={month: month_label(month, lang) for month in MONTHS})
 
-    lang = st.session_state.get("language", "en")
+    device_col = t("ui.device", lang)
+
+    def _delta_cell_style(value):
+        if not isinstance(value, str) or "(" not in value or value == "—":
+            return ""
+        if "(+" in value:
+            return "color:#067647;font-weight:700;"
+        if "(-" in value:
+            return "color:#b42318;font-weight:700;"
+        return ""
+
     with st.expander(t("ui.detailed_operating_profile_table", lang), expanded=False):
         st.caption(t("ui.operating_profile_table_caption", lang))
-        st.dataframe(table_df, width="stretch", hide_index=True)
+        st.dataframe(
+            table_df.style.map(_delta_cell_style, subset=[col for col in table_df.columns if col != device_col]),
+            width="stretch",
+            hide_index=True,
+        )
 
 
 def render_blackout_graph(results: dict, visible_devices: list[str]):

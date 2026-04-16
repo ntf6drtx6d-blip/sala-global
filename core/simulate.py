@@ -8,7 +8,7 @@ import calendar
 import math
 from urllib.parse import urlencode
 
-from core.devices import DEVICES, SOLAR_ENGINES
+from core.catalog import get_runtime_catalog
 from core.avlite_fs import resolve_avlite_equivalent_config
 from pvgis_client import pvcalc_monthly_wh_per_day, shs_monthly, load_cache, save_cache
 
@@ -80,6 +80,7 @@ def dataset_label():
 
 def resolve_device_config(device_id, per_device_config=None):
     per_device_config = per_device_config or {}
+    DEVICES, SOLAR_ENGINES = get_runtime_catalog()
     parsed_device_id, lamp_variant, user_cfg = _parse_device_identifier(device_id, per_device_config)
     dspec = DEVICES[parsed_device_id]
 
@@ -88,11 +89,28 @@ def resolve_device_config(device_id, per_device_config=None):
     else:
         default_power = float(dspec["default_power"])
 
+    supports_intensity_adjustment = bool(
+        dspec.get("supports_intensity_adjustment", dspec.get("system_type") in {"builtin", "avlite_fixture"})
+    )
+    standby_power_w = float(user_cfg.get("standby_power_w", dspec.get("standby_power_w", 0.0) or 0.0))
     power = float(user_cfg.get("power", default_power))
+    base_power_100 = float(user_cfg.get("base_power_w", default_power))
+    intensity_mode = str(user_cfg.get("intensity_mode", "fixed"))
+    intensity_pct = float(user_cfg.get("intensity_pct", 100.0))
+    mixed_share_pct = float(user_cfg.get("mixed_share_pct", 50.0))
+    mixed_intensity_a = float(user_cfg.get("mixed_intensity_a", 30.0))
+    mixed_intensity_b = float(user_cfg.get("mixed_intensity_b", 100.0))
+    effective_intensity_pct = float(user_cfg.get("effective_intensity_pct", intensity_pct))
     variant_suffix = f" / {_variant_short_label(lamp_variant)}" if lamp_variant else ""
     display_name = user_cfg.get("display_label") or f"{dspec['name']}{variant_suffix}"
 
     if dspec["system_type"] == "builtin":
+        tilt_options = list(dspec.get("tilt_options") or [])
+        if not tilt_options:
+            default_tilt = float(dspec.get("tilt", 33))
+            tilt_options = [default_tilt]
+        else:
+            default_tilt = float(tilt_options[0])
         cfg = {
             "device_id": parsed_device_id,
             "device_code": dspec["code"],
@@ -102,13 +120,22 @@ def resolve_device_config(device_id, per_device_config=None):
             "engine_key": None,
             "engine_name": "BUILT-IN",
             "power": power,
+            "base_power_100": base_power_100,
+            "supports_intensity_adjustment": supports_intensity_adjustment,
+            "intensity_mode": intensity_mode,
+            "intensity_pct": intensity_pct,
+            "mixed_share_pct": mixed_share_pct,
+            "mixed_intensity_a": mixed_intensity_a,
+            "mixed_intensity_b": mixed_intensity_b,
+            "effective_intensity_pct": effective_intensity_pct,
+            "standby_power_w": standby_power_w,
             "pv": float(dspec["pv"]),
             "batt_std": float(dspec["batt"]),
             "batt": float(dspec["batt"]),
             "battery_mode": "Std",
-            "fixed": bool(dspec.get("fixed", True)),
-            "tilt_options": [float(dspec.get("tilt", 33))],
-            "tilt": float(dspec.get("tilt", 33)),
+            "fixed": bool(dspec.get("fixed", len(tilt_options) <= 1)),
+            "tilt_options": [float(x) for x in tilt_options],
+            "tilt": float(dspec.get("tilt", default_tilt)),
         }
         return cfg
 
@@ -129,6 +156,15 @@ def resolve_device_config(device_id, per_device_config=None):
         "engine_key": engine_key,
         "engine_name": eng["short_name"],
         "power": power,
+        "base_power_100": base_power_100,
+        "supports_intensity_adjustment": supports_intensity_adjustment,
+        "intensity_mode": intensity_mode,
+        "intensity_pct": intensity_pct,
+        "mixed_share_pct": mixed_share_pct,
+        "mixed_intensity_a": mixed_intensity_a,
+        "mixed_intensity_b": mixed_intensity_b,
+        "effective_intensity_pct": effective_intensity_pct,
+        "standby_power_w": standby_power_w,
         "pv": float(eng["pv"]),
         "batt_std": float(eng["batt"]),
         "batt": batt,
@@ -276,6 +312,7 @@ def _battery_behavior_metrics(
     cutoff_pct,
     power_w,
     required_hrs,
+    standby_power_w=0.0,
     monthly_empty_battery_days=None,
     lat=None,
 ):
@@ -286,7 +323,7 @@ def _battery_behavior_metrics(
     0% on the graph = usable reserve exhausted (operational cut-off reached).
     """
     usable_battery_wh = max(0.001, float(batt_wh) * (1.0 - float(cutoff_pct) / 100.0))
-    discharge_day_wh = max(float(power_w), 0.0) * max(float(required_hrs), 0.0)
+    discharge_day_wh = max(float(power_w), 0.0) * max(float(required_hrs), 0.0) + max(float(standby_power_w), 0.0) * 24.0
     discharge_pct_per_day = discharge_day_wh / usable_battery_wh * 100.0
     discharge_pct_per_hr = discharge_pct_per_day / max(float(required_hrs), 1e-6) if required_hrs else 0.0
 
@@ -524,7 +561,7 @@ def max_wh_for_month_fast(lat, lon, pv_wp, batt_wh, tilt, aspect, mi, shs_eval_c
 
 
 def get_empty_battery_stats_for_required_mode(lat, lon, resolved, required_hrs, tilt, aspect):
-    daily_wh = float(required_hrs) * max(float(resolved["power"]), 0.05)
+    daily_wh = float(required_hrs) * max(float(resolved["power"]), 0.001) + max(float(resolved.get("standby_power_w", 0.0)), 0.0) * 24.0
 
     monthly = shs_monthly(
         lat, lon,
@@ -563,6 +600,7 @@ def simulate_for_devices(
     progress_callback=None
 ):
     per_device_config = per_device_config or {}
+    DEVICES, _ = get_runtime_catalog()
 
     lat, lon = loc["lat"], loc["lon"]
     cache = load_cache()
@@ -623,7 +661,10 @@ def simulate_for_devices(
                 shs_eval_cache=shs_eval_cache,
             )
             monthly_energy_wh.append(best_wh)
-            hours.append(min(best_wh / max(resolved["power"], 0.05), 24.0))
+            active_power = max(float(resolved["power"]), 0.001)
+            standby_day_wh = max(float(resolved.get("standby_power_w", 0.0)), 0.0) * 24.0
+            active_budget_wh = max(float(best_wh) - standby_day_wh, 0.0)
+            hours.append(min(active_budget_wh / active_power, 24.0))
 
             completed_steps += 1
             if progress_callback:
@@ -667,6 +708,7 @@ def simulate_for_devices(
             cutoff_pct=cutoff_pct,
             power_w=resolved["power"],
             required_hrs=required_hrs,
+            standby_power_w=resolved.get("standby_power_w", 0.0),
             monthly_empty_battery_days=empty_battery_days_by_month,
             lat=lat,
         )
@@ -695,6 +737,15 @@ def simulate_for_devices(
             "min_margin": min_margin,
             "fail_months": fail_months,
             "power": resolved["power"],
+            "base_power_100": resolved.get("base_power_100", resolved["power"]),
+            "supports_intensity_adjustment": resolved.get("supports_intensity_adjustment", False),
+            "intensity_mode": resolved.get("intensity_mode", "fixed"),
+            "intensity_pct": resolved.get("intensity_pct", 100.0),
+            "mixed_share_pct": resolved.get("mixed_share_pct", 0.0),
+            "mixed_intensity_a": resolved.get("mixed_intensity_a", 100.0),
+            "mixed_intensity_b": resolved.get("mixed_intensity_b", 100.0),
+            "effective_intensity_pct": resolved.get("effective_intensity_pct", 100.0),
+            "standby_power_w": resolved.get("standby_power_w", 0.0),
             "lamp_variant": resolved.get("lamp_variant"),
             "monthly_energy_wh": monthly_energy_wh,
             "empty_battery_pct_by_month": empty_battery_pct_by_month,

@@ -190,14 +190,15 @@ def render_device_summary_line(results: dict):
 
 
 def render_consumption_basis_block(results: dict):
+    lang = st.session_state.get("language", "en")
     has_avlite = any(str((row or {}).get("system_type", "")).lower() == "avlite_fixture" for row in (results or {}).values())
     has_s4ga = any(str((row or {}).get("system_type", "")).lower() != "avlite_fixture" for row in (results or {}).values())
 
     items = []
     if has_s4ga:
-        items.append(("S4GA", "Verified by SALA"))
+        items.append(("S4GA", t("ui.verified_by_sala", lang), "#ecfdf3", "#abefc6", "#067647"))
     if has_avlite:
-        items.append(("Avlite", "Estimated by SALA"))
+        items.append(("Avlite", t("ui.estimated_by_sala", lang), "#fff7db", "#f5c451", "#7a5a00"))
 
     if not items:
         return
@@ -205,32 +206,32 @@ def render_consumption_basis_block(results: dict):
     rows = "".join(
         f"""
         <div style="
-            border:1px solid #d6e4ff;
-            background:#f8fbff;
-            color:#12355b;
+            border:1px solid {border};
+            background:{bg};
+            color:{color};
             border-radius:12px;
             padding:10px 12px;
             font-size:0.90rem;
             font-weight:700;
             line-height:1.45;">
-            <div><strong>Device Source Info:</strong> {brand}</div>
-            <div><strong>Status:</strong> {status}</div>
+            <div><strong>{t('ui.device_source_info', lang)}:</strong> {brand}</div>
+            <div><strong>{t('ui.status', lang)}:</strong> {status}</div>
         </div>
         """
-        for brand, status in items
+        for brand, status, bg, border, color in items
     )
 
     st.markdown(
         f"""
         <div style="margin-top:16px;">
             <div style="font-size:0.82rem;color:#667085;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:8px;">
-                Lighting consumption basis
+                {t('ui.light_data_provider', lang)}
             </div>
             <div style="display:flex;flex-direction:column;gap:8px;">
                 {rows}
             </div>
             <div style="font-size:0.84rem;color:#475467;font-weight:700;line-height:1.45;margin-top:8px;">
-                Feasibility study operating demand is assessed at ICAO-compliant light-output level.
+                {t('ui.feasibility_basis_caption', lang)}
             </div>
         </div>
         """,
@@ -243,7 +244,7 @@ def render_location_map(lat: float, lon: float, airport_name: str):
         location=[lat, lon],
         zoom_start=10,
         control_scale=True,
-        tiles="CartoDB positron",
+        tiles="OpenStreetMap",
     )
 
     folium.CircleMarker(

@@ -7,6 +7,7 @@ from .data_builder import build_report_data
 from .html_builder import render_report_html
 from .pdf_renderer import render_pdf
 from core.devices import DEVICES
+from core.time_utils import format_timestamp
 
 
 def _coalesce(*values):
@@ -199,7 +200,7 @@ def make_pdf(
 
     # override generated metadata if explicitly passed by caller
     if kwargs.get("created_at"):
-        data["date"] = kwargs["created_at"]
+        data["date"] = format_timestamp(kwargs["created_at"], include_seconds=False)
 
     if kwargs.get("airport_label"):
         data["airport_name"] = kwargs["airport_label"]

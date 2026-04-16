@@ -19,7 +19,6 @@ from ui.weather_basis import render_weather_basis
 from ui.admin import render_admin_panel
 from ui.my_studies import render_my_studies
 from ui.result_helpers import annual_empty_battery_stats, overall_state
-from ui.energy_flow import render_energy_flow
 
 
 st.set_page_config(
@@ -29,6 +28,11 @@ st.set_page_config(
 )
 
 LOGO_PATH = "sala_logo.png"
+LANGUAGE_FLAGS = {
+    "en": "🇬🇧",
+    "es": "🇪🇸",
+    "fr": "🇫🇷",
+}
 
 # ---- Persistent auth via signed URL token ----
 # This survives Streamlit restarts because it is stored in the browser URL.
@@ -174,6 +178,19 @@ def logout_and_forget():
     logout()
 
 
+def _format_duration(seconds):
+    if seconds is None:
+        return None
+    total = max(0, int(round(float(seconds))))
+    mins, secs = divmod(total, 60)
+    hrs, mins = divmod(mins, 60)
+    if hrs:
+        return f"{hrs}h {mins:02d}m"
+    if mins:
+        return f"{mins}m {secs:02d}s"
+    return f"{secs}s"
+
+
 def init_state():
     defaults = {
         "airport_label": "",
@@ -198,6 +215,9 @@ def init_state():
         "run_progress": 0.0,
         "run_stage": "Ready",
         "run_log": [],
+        "run_started_at": None,
+        "run_elapsed_seconds": None,
+        "run_eta_seconds": None,
         "trigger_run": False,
         "study_point_confirmed": False,
         "study_ready": False,
@@ -425,6 +445,13 @@ def _display_name_from_email(email: str) -> str:
     return f"{first}. {last}"
 
 
+def _display_name() -> str:
+    full_name = str(st.session_state.get("auth_full_name") or "").strip()
+    if full_name:
+        return full_name
+    return _display_name_from_email(st.session_state.get("auth_email", ""))
+
+
 def render_header():
     c1, c2, c3 = st.columns([1, 6, 2])
 
@@ -444,14 +471,14 @@ def render_header():
             t("ui.language", current_lang),
             options=list(AVAILABLE_LANGUAGES.keys()),
             index=list(AVAILABLE_LANGUAGES.keys()).index(current_lang) if current_lang in AVAILABLE_LANGUAGES else 0,
-            format_func=lambda code: AVAILABLE_LANGUAGES[code],
+            format_func=lambda code: f"{LANGUAGE_FLAGS.get(code, code.upper())}  {AVAILABLE_LANGUAGES[code]}",
             key="ui_language_selector",
             label_visibility="collapsed",
         )
         st.session_state.language = selected_lang
         email = st.session_state.get("auth_email", "")
         role = st.session_state.get("auth_role", "")
-        display_name = _display_name_from_email(email)
+        display_name = _display_name()
         user_label = f"{display_name}"
 
         with st.popover(user_label, use_container_width=True):
@@ -468,6 +495,9 @@ def _trigger_simulation():
     st.session_state.running = True
     st.session_state.run_stage = "Connecting to PVGIS"
     st.session_state.run_progress = 0.0
+    st.session_state.run_started_at = time.time()
+    st.session_state.run_elapsed_seconds = 0.0
+    st.session_state.run_eta_seconds = None
     st.session_state.trigger_run = True
     st.session_state.study_saved_for_current_result = False
     st.rerun()
@@ -486,6 +516,7 @@ def render_top_action_bar():
         "progress_bar": None,
         "progress_text": None,
         "stage_text": None,
+        "timing_text": None,
         "status_box": None,
         "trust_note": None,
     }
@@ -504,6 +535,7 @@ def render_top_action_bar():
             action_state["progress_text"] = st.empty()
 
         action_state["stage_text"] = st.empty()
+        action_state["timing_text"] = st.empty()
         action_state["status_box"] = st.empty()
         action_state["trust_note"] = st.empty()
 
@@ -519,6 +551,16 @@ def render_top_action_bar():
             f"<div class='secondary-note'><b>{t('ui.current_step', lang)}</b> {stage}</div>",
             unsafe_allow_html=True,
         )
+        elapsed_seconds = st.session_state.get("run_elapsed_seconds")
+        eta_seconds = st.session_state.get("run_eta_seconds")
+        if elapsed_seconds is not None:
+            timing_parts = [t("ui.elapsed_time", lang, value=_format_duration(elapsed_seconds))]
+            if eta_seconds is not None:
+                timing_parts.append(t("ui.estimated_remaining", lang, value=_format_duration(eta_seconds)))
+            action_state["timing_text"].markdown(
+                f"<div class='secondary-note' style='margin-top:4px;'>{' · '.join(timing_parts)}</div>",
+                unsafe_allow_html=True,
+            )
 
         logs = st.session_state.get("run_log", [])
         if logs:
@@ -852,8 +894,12 @@ def render_calculator_app():
 
         def progress_callback(percent: int, stage: str):
             percent = max(0, min(100, int(percent)))
+            percent = max(int(st.session_state.get("run_progress", 0)), percent)
             st.session_state.run_progress = percent
             st.session_state.run_stage = stage
+            started_at = st.session_state.get("run_started_at")
+            if started_at:
+                st.session_state.run_elapsed_seconds = max(0.0, time.time() - float(started_at))
 
             if action_state["progress_bar"] is not None:
                 action_state["progress_bar"].progress(percent)
@@ -869,6 +915,20 @@ def render_calculator_app():
                     f"<div class='secondary-note'><b>{t('ui.current_step', lang)}</b> {stage}</div>",
                     unsafe_allow_html=True,
                 )
+
+            if action_state["timing_text"] is not None:
+                elapsed_seconds = st.session_state.get("run_elapsed_seconds")
+                eta_seconds = st.session_state.get("run_eta_seconds")
+                if elapsed_seconds is not None:
+                    timing_parts = [t("ui.elapsed_time", lang, value=_format_duration(elapsed_seconds))]
+                    if eta_seconds is not None:
+                        timing_parts.append(t("ui.estimated_remaining", lang, value=_format_duration(eta_seconds)))
+                    action_state["timing_text"].markdown(
+                        f"<div class='secondary-note' style='margin-top:4px;'>{' · '.join(timing_parts)}</div>",
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    action_state["timing_text"].empty()
 
             if action_state["status_box"] is not None:
                 logs = st.session_state.get("run_log", [])
@@ -907,34 +967,10 @@ def render_calculator_app():
         maybe_save_current_study()
 
         results = st.session_state.get("results")
-        tab_results, tab_energy = st.tabs([t("tabs.study_results", lang), t("tabs.energy_flow", lang)])
-
-        with tab_results:
-            render_result()
-            render_graph()
-            render_device_capability_cards(results)
-            render_weather_basis()
-
-        with tab_energy:
-            payload = _extract_energy_flow_payload(
-                results=st.session_state.get("results"),
-                required_hours=st.session_state.get("required_hours", 12),
-                overall=st.session_state.get("overall", "N/A"),
-                selected_ids=st.session_state.get("selected_simulation_keys") or st.session_state.get("selected_ids", []),
-            )
-
-            render_energy_flow(
-                selected_device_name=payload["selected_device_name"],
-                required_hours=payload["required_hours"],
-                overall_result=payload["overall_result"],
-                worst_blackout_risk=payload["worst_blackout_risk"],
-                lowest_reserve_pct=payload["lowest_reserve_pct"],
-                months=payload["months"],
-                reserve_pct=payload["reserve_pct"],
-                generated_monthly_wh=payload["generated_monthly_wh"],
-                demand_monthly_wh=payload["demand_monthly_wh"],
-                worst_month=payload["worst_month"],
-            )
+        render_result()
+        render_graph()
+        render_device_capability_cards(results)
+        render_weather_basis()
 
 
 init_state()

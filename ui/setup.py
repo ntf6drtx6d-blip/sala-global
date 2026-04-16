@@ -3,9 +3,11 @@ import streamlit as st
 import folium
 from streamlit_folium import st_folium
 
-from core.devices import DEVICES, SOLAR_ENGINES
+from core.catalog import get_runtime_catalog
 from core.geocoding import search_airport
 from core.i18n import t
+
+INTENSITY_PRESETS = [3, 10, 30, 60, 100]
 
 
 def _init_setup_defaults():
@@ -19,7 +21,7 @@ def _init_setup_defaults():
         if "selected_ids" not in st.session_state:
             st.session_state.selected_ids = []
         if "selected_manufacturers" not in st.session_state:
-            st.session_state.selected_manufacturers = ["S4GA", "Avlite"]
+            st.session_state.selected_manufacturers = []
         if "selected_simulation_keys" not in st.session_state:
             st.session_state.selected_simulation_keys = []
         if "per_device_config" not in st.session_state:
@@ -132,11 +134,13 @@ def longest_night_hours(lat_deg: float) -> float:
 
 
 def _device_label(device_id):
+    DEVICES, _ = get_runtime_catalog()
     d = DEVICES[device_id]
     return d["name"]
 
 
 def _device_manufacturer(device_id):
+    DEVICES, _ = get_runtime_catalog()
     d = DEVICES[device_id]
     return d.get("manufacturer", "S4GA")
 
@@ -149,6 +153,7 @@ def _safe_float(value, default=0.0):
 
 
 def _engine_summary(device_id, engine_key, battery_mode):
+    DEVICES, SOLAR_ENGINES = get_runtime_catalog()
     dspec = DEVICES[device_id]
     system_type = dspec.get("system_type", "builtin")
 
@@ -188,8 +193,22 @@ def _engine_summary(device_id, engine_key, battery_mode):
     }
 
 
-def _default_multiselect_labels():
+def _supports_intensity_adjustment(device_id):
+    DEVICES, _ = get_runtime_catalog()
+    dspec = DEVICES[device_id]
+    return bool(dspec.get("supports_intensity_adjustment", dspec.get("system_type") in {"builtin", "avlite_fixture"}))
 
+
+def _effective_intensity_pct(mode, fixed_pct, share_a, intensity_a, intensity_b):
+    if mode == "mixed":
+        share_a = max(0.0, min(100.0, _safe_float(share_a, 50.0)))
+        share_b = max(0.0, 100.0 - share_a)
+        return (share_a * _safe_float(intensity_a, 100.0) + share_b * _safe_float(intensity_b, 100.0)) / 100.0
+    return _safe_float(fixed_pct, 100.0)
+
+
+def _default_multiselect_labels():
+    DEVICES, _ = get_runtime_catalog()
     labels = []
     for did in st.session_state.get("selected_ids", []):
         if did in DEVICES:
@@ -220,17 +239,7 @@ def _simulation_label(device_id, lamp_variant=None):
 
 
 def _default_lamp_selection(device_id):
-    dspec = DEVICES[device_id]
-    variants = list(dspec.get("lamp_variants", {}).keys())
-    if not variants:
-        return []
-    preferred = {
-        1: ["Runway edge light", "Runway threshold/end light", "Approach light"],
-        2: ["Runway edge light", "Runway threshold/end light", "Approach light"],
-        3: ["Taxiway edge light", "Runway edge light"],
-    }.get(device_id, [])
-    selected = [x for x in preferred if x in variants]
-    return selected or variants[:1]
+    return []
 
 
 def _apply_operating_profile():
@@ -253,6 +262,77 @@ def _apply_operating_profile():
 def render_setup(disabled=False):
     _init_setup_defaults()
     lang = st.session_state.get("language", "en")
+    DEVICES, SOLAR_ENGINES = get_runtime_catalog()
+
+    st.markdown(
+        """
+        <style>
+        .lamp-type-shell {
+            border: 1px solid #d6e4ff;
+            background: #f8fbff;
+            border-radius: 14px;
+            padding: 12px 14px;
+            margin-bottom: 10px;
+        }
+        .lamp-type-shell .lamp-type-title {
+            font-size: 0.83rem;
+            font-weight: 800;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: #175cd3;
+            margin-bottom: 4px;
+        }
+        .device-config-note {
+            border-left: 4px solid #f5c451;
+            background: #fff9e8;
+            color: #7a5a00;
+            border-radius: 12px;
+            padding: 10px 12px;
+            margin: 14px 0 10px 0;
+            font-size: 0.93rem;
+            line-height: 1.45;
+        }
+        .active-source-card {
+            border: 1px solid #e6eaf0;
+            border-radius: 14px;
+            background: #ffffff;
+            padding: 12px 14px;
+            min-height: 118px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .active-source-card .label {
+            color: #667085;
+            font-size: 0.84rem;
+            font-weight: 700;
+            line-height: 1.25;
+        }
+        .active-source-card .value {
+            color: #101828;
+            font-size: 1.2rem;
+            font-weight: 900;
+            line-height: 1.18;
+            overflow-wrap: anywhere;
+            white-space: normal;
+        }
+        .intensity-shell {
+            border: 1px solid #dbe7f8;
+            border-radius: 14px;
+            background: #f8fbff;
+            padding: 12px 14px;
+            margin: 6px 0 14px 0;
+        }
+        .intensity-shell .hint {
+            color: #526581;
+            font-size: 0.9rem;
+            margin-top: 6px;
+            line-height: 1.4;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
     st.markdown(f"## {t('ui.study_setup', lang)}")
 
@@ -450,8 +530,8 @@ def render_setup(disabled=False):
 
         st.markdown(f"### 3. {t('ui.manufacturer', lang)}")
 
-        manufacturer_options = ["S4GA", "Avlite"]
-        current_manufacturers = st.session_state.get("selected_manufacturers", ["S4GA", "Avlite"])
+        manufacturer_options = sorted({d.get("manufacturer", "Unknown") for d in DEVICES.values()})
+        current_manufacturers = st.session_state.get("selected_manufacturers", [])
         selected_manufacturers = st.multiselect(
             t("ui.manufacturers_included", lang),
             manufacturer_options,
@@ -550,6 +630,8 @@ def render_setup(disabled=False):
         current_lamp_map = st.session_state.get("selected_lamp_types", {})
         current_lamp_map = {k: v for k, v in current_lamp_map.items() if k in selected_ids}
         st.session_state.selected_lamp_types = current_lamp_map
+        has_variant_devices = False
+        render_device_config_note = False
 
         for did in selected_ids:
             dspec = DEVICES[did]
@@ -560,7 +642,17 @@ def render_setup(disabled=False):
                 st.session_state["selected_lamp_types"][did] = _default_lamp_selection(did)
 
             if variants:
-                with st.expander(f"{_device_label(did)} — {t('ui.lamp_types', lang)}", expanded=False):
+                has_variant_devices = True
+                with st.expander(f"{_device_label(did)} — {t('ui.lamp_type_selection', lang)}", expanded=False):
+                    st.markdown(
+                        f"""
+                        <div class="lamp-type-shell">
+                            <div class="lamp-type-title">{t("ui.lamp_type_selection", lang)}</div>
+                            <div>{t("ui.lamp_type_selection_help", lang)}</div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
                     c1, c2 = st.columns([1, 1])
                     with c1:
                         if st.button(t("ui.select_all", lang), key=f"select_all_variants_{did}", disabled=disabled):
@@ -583,6 +675,7 @@ def render_setup(disabled=False):
                     st.session_state["selected_lamp_types"][did] = chosen
                     if chosen:
                         st.caption(t("ui.each_selected_lamp_type", lang))
+                        render_device_config_note = True
                     else:
                         st.caption(t("ui.no_lamp_type_selected", lang))
                     active_variants = chosen
@@ -602,23 +695,111 @@ def render_setup(disabled=False):
                 else:
                     base_power = _safe_float(dspec.get("default_power", dspec.get("power", dspec.get("default_consumption", 0.0))), 0.0)
 
+                supports_intensity = _supports_intensity_adjustment(did)
                 default_power = float(saved_cfg.get("power", base_power))
                 engine_key = saved_cfg.get("engine_key", dspec.get("default_engine"))
                 battery_mode = saved_cfg.get("battery_mode", "Std")
                 display_label = _simulation_label(did, lamp_variant)
 
+                if render_device_config_note:
+                    st.markdown(
+                        f"<div class='device-config-note'>{t('ui.device_configuration_note', lang)}</div>",
+                        unsafe_allow_html=True,
+                    )
+                    render_device_config_note = False
+
                 with st.expander(display_label, expanded=False):
                     if lamp_variant:
                         st.caption(t("ui.selected_lamp_type", lang, lamp_type=lamp_variant))
 
-                    power = st.number_input(
-                        t("ui.power_w", lang),
-                        min_value=0.01,
-                        value=float(default_power),
-                        step=0.01,
-                        key=f"power_{sim_key}",
-                        disabled=disabled,
-                    )
+                    intensity_mode = str(saved_cfg.get("intensity_mode", "fixed"))
+                    fixed_intensity_pct = int(round(_safe_float(saved_cfg.get("intensity_pct", 100), 100)))
+                    mixed_share_pct = _safe_float(saved_cfg.get("mixed_share_pct", 50), 50)
+                    mixed_intensity_a = int(round(_safe_float(saved_cfg.get("mixed_intensity_a", 30), 30)))
+                    mixed_intensity_b = int(round(_safe_float(saved_cfg.get("mixed_intensity_b", 100), 100)))
+                    standby_power_w = _safe_float(saved_cfg.get("standby_power_w", dspec.get("standby_power_w", 0.0) or 0.0), 0.0)
+
+                    if supports_intensity:
+                        st.markdown("<div class='intensity-shell'>", unsafe_allow_html=True)
+                        intensity_mode = st.radio(
+                            t("ui.intensity_profile", lang),
+                            ["fixed", "mixed"],
+                            horizontal=True,
+                            index=0 if intensity_mode != "mixed" else 1,
+                            format_func=lambda x: t("ui.fixed_intensity", lang) if x == "fixed" else t("ui.mixed_intensity_profile", lang),
+                            key=f"intensity_mode_{sim_key}",
+                            disabled=disabled,
+                        )
+
+                        if intensity_mode == "mixed":
+                            c1, c2, c3, c4 = st.columns(4)
+                            with c1:
+                                mixed_share_pct = st.number_input(
+                                    t("ui.percent_of_day_a", lang),
+                                    min_value=0.0,
+                                    max_value=100.0,
+                                    value=float(mixed_share_pct),
+                                    step=5.0,
+                                    key=f"mixed_share_{sim_key}",
+                                    disabled=disabled,
+                                )
+                            with c2:
+                                mixed_intensity_a = st.selectbox(
+                                    t("ui.intensity_a", lang),
+                                    INTENSITY_PRESETS,
+                                    index=INTENSITY_PRESETS.index(mixed_intensity_a) if mixed_intensity_a in INTENSITY_PRESETS else len(INTENSITY_PRESETS) - 1,
+                                    key=f"mixed_intensity_a_{sim_key}",
+                                    disabled=disabled,
+                                )
+                            with c3:
+                                st.number_input(
+                                    t("ui.rest_of_day_b", lang),
+                                    min_value=0.0,
+                                    max_value=100.0,
+                                    value=float(max(0.0, 100.0 - mixed_share_pct)),
+                                    step=5.0,
+                                    key=f"mixed_rest_{sim_key}",
+                                    disabled=True,
+                                )
+                            with c4:
+                                mixed_intensity_b = st.selectbox(
+                                    t("ui.intensity_b", lang),
+                                    INTENSITY_PRESETS,
+                                    index=INTENSITY_PRESETS.index(mixed_intensity_b) if mixed_intensity_b in INTENSITY_PRESETS else len(INTENSITY_PRESETS) - 1,
+                                    key=f"mixed_intensity_b_{sim_key}",
+                                    disabled=disabled,
+                                )
+                        else:
+                            fixed_intensity_pct = st.select_slider(
+                                t("ui.intensity", lang),
+                                options=INTENSITY_PRESETS,
+                                value=fixed_intensity_pct if fixed_intensity_pct in INTENSITY_PRESETS else 100,
+                                key=f"intensity_pct_{sim_key}",
+                                disabled=disabled,
+                            )
+
+                        effective_intensity_pct = _effective_intensity_pct(
+                            intensity_mode,
+                            fixed_intensity_pct,
+                            mixed_share_pct,
+                            mixed_intensity_a,
+                            mixed_intensity_b,
+                        )
+                        power = float(base_power) * float(effective_intensity_pct) / 100.0
+                        st.markdown(
+                            f"<div class='hint'>{t('ui.effective_power_hint', lang, base_power=f'{float(base_power):.2f}', effective_power=f'{float(power):.2f}', intensity=f'{float(effective_intensity_pct):.1f}')}</div>",
+                            unsafe_allow_html=True,
+                        )
+                        st.markdown("</div>", unsafe_allow_html=True)
+                    else:
+                        power = st.number_input(
+                            t("ui.power_w", lang),
+                            min_value=0.01,
+                            value=float(default_power),
+                            step=0.01,
+                            key=f"power_{sim_key}",
+                            disabled=disabled,
+                        )
 
                     if system_type == "external_engine":
                         compatible = dspec["compatible_engines"]
@@ -663,7 +844,15 @@ def render_setup(disabled=False):
                     with m3:
                         st.metric("Battery", f"{summary['batt']} Wh")
                     with m4:
-                        st.metric(t("ui.active_source", lang), summary["source_label"])
+                        st.markdown(
+                            f"""
+                            <div class="active-source-card">
+                                <div class="label">{t("ui.active_source", lang)}</div>
+                                <div class="value">{summary["source_label"]}</div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
 
                     if system_type == "external_engine":
                         st.caption(t("ui.battery_mode_selected", lang, battery_mode=summary["battery_mode"]))
@@ -673,6 +862,15 @@ def render_setup(disabled=False):
                         "lamp_variant": lamp_variant,
                         "display_label": display_label,
                         "power": float(power),
+                        "base_power_w": float(base_power),
+                        "supports_intensity_adjustment": supports_intensity,
+                        "intensity_mode": intensity_mode if supports_intensity else "fixed",
+                        "intensity_pct": int(fixed_intensity_pct) if supports_intensity else 100,
+                        "mixed_share_pct": float(mixed_share_pct) if supports_intensity else 0.0,
+                        "mixed_intensity_a": int(mixed_intensity_a) if supports_intensity else 100,
+                        "mixed_intensity_b": int(mixed_intensity_b) if supports_intensity else 100,
+                        "effective_intensity_pct": float(effective_intensity_pct) if supports_intensity else 100.0,
+                        "standby_power_w": float(standby_power_w),
                         "engine_key": engine_key,
                         "battery_mode": battery_mode if battery_mode in ["Std", "Ext"] else "Std",
                     }

@@ -142,6 +142,8 @@ AVLITE_DEVICES = {
         "tilt": 50,
         "fixed": True,
         "tilt_options": [50],
+        "supports_intensity_adjustment": True,
+        "standby_power_w": None,
     },
     102: {
         "code": "AV70-B2",
@@ -155,6 +157,8 @@ AVLITE_DEVICES = {
         "tilt": 50,
         "fixed": True,
         "tilt_options": [50],
+        "supports_intensity_adjustment": True,
+        "standby_power_w": None,
     },
     103: {
         "code": "AV426-C0",
@@ -168,6 +172,8 @@ AVLITE_DEVICES = {
         "tilt": 90,
         "fixed": True,
         "tilt_options": [90],
+        "supports_intensity_adjustment": True,
+        "standby_power_w": None,
     },
     104: {
         "code": "AV426-C1",
@@ -181,5 +187,7 @@ AVLITE_DEVICES = {
         "tilt": 90,
         "fixed": True,
         "tilt_options": [90],
+        "supports_intensity_adjustment": True,
+        "standby_power_w": None,
     },
 }

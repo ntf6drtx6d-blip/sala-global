@@ -23,6 +23,7 @@
           <div class="info-row"><span>{{ report.i18n['report.total_capacity'] }}</span><strong>{{ '%.1f'|format(device.total_battery_wh) }} Wh</strong></div>
           <div class="info-row"><span>{{ report.i18n['report.usable_window'] }}</span><strong>{{ '%.1f'|format(device.usable_battery_wh) }} Wh</strong></div>
           <div class="info-row"><span>{{ report.i18n['report.cutoff'] }}</span><strong>{{ '%.0f'|format(device.cutoff_pct) }}%</strong></div>
+          <div class="info-row"><span>{{ report.i18n['ui.simulation_intensity'] }}</span><strong>{{ device.simulation_intensity }}</strong></div>
         </div>
       </article>
 

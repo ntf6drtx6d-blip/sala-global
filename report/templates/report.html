@@ -56,11 +56,7 @@
         {% set card = {
           'title': report.i18n['report.blackout_days_year'],
           'value': report.max_blackout_days,
-          'helper': (
-            'Worst device: ' ~ (report.worst_blackout_device_name|default('Not identified')) ~
-            ', ' ~ ('%.1f'|format(report.worst_blackout_device_pct|default(report.worst_blackout_pct|default(0), true))) ~
-            '% of the year'
-          ) if report.max_blackout_days > 0 else report.i18n['report.no_annual_blackout'],
+          'helper': report.blackout_card_helper,
           'status': 'success' if report.max_blackout_days == 0 else 'warning' if report.max_blackout_days <= 5 else 'danger'
         } %}
         {% include 'partials/_kpi_card.html' %}

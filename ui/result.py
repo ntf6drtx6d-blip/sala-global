@@ -113,7 +113,7 @@ def _worst_device_month(results: dict, device_name: str) -> str | None:
     return month_label(MONTHS[idx], lang)
 
 
-def render_blackout_card(days_value, pct_value, device_name, worst_month):
+def render_blackout_card(days_value, pct_value, device_name, worst_month, total_devices=0):
     lang = st.session_state.get("language", "en")
     if days_value is None or pct_value is None:
         main = "N/A"
@@ -122,11 +122,20 @@ def render_blackout_card(days_value, pct_value, device_name, worst_month):
         border = "#e6eaf0"
         color = "#1f2937"
     else:
-        lines = [f"{pct_value:.1f}% of the year"]
-        if device_name:
-            lines.append(f"Worst device: <b>{device_name}</b>")
-        if worst_month:
-            lines.append(f"Worst month: <b>{worst_month}</b>")
+        lines = []
+        if int(days_value) == 0:
+            lines.append(t("ui.no_annual_blackout_expected", lang))
+            if total_devices == 1 and worst_month:
+                lines.append(t("ui.worst_month_only", lang, month=worst_month))
+        elif total_devices == 1:
+            if worst_month:
+                lines.append(t("ui.worst_month_only", lang, month=worst_month))
+        else:
+            lines.append(f"{pct_value:.1f}% of the year")
+            if device_name:
+                lines.append(t("ui.worst_device_named", lang, device=device_name))
+            if worst_month:
+                lines.append(t("ui.worst_month_only", lang, month=worst_month))
         subtitle = "<br>".join(lines)
         main = f"{days_value} {t('ui.days_per_year_unit', lang)}"
 
@@ -351,6 +360,7 @@ def render_result():
                 pct,
                 worst_device_name,
                 worst_month,
+                total_devices=len(results or {}),
             )
 
         render_device_summary_line(results)

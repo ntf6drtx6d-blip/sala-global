@@ -1,6 +1,7 @@
 from datetime import UTC
 import math
 from core.i18n import get_report_i18n, month_label, normalize_language, t
+from core.intensity import format_intensity_summary
 from core.time_utils import format_timestamp, now_local, now_utc
 
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -176,6 +177,18 @@ def _battery_autonomy_hours(r: dict) -> float | None:
         return None
 
 
+def _intensity_summary(r: dict, language: str = "en") -> str:
+    return format_intensity_summary(
+        intensity_mode=r.get("intensity_mode", "fixed"),
+        intensity_pct=r.get("intensity_pct", 100.0),
+        mixed_share_pct=r.get("mixed_share_pct", 50.0),
+        mixed_intensity_a=r.get("mixed_intensity_a", 30.0),
+        mixed_intensity_b=r.get("mixed_intensity_b", 100.0),
+        effective_intensity_pct=r.get("effective_intensity_pct", r.get("intensity_pct", 100.0)),
+        language=language,
+    )
+
+
 def _weakest_month_metrics(r: dict) -> tuple[int, float | None, float | None]:
     generated = list(r.get("charge_day_pct_by_month") or [])[:12]
     generated = generated + [0.0] * max(0, 12 - len(generated))
@@ -191,13 +204,15 @@ def _weakest_month_metrics(r: dict) -> tuple[int, float | None, float | None]:
         weakest_idx = min(range(12), key=lambda i: margins[i])
 
     preclip_median = list(r.get("soc_monthly_preclip_median") or r.get("soc_monthly_median") or [])[:12]
-    preclip_min = list(r.get("soc_monthly_preclip_min") or r.get("soc_monthly_min") or [])[:12]
+    cycle_min = list(r.get("soc_monthly_cycle_min") or r.get("soc_monthly_preclip_min") or r.get("soc_monthly_min") or [])[:12]
     preclip_median = preclip_median + [None] * max(0, 12 - len(preclip_median))
-    preclip_min = preclip_min + [None] * max(0, 12 - len(preclip_min))
+    cycle_min = cycle_min + [None] * max(0, 12 - len(cycle_min))
+    annual_lowest_idx = min(range(12), key=lambda i: 999 if cycle_min[i] is None else float(cycle_min[i])) if cycle_min else weakest_idx
     return (
         weakest_idx,
         _usable_to_total_pct(r, preclip_median[weakest_idx]),
-        _usable_to_total_pct(r, preclip_min[weakest_idx]),
+        _usable_to_total_pct(r, cycle_min[annual_lowest_idx]),
+        annual_lowest_idx,
     )
 
 
@@ -287,7 +302,7 @@ def build_report_data(loc, required_hours, results, overall, user_name, user_org
         cls = _classify(annual_days)
         energy_margin_pct = _net_margin_pct(r)
         reserve_span_pct = _reserve_span_pct(r)
-        weakest_month_idx, weakest_floor_total_pct, deepest_drop_total_pct = _weakest_month_metrics(r)
+        weakest_month_idx, weakest_floor_total_pct, deepest_drop_total_pct, annual_lowest_month_idx = _weakest_month_metrics(r)
         overall_margin_pct = energy_margin_pct if overall_margin_pct is None else min(overall_margin_pct, energy_margin_pct)
         try:
             worst_blackout_pct = max(worst_blackout_pct, float(r.get("overall_empty_battery_pct", 0) or 0))
@@ -333,9 +348,12 @@ def build_report_data(loc, required_hours, results, overall, user_name, user_org
             "worst_blackout_risk": annual_days,
             "weakest_month_idx": weakest_month_idx,
             "weakest_month_label": month_label(MONTHS[weakest_month_idx], language),
+            "annual_lowest_month_idx": annual_lowest_month_idx,
+            "annual_lowest_month_label": month_label(MONTHS[annual_lowest_month_idx], language),
             "typical_floor_total_pct": weakest_floor_total_pct,
             "deepest_drop_total_pct": deepest_drop_total_pct,
             "lowest_battery_state_pct": deepest_drop_total_pct,
+            "simulation_intensity": _intensity_summary(r, language),
             "typical_floor_hours": _hours_from_total_pct(r, weakest_floor_total_pct),
             "deepest_drop_hours": _hours_from_total_pct(r, deepest_drop_total_pct),
             "generated_pct_per_day": list(r.get("charge_day_pct_by_month") or [0] * 12)[:12] + [0.0] * max(0, 12 - len(list(r.get("charge_day_pct_by_month") or [])[:12])),
@@ -371,6 +389,20 @@ def build_report_data(loc, required_hours, results, overall, user_name, user_org
         title = t("report.cover_pass_title", language)
         text = t("report.cover_pass_text", language)
         cover_verdict = t("report.cover_pass_verdict", language)
+
+    if total == 1:
+        single_worst_month = devices[0]["weakest_month_label"] if devices else ""
+        if max_blackout == 0:
+            blackout_card_helper = t("ui.no_annual_blackout_expected", language)
+            if single_worst_month:
+                blackout_card_helper += f" {t('ui.worst_month_only', language, month=single_worst_month)}"
+        else:
+            blackout_card_helper = t("ui.worst_month_only", language, month=single_worst_month) if single_worst_month else t("ui.single_device_blackout_summary", language)
+    else:
+        blackout_card_helper = (
+            f"{worst_blackout_device_pct:.1f}% of the year. "
+            + t("ui.worst_device_named", language, device=worst_blackout_device_name)
+        ) if max_blackout > 0 and worst_blackout_device_name else t("ui.no_annual_blackout_expected", language)
 
     blackout_summary_rows = [
         {
@@ -471,6 +503,7 @@ def build_report_data(loc, required_hours, results, overall, user_name, user_org
             "es": "Preparado con la metodología estandarizada de viabilidad off-grid de SALA basada en PVGIS.",
             "fr": "Préparé selon la méthodologie normalisée de faisabilité hors réseau SALA basée sur PVGIS.",
         }.get(language, "Prepared using SALA standardized off-grid feasibility methodology based on PVGIS."),
+        "blackout_card_helper": blackout_card_helper,
         "devices_meet_requirement_text": t(
             "report.devices_meet_requirement",
             language,

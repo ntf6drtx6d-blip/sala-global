@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from core.i18n import month_label, month_labels, t
+from core.intensity import format_intensity_summary
 from ui.result_helpers import battery_reserve_hours, device_blackout_days, format_battery_hours, format_energy_wh, short_device_label
 
 
@@ -113,7 +114,7 @@ def _fmt_pct(val):
         return "N/A"
 
 
-def _lowest_battery_label(result_row, total_pct):
+def _annual_lowest_battery_state_label(result_row, total_pct):
     base = _fmt_pct(total_pct)
     if total_pct is None:
         return base
@@ -121,6 +122,19 @@ def _lowest_battery_label(result_row, total_pct):
     if abs(float(total_pct) - cutoff) < 0.05:
         return f"{base} (cut-off level)"
     return base
+
+
+def _intensity_summary(result_row):
+    lang = st.session_state.get("language", "en")
+    return format_intensity_summary(
+        intensity_mode=result_row.get("intensity_mode", "fixed"),
+        intensity_pct=result_row.get("intensity_pct", 100.0),
+        mixed_share_pct=result_row.get("mixed_share_pct", 50.0),
+        mixed_intensity_a=result_row.get("mixed_intensity_a", 30.0),
+        mixed_intensity_b=result_row.get("mixed_intensity_b", 100.0),
+        effective_intensity_pct=result_row.get("effective_intensity_pct", result_row.get("intensity_pct", 100.0)),
+        language=lang,
+    )
 
 
 def _safe_float(value, default=0.0):
@@ -285,8 +299,8 @@ def _device_metrics(result_row):
     required_hours = _safe_float(st.session_state.get("required_hours"), 0.0)
     blackout_days = device_blackout_days(result_row) or 0
 
-    preclip_min = list(result_row.get("soc_monthly_preclip_min") or result_row.get("soc_monthly_min") or [])[:12]
-    preclip_min = preclip_min + [None] * max(0, 12 - len(preclip_min))
+    annual_min = list(result_row.get("soc_monthly_cycle_min") or result_row.get("soc_monthly_preclip_min") or result_row.get("soc_monthly_min") or [])[:12]
+    annual_min = annual_min + [None] * max(0, 12 - len(annual_min))
 
     margin_by_month = [float(g) - float(d) for g, d in zip(generated, discharge)]
     if any(float(v) > 0 for v in empty_days):
@@ -296,7 +310,8 @@ def _device_metrics(result_row):
     else:
         weakest_month_idx = 0
 
-    lowest_total_pct = _usable_to_total_pct(result_row, preclip_min[weakest_month_idx])
+    annual_lowest_month_idx = min(range(12), key=lambda i: 999 if annual_min[i] is None else float(annual_min[i])) if annual_min else 0
+    lowest_total_pct = _usable_to_total_pct(result_row, annual_min[annual_lowest_month_idx])
     worst_blackout_risk = max(int(round(float(v))) for v in empty_days) if empty_days else 0
     generated_consumed_close = bool(generated) and max(abs(float(g) - float(d)) for g, d in zip(generated, discharge)) <= 2.0
     return {
@@ -308,6 +323,7 @@ def _device_metrics(result_row):
         "worst_blackout_risk": int(worst_blackout_risk),
         "weakest_month_idx": weakest_month_idx,
         "lowest_battery_state_pct": lowest_total_pct,
+        "annual_lowest_month_idx": annual_lowest_month_idx,
         "annual_result": _annual_result_text(result_row),
         "generated_consumed_close": generated_consumed_close,
         "is_single_panel": _panel_count(result_row) <= 1,
@@ -475,8 +491,8 @@ def render_device_capability_cards(results: dict):
                     ),
                     (
                         t("ui.lowest_battery_state", lang),
-                        _lowest_battery_label(result_row, metrics["lowest_battery_state_pct"]),
-                        t("ui.lowest_level_reached", lang, month=month_label(MONTHS[metrics["weakest_month_idx"]], lang)),
+                        _annual_lowest_battery_state_label(result_row, metrics["lowest_battery_state_pct"]),
+                        t("ui.lowest_level_reached", lang, month=month_label(MONTHS[metrics["annual_lowest_month_idx"]], lang)),
                         _risk_status_from_total_pct(result_row, metrics["lowest_battery_state_pct"]),
                     ),
                     (
@@ -505,6 +521,7 @@ def render_device_capability_cards(results: dict):
                             (t("ui.total_capacity", lang), format_energy_wh(result_row.get("batt"))),
                             (t("ui.usable_window", lang), format_energy_wh(result_row.get("usable_battery_wh"))),
                             (t("ui.cutoff", lang), _fmt_pct(result_row.get("cutoff_pct"))),
+                            (t("ui.simulation_intensity", lang), _intensity_summary(result_row)),
                         ],
                     )
                 with right:

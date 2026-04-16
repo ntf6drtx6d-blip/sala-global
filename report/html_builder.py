@@ -130,7 +130,7 @@ def _device_kpis(device: dict, report_i18n: dict[str, str]) -> list[dict]:
         {
             "title": report_i18n["ui.lowest_battery_state"],
             "value": battery_value,
-            "helper": report_i18n["ui.lowest_level_reached"].format(month=device.get("weakest_month_label", "the weakest month")),
+            "helper": report_i18n["ui.lowest_level_reached"].format(month=device.get("annual_lowest_month_label", device.get("weakest_month_label", "the weakest month"))),
             "status": _border_status_from_battery(device, device.get("lowest_battery_state_pct")),
         },
         {

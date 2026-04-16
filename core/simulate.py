@@ -339,6 +339,7 @@ def _battery_behavior_metrics(
     monthly_reserve_median = []
     monthly_soc_preclip_min = []
     monthly_soc_preclip_median = []
+    monthly_soc_cycle_min = []
     monthly_status = []
 
     reserve = 100.0
@@ -370,13 +371,17 @@ def _battery_behavior_metrics(
 
         reserve_values_month = []
         reserve_values_month_preclip = []
+        reserve_values_month_cycle = []
         for di in range(days):
             reserve_start = reserve
 
             if di in zero_targets:
+                cycle_floor_reserve = 0.0
                 preclip_reserve = 0.0
                 reserve = 0.0
             else:
+                reserve_peak = min(100.0, reserve_start + charge_day_pct)
+                cycle_floor_reserve = max(0.0, reserve_peak - discharge_pct_per_day)
                 reserve = reserve + charge_day_pct - discharge_pct_per_day
                 reserve = min(100.0, reserve)
                 preclip_reserve = reserve
@@ -387,6 +392,7 @@ def _battery_behavior_metrics(
 
             reserve_values_month.append(reserve)
             reserve_values_month_preclip.append(preclip_reserve)
+            reserve_values_month_cycle.append(cycle_floor_reserve)
 
             daily_reserve_start.append(reserve_start)
             daily_reserve_end.append(reserve)
@@ -406,6 +412,7 @@ def _battery_behavior_metrics(
         monthly_reserve_median.append(_median(reserve_values_month) if reserve_values_month else reserve)
         monthly_soc_preclip_min.append(min(reserve_values_month_preclip) if reserve_values_month_preclip else reserve)
         monthly_soc_preclip_median.append(_median(reserve_values_month_preclip) if reserve_values_month_preclip else reserve)
+        monthly_soc_cycle_min.append(min(reserve_values_month_cycle) if reserve_values_month_cycle else reserve)
 
     weekly_labels = [f"W{i}" for i in range(1, len(_aggregate_weekly(daily_reserve)) + 1)]
     weekly_reserve_pct = _aggregate_weekly(daily_reserve)
@@ -434,6 +441,7 @@ def _battery_behavior_metrics(
         "monthly_soc_median": monthly_reserve_median,
         "monthly_soc_preclip_min": monthly_soc_preclip_min,
         "monthly_soc_preclip_median": monthly_soc_preclip_median,
+        "monthly_soc_cycle_min": monthly_soc_cycle_min,
         "monthly_status": monthly_status,
 
         "weekly_labels": weekly_labels,

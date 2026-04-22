@@ -885,7 +885,6 @@ def render_calculator_app():
     if st.session_state.get("running", False):
         with st.expander(t("ui.show_study_setup", lang), expanded=False):
             st.caption(t("ui.inputs_locked", lang))
-            render_setup(disabled=True)
     elif not st.session_state.get("results"):
         render_setup(disabled=False)
     else:

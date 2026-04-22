@@ -271,9 +271,9 @@ def _input_source_brand(r: dict) -> str:
 
 
 def _pvgis_dataset_display(raw_dataset: str) -> str:
-    raw = str(raw_dataset or "PVGIS-SARAH2").strip()
+    raw = str(raw_dataset or "PVGIS-SARAH3").strip()
     if not raw:
-        return "PVGIS-SARAH2"
+        return "PVGIS-SARAH3"
     cleaned = raw.replace("(fallback:", "/").replace("fallback:", "/").replace(")", "")
     return " ".join(cleaned.split())
 
@@ -335,7 +335,7 @@ def build_report_data(loc, required_hours, results, overall, user_name, user_org
             "monthly_blackout_days": list(r.get("empty_battery_days_by_month") or [0] * 12),
             "monthly_operating_hours": list(r.get("hours") or [0] * 12),
             "interpretation_text": _device_interpretation(short, annual_days, cls, language),
-            "dataset": (r.get("pvgis_meta") or {}).get("dataset", "PVGIS-SARAH2"),
+            "dataset": (r.get("pvgis_meta") or {}).get("dataset", "PVGIS-SARAH3"),
             "energy_balance_margin_pct": energy_margin_pct,
             "lowest_usable_reserve_pct": float(r.get("lowest_usable_reserve_pct", 0) or 0),
             "reserve_span_pct": reserve_span_pct,
@@ -478,8 +478,8 @@ def build_report_data(loc, required_hours, results, overall, user_name, user_org
         "cover_verdict": cover_verdict,
         "cover_statement": text,
         "methodology_note": "Assessment based on PVGIS methodology developed by the Joint Research Centre (JRC), European Commission.",
-        "pvgis_dataset": devices[0]["dataset"] if devices else "PVGIS-SARAH2",
-        "pvgis_dataset_display": _pvgis_dataset_display(devices[0]["dataset"] if devices else "PVGIS-SARAH2"),
+        "pvgis_dataset": devices[0]["dataset"] if devices else "PVGIS-SARAH3",
+        "pvgis_dataset_display": _pvgis_dataset_display(devices[0]["dataset"] if devices else "PVGIS-SARAH3"),
         "pvgis_primary_dataset": "PVGIS-SARAH3",
         "pvgis_secondary_dataset": "ERA5 meteorological database",
         "country": loc.get("country", ""),

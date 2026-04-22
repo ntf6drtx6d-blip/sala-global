@@ -146,9 +146,9 @@ def _default_catalog_items():
                 "name": engine.get("name") or key,
                 "system_type": "solar_engine",
                 "default_power_w": None,
-                "battery_type": None,
+                "battery_type": engine.get("battery_type"),
                 "battery_wh": engine.get("batt"),
-                "cutoff_pct": None,
+                "cutoff_pct": engine.get("cutoff_pct"),
                 "standby_power_w": engine.get("standby_power_w"),
                 "supports_intensity_adjustment": False,
                 "panel_configuration": "single_panel" if (engine.get("pv") or 0) else None,
@@ -172,8 +172,8 @@ def _default_catalog_items():
         if device.get("system_type") == "external_engine":
             entity_type = "powered_device"
 
-        battery_type = None
-        cutoff_pct = None
+        battery_type = device.get("battery_type")
+        cutoff_pct = device.get("cutoff_pct")
         panel_configuration = device.get("panel_configuration")
         panel_wp = device.get("pv")
         panel_tilt_deg = device.get("tilt")

@@ -129,7 +129,7 @@ def _parse_monthly_wh_per_day_from_pvgis(data: dict):
         raise ValueError("Unexpected PVcalc JSON: monthly array missing/invalid")
 
     wh = []
-    for m in monthly:
+    for m in sorted(monthly, key=lambda row: int(row.get("month", 99))):
         # Try common keys in PVcalc monthly output
         # E_d: average daily energy production [kWh/day]
         ed = m.get("E_d")
@@ -145,16 +145,16 @@ def pvcalc_monthly_wh_per_day(lat, lon, pv_wp, tilt_deg, aspect_deg):
     Arguments:
       - pv_wp: PV size in Wp (e.g., 185) — we pass peakpower in kW to PVcalc.
       - tilt_deg: plane tilt [deg]; aspect: azimuth [deg], 0=south, 90=west, -90=east.
-    Uses dataset order: env S4GA_PVGIS_DATASET -> SARAH2 -> ERA5.
+    Uses dataset order: env S4GA_PVGIS_DATASET -> SARAH3 -> SARAH2 -> ERA5.
     Uses system losses from env S4GA_PVCALC_LOSS (default 14%).
     """
-    base_url = "https://re.jrc.ec.europa.eu/api/v5_2/PVcalc"
+    base_url = "https://re.jrc.ec.europa.eu/api/v5_3/PVcalc"
 
     # Dataset preference
     order = []
     env_ds = os.getenv("S4GA_PVGIS_DATASET")
     if env_ds: order.append(env_ds)
-    for d in ("PVGIS-SARAH2", "PVGIS-ERA5"):
+    for d in ("PVGIS-SARAH3", "PVGIS-SARAH2", "PVGIS-ERA5"):
         if d not in order: order.append(d)
 
     # Inputs
@@ -188,11 +188,9 @@ def _parse_shs_monthly(data: dict):
     The API returns per-month metrics; field names vary slightly by version.
     We normalize to include 'f_e' as a percentage in the 0..100 range.
 
-    PVGIS responses are inconsistent across endpoints/examples: some payloads expose
-    `f_e` as a fraction (0..1), while derived values from `empty_battery_days / days`
-    are naturally fractions as well. The rest of SALA already treats `f_e` as a
-    percentage when converting to annual days or month shares, so we normalize here
-    once to keep every downstream KPI on the same scale.
+    PVGIS SHScalc JSON returns `f_e` as a percentage. Values below 1.0 are still
+    percentages (for example 0.85 means 0.85%, not 85%). Only values derived from
+    empty_battery_days / days are fractions and need conversion to percent.
     """
     try:
         monthly = data["outputs"]["monthly"]
@@ -208,6 +206,7 @@ def _parse_shs_monthly(data: dict):
     norm = []
     for m in monthly:
         fe = None
+        fe_is_fraction = False
         for k in ("f_e", "f_b", "f_loss", "f_def", "f_deficit"):
             if k in m:
                 fe = m[k]; break
@@ -216,18 +215,19 @@ def _parse_shs_monthly(data: dict):
             ebd = m.get("empty_battery_days")
             days = m.get("n_days") or m.get("days") or 30
             fe = float(ebd) / float(days) if ebd is not None else 0.0
+            fe_is_fraction = ebd is not None
         try:
             fe = float(fe)
         except Exception:
             fe = 0.0
-        if 0.0 <= fe <= 1.0:
+        if fe_is_fraction and 0.0 <= fe <= 1.0:
             fe *= 100.0
         nm = dict(m)
         nm["f_e"] = fe
         norm.append(nm)
-    return norm
+    return sorted(norm, key=lambda row: int(row.get("month", 99)))
 
-def shs_monthly(lat, lon, pv_wp, batt_wh, cons_wh_day, tilt_deg, aspect_deg, cutoff_pct=40):
+def shs_monthly(lat, lon, pv_wp, batt_wh, cons_wh_day, tilt_deg, aspect_deg, cutoff_pct=30):
     """
     Calls PVGIS SHScalc and returns a list of 12 dicts incl. 'f_e' per month.
     Arguments:
@@ -235,14 +235,14 @@ def shs_monthly(lat, lon, pv_wp, batt_wh, cons_wh_day, tilt_deg, aspect_deg, cut
       - batt_wh: battery capacity in Wh → SHScalc 'batterysize'
       - cons_wh_day: consumption Wh/day → SHScalc 'consumptionday'
       - tilt_deg / aspect_deg as for PVcalc
-      - cutoff_pct: battery cutoff (%), default 40 matching PVGIS example
+      - cutoff_pct: battery cutoff (%), default 30 matching SALA lead-acid fixture data
     """
-    base_url = "https://re.jrc.ec.europa.eu/api/v5_2/SHScalc"
+    base_url = "https://re.jrc.ec.europa.eu/api/v5_3/SHScalc"
 
     order = []
     env_ds = os.getenv("S4GA_PVGIS_DATASET")
     if env_ds: order.append(env_ds)
-    for d in ("PVGIS-SARAH2", "PVGIS-ERA5"):
+    for d in ("PVGIS-SARAH3", "PVGIS-SARAH2", "PVGIS-ERA5"):
         if d not in order: order.append(d)
 
     common = dict(

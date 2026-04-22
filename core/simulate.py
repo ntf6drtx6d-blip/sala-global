@@ -76,7 +76,7 @@ def choose_azimuth_fixed_for_year(lat, lon, tilt_deg, cache, key):
 
 
 def dataset_label():
-    return os.getenv("S4GA_PVGIS_DATASET", "PVGIS-SARAH2 (fallback: PVGIS-ERA5)")
+    return os.getenv("S4GA_PVGIS_DATASET", "PVGIS-SARAH3 (fallback: PVGIS-SARAH2 / PVGIS-ERA5)")
 
 
 def resolve_device_config(device_id, per_device_config=None):
@@ -133,6 +133,8 @@ def resolve_device_config(device_id, per_device_config=None):
             "pv": float(dspec["pv"]),
             "batt_std": float(dspec["batt"]),
             "batt": float(dspec["batt"]),
+            "battery_type": dspec.get("battery_type"),
+            "cutoff_pct": dspec.get("cutoff_pct"),
             "battery_mode": "Std",
             "fixed": bool(dspec.get("fixed", len(tilt_options) <= 1)),
             "tilt_options": [float(x) for x in tilt_options],
@@ -169,6 +171,8 @@ def resolve_device_config(device_id, per_device_config=None):
         "pv": float(eng["pv"]),
         "batt_std": float(eng["batt"]),
         "batt": batt,
+        "battery_type": eng.get("battery_type"),
+        "cutoff_pct": eng.get("cutoff_pct"),
         "battery_mode": battery_mode,
         "fixed": bool(eng.get("fixed", False)),
         "tilt_options": list(eng.get("tilt_options", [15, 35, 55])),
@@ -178,6 +182,14 @@ def resolve_device_config(device_id, per_device_config=None):
 
 
 def _infer_battery_basis(resolved):
+    configured_cutoff = resolved.get("cutoff_pct")
+    configured_type = resolved.get("battery_type")
+    try:
+        if configured_cutoff is not None and float(configured_cutoff) > 0:
+            return str(configured_type or "Battery"), float(configured_cutoff)
+    except Exception:
+        pass
+
     code = str(resolved.get("device_code", "")).upper()
     system_type = resolved.get("system_type")
 
@@ -476,7 +488,7 @@ def build_pvgis_meta(lat, lon, resolved_cfg, tilt, azim):
         "mountingplace": "free",
         "optimalangles": 0,
         "outputformat": "json",
-        "raddatabase": os.getenv("S4GA_PVGIS_DATASET", "PVGIS-SARAH2"),
+        "raddatabase": os.getenv("S4GA_PVGIS_DATASET", "PVGIS-SARAH3"),
     }
 
     shs_params = {
@@ -485,30 +497,30 @@ def build_pvgis_meta(lat, lon, resolved_cfg, tilt, azim):
         "peakpower": max(1.0, float(resolved_cfg["pv"])),
         "batterysize": max(10.0, float(resolved_cfg["batt"])),
         "consumptionday": "varied by SALA binary search",
-        "cutoff": 40,
+        "cutoff": float(resolved_cfg.get("cutoff_pct", _infer_battery_basis(resolved_cfg)[1])),
         "angle": float(tilt),
         "aspect": float(azim),
         "usehorizon": 1,
         "outputformat": "json",
-        "raddatabase": os.getenv("S4GA_PVGIS_DATASET", "PVGIS-SARAH2"),
+        "raddatabase": os.getenv("S4GA_PVGIS_DATASET", "PVGIS-SARAH3"),
     }
 
-    pvcalc_url = "https://re.jrc.ec.europa.eu/api/v5_2/PVcalc?" + urlencode(
+    pvcalc_url = "https://re.jrc.ec.europa.eu/api/v5_3/PVcalc?" + urlencode(
         {k: v for k, v in pvcalc_params.items() if k != "raddatabase"} | {"raddatabase": pvcalc_params["raddatabase"]}
     )
-    shs_url = "https://re.jrc.ec.europa.eu/api/v5_2/SHScalc?" + urlencode(
+    shs_url = "https://re.jrc.ec.europa.eu/api/v5_3/SHScalc?" + urlencode(
         {
             "lat": float(lat),
             "lon": float(lon),
             "peakpower": max(1.0, float(resolved_cfg["pv"])),
             "batterysize": max(10.0, float(resolved_cfg["batt"])),
             "consumptionday": 100,
-            "cutoff": 40,
+            "cutoff": float(resolved_cfg.get("cutoff_pct", _infer_battery_basis(resolved_cfg)[1])),
             "angle": float(tilt),
             "aspect": float(azim),
             "usehorizon": 1,
             "outputformat": "json",
-            "raddatabase": os.getenv("S4GA_PVGIS_DATASET", "PVGIS-SARAH2"),
+            "raddatabase": os.getenv("S4GA_PVGIS_DATASET", "PVGIS-SARAH3"),
         }
     )
 
@@ -528,7 +540,7 @@ def build_pvgis_meta(lat, lon, resolved_cfg, tilt, azim):
     }
 
 
-def max_wh_for_month_fast(lat, lon, pv_wp, batt_wh, tilt, aspect, mi, shs_eval_cache=None):
+def max_wh_for_month_fast(lat, lon, pv_wp, batt_wh, tilt, aspect, mi, shs_eval_cache=None, cutoff_pct=30):
     hi_cap = float(min(20000, max(3 * batt_wh, 8 * pv_wp * 24)))
     shs_eval_cache = shs_eval_cache if shs_eval_cache is not None else {}
 
@@ -536,14 +548,15 @@ def max_wh_for_month_fast(lat, lon, pv_wp, batt_wh, tilt, aspect, mi, shs_eval_c
         if cons_wh_day <= 0:
             return 0.0
 
-        cache_key = round(float(cons_wh_day), 6)
+        cache_key = (round(float(cons_wh_day), 6), round(float(cutoff_pct), 3))
         monthly = shs_eval_cache.get(cache_key)
         if monthly is None:
             monthly = shs_monthly(
                 lat, lon,
                 pv_wp, batt_wh,
                 float(cons_wh_day),
-                tilt, aspect
+                tilt, aspect,
+                cutoff_pct=cutoff_pct,
             )
             shs_eval_cache[cache_key] = monthly
         return float(monthly[mi].get("f_e", 0.0))
@@ -569,10 +582,10 @@ def max_wh_for_month_fast(lat, lon, pv_wp, batt_wh, tilt, aspect, mi, shs_eval_c
 
 
 
-def get_empty_battery_stats_for_required_mode(lat, lon, resolved, required_hrs, tilt, aspect, shs_eval_cache=None):
+def get_empty_battery_stats_for_required_mode(lat, lon, resolved, required_hrs, tilt, aspect, shs_eval_cache=None, cutoff_pct=30):
     daily_wh = float(required_hrs) * max(float(resolved["power"]), 0.001) + max(float(resolved.get("standby_power_w", 0.0)), 0.0) * 24.0
     shs_eval_cache = shs_eval_cache if shs_eval_cache is not None else {}
-    cache_key = round(float(daily_wh), 6)
+    cache_key = (round(float(daily_wh), 6), round(float(cutoff_pct), 3))
 
     monthly = shs_eval_cache.get(cache_key)
     if monthly is None:
@@ -581,7 +594,8 @@ def get_empty_battery_stats_for_required_mode(lat, lon, resolved, required_hrs, 
             resolved["pv"],
             resolved["batt"],
             daily_wh,
-            tilt, aspect
+            tilt, aspect,
+            cutoff_pct=cutoff_pct,
         )
         shs_eval_cache[cache_key] = monthly
 
@@ -682,6 +696,8 @@ def simulate_for_devices(
         hours = []
         monthly_energy_wh = []
         shs_eval_cache = {}
+        battery_type, cutoff_pct = _infer_battery_basis(resolved)
+        resolved["cutoff_pct"] = cutoff_pct
 
         search_started = time.time()
         for mi in range(12):
@@ -694,6 +710,7 @@ def simulate_for_devices(
                 aspect=azim,
                 mi=mi,
                 shs_eval_cache=shs_eval_cache,
+                cutoff_pct=cutoff_pct,
             )
             monthly_energy_wh.append(best_wh)
             active_power = max(float(resolved["power"]), 0.001)
@@ -733,6 +750,7 @@ def simulate_for_devices(
             tilt=tilt,
             aspect=azim,
             shs_eval_cache=shs_eval_cache,
+            cutoff_pct=cutoff_pct,
         )
         blackout_seconds = time.time() - blackout_started
         device_profile["blackout_stats_seconds"] = blackout_seconds
@@ -749,7 +767,6 @@ def simulate_for_devices(
             profiling["meta_total_seconds"] += meta_seconds
 
         behavior_started = time.time()
-        battery_type, cutoff_pct = _infer_battery_basis(resolved)
         monthly_generation_wh_day = _monthly_generation_used_in_simulation(
             lat, lon, resolved, tilt, azim, shs_monthly_rows=shs_monthly_rows
         )
@@ -826,6 +843,7 @@ def simulate_for_devices(
             "soc_monthly_median": behavior["monthly_soc_median"],
             "soc_monthly_preclip_min": behavior["monthly_soc_preclip_min"],
             "soc_monthly_preclip_median": behavior["monthly_soc_preclip_median"],
+            "soc_monthly_cycle_min": behavior["monthly_soc_cycle_min"],
             "charge_discharge_status_by_month": behavior["monthly_status"],
             "weekly_labels": behavior["weekly_labels"],
             "weekly_reserve_pct": behavior["weekly_reserve_pct"],

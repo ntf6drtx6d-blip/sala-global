@@ -116,6 +116,24 @@ def _number_or_none(value):
         return None
 
 
+def _default_cutoff_pct(existing):
+    raw = existing.get("cutoff_pct")
+    try:
+        if raw is not None and float(raw) > 0:
+            return float(raw)
+    except Exception:
+        pass
+
+    code = str(existing.get("code") or "").upper()
+    battery_type = str(existing.get("battery_type") or "").upper()
+    has_battery = bool(existing.get("battery_wh"))
+    if "SP-301" in code or "NIMH" in battery_type or "LIFEPO4" in battery_type or "LFP" in battery_type:
+        return 20.0
+    if has_battery:
+        return 30.0
+    return 0.0
+
+
 def _parse_float_list(raw_text):
     values = []
     for item in str(raw_text or "").split(","):
@@ -264,7 +282,7 @@ def _catalog_form_payload(prefix, lang, existing=None):
             t("admin.cutoff_limit_pct", lang),
             min_value=0.0,
             max_value=100.0,
-            value=float(existing.get("cutoff_pct") or 0.0),
+            value=_default_cutoff_pct(existing),
             step=1.0,
             key=f"{prefix}_cutoff_pct",
         )

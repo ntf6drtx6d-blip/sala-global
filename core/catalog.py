@@ -34,6 +34,8 @@ def get_runtime_catalog():
                 "short_name": metadata.get("short_name") or str(row["code"]).upper(),
                 "pv": float(row.get("panel_wp") or 0.0),
                 "batt": float(row.get("battery_wh") or 0.0),
+                "battery_type": row.get("battery_type"),
+                "cutoff_pct": row.get("cutoff_pct"),
                 "batt_ext": float(external_battery_wh) if external_battery_wh is not None else None,
                 "tilt_options": tilt_options,
                 "fixed": len(tilt_options) <= 1,

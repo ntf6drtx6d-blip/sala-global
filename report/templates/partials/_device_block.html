@@ -34,10 +34,12 @@
           <div class="info-row"><span>{{ report.i18n['report.nominal_power'] }}</span><strong>{{ '%.1f'|format(device.nominal_power_wp) }} Wp</strong></div>
           {% if device.is_single_panel %}
             <div class="info-row"><span>{{ report.i18n['report.single_panel_tilt'] }}</span><strong>{{ '%.0f'|format(device.single_panel_tilt_deg) }}°</strong></div>
+            <div class="info-row"><span>{{ report.i18n['report.panel_orientation'] }}</span><strong>{{ device.panel_orientation_label }}</strong></div>
           {% else %}
             <div class="info-row"><span>{{ report.i18n['report.effective_power'] }}</span><strong>{{ '%.1f'|format(device.effective_power_wp) }} Wp</strong></div>
             <div class="info-row"><span>{{ report.i18n['report.effective_ratio'] }}</span><strong>{{ '%.0f'|format(device.effective_ratio_pct) }}%</strong></div>
             <div class="info-row"><span>{{ report.i18n['report.equivalent_tilt'] }}</span><strong>{{ '%.0f'|format(device.equivalent_tilt_deg) }}°</strong></div>
+            <div class="info-row"><span>{{ report.i18n['report.panel_orientation'] }}</span><strong>{{ device.panel_orientation_label }}</strong></div>
           {% endif %}
         </div>
       </article>

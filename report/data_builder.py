@@ -252,6 +252,24 @@ def _solar_configuration_summary(r: dict, language: str = "en") -> str:
     return f"{count} panels"
 
 
+def _normal_panel_orientation_deg(r: dict, aspect_key: str = "azim") -> float:
+    try:
+        pvgis_aspect = float(r.get(aspect_key, r.get("azim", 0.0)) or 0.0)
+    except Exception:
+        pvgis_aspect = 0.0
+    return (pvgis_aspect + 180.0) % 360.0
+
+
+def _normal_panel_orientation_label(r: dict, aspect_key: str = "azim") -> str:
+    compass_deg = _normal_panel_orientation_deg(r, aspect_key)
+    directions = [
+        (0, "N"), (45, "NE"), (90, "E"), (135, "SE"),
+        (180, "S"), (225, "SW"), (270, "W"), (315, "NW"), (360, "N"),
+    ]
+    direction = min(directions, key=lambda item: abs(item[0] - compass_deg))[1]
+    return f"{compass_deg:.0f}° {direction}"
+
+
 def _lighting_input_source(r: dict) -> tuple[str, str, str]:
     if str(r.get("system_type", "")).lower() == "avlite_fixture":
         return (
@@ -366,6 +384,14 @@ def build_report_data(loc, required_hours, results, overall, user_name, user_org
             "effective_ratio_pct": float(r.get("equivalent_pct_of_physical_nominal", 0) or 0),
             "equivalent_tilt_deg": float(r.get("equivalent_panel_tilt", r.get("tilt", 0)) or 0),
             "single_panel_tilt_deg": float(r.get("tilt", r.get("equivalent_panel_tilt", 0)) or 0),
+            "panel_orientation_deg": _normal_panel_orientation_deg(
+                r,
+                "azim" if _panel_count(r) <= 1 else "equivalent_panel_aspect",
+            ),
+            "panel_orientation_label": _normal_panel_orientation_label(
+                r,
+                "azim" if _panel_count(r) <= 1 else "equivalent_panel_aspect",
+            ),
             "input_source_status": _lighting_input_source(r)[0],
             "input_source_label": _lighting_input_source(r)[1],
             "input_source_note": _lighting_input_source(r)[2],

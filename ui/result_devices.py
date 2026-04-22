@@ -186,6 +186,21 @@ def _solar_configuration_summary(result_row):
     return geometry.title()
 
 
+def _panel_orientation_text(result_row, aspect_key="azim"):
+    try:
+        pvgis_aspect = float(result_row.get(aspect_key, result_row.get("azim", 0.0)) or 0.0)
+    except Exception:
+        pvgis_aspect = 0.0
+
+    compass_deg = (pvgis_aspect + 180.0) % 360.0
+    directions = [
+        (0, "N"), (45, "NE"), (90, "E"), (135, "SE"),
+        (180, "S"), (225, "SW"), (270, "W"), (315, "NW"), (360, "N"),
+    ]
+    direction = min(directions, key=lambda item: abs(item[0] - compass_deg))[1]
+    return f"{compass_deg:.0f}° {direction}"
+
+
 def _lighting_input_source(result_row):
     lang = st.session_state.get("language", "en")
     if str(result_row.get("system_type", "")).lower() == "avlite_fixture":
@@ -532,6 +547,7 @@ def render_device_capability_cards(results: dict):
                                 (t("ui.configuration", lang), _solar_configuration_summary(result_row)),
                                 (t("ui.nominal_power", lang), _fmt_wp(result_row.get("total_nominal_wp", result_row.get("pv")))),
                                 (t("ui.single_panel_tilt", lang), f"{_safe_float(result_row.get('tilt', result_row.get('equivalent_panel_tilt', 0))):.0f}°"),
+                                (t("ui.panel_orientation", lang), _panel_orientation_text(result_row)),
                             ]
                             if metrics["is_single_panel"]
                             else [
@@ -540,6 +556,7 @@ def render_device_capability_cards(results: dict):
                                 (t("ui.effective_power", lang), _fmt_wp(result_row.get("equivalent_panel_wp", result_row.get("pv")))),
                                 (t("ui.effective_ratio", lang), _fmt_pct(result_row.get("equivalent_pct_of_physical_nominal"))),
                                 (t("ui.equivalent_tilt", lang), f"{_safe_float(result_row.get('equivalent_panel_tilt', result_row.get('tilt', 0))):.0f}°"),
+                                (t("ui.panel_orientation", lang), _panel_orientation_text(result_row, "equivalent_panel_aspect")),
                             ]
                         ),
                     )

@@ -609,7 +609,7 @@ def get_empty_battery_stats_for_required_mode(lat, lon, resolved, required_hrs, 
         f_e = float(monthly[mi].get("f_e", 0.0))
         dim = _days_in_month_non_leap(mi + 1)
         pct_by_month.append(f_e)
-        days_by_month.append(round(dim * f_e / 100.0))
+        days_by_month.append(dim * f_e / 100.0)
 
         weighted_pct_sum += f_e * dim
         total_days += dim

@@ -10,6 +10,21 @@ from core.i18n import t
 INTENSITY_PRESETS = [3, 10, 30, 60, 100]
 
 
+@st.cache_data(show_spinner=False)
+def _load_runtime_catalog_cached():
+    return get_runtime_catalog()
+
+
+def _get_runtime_catalog_cached():
+    if "runtime_devices" not in st.session_state or "runtime_solar_engines" not in st.session_state:
+        lang = st.session_state.get("language", "en")
+        with st.spinner(t("ui.loading_device_options", lang)):
+            devices, solar_engines = _load_runtime_catalog_cached()
+        st.session_state.runtime_devices = devices
+        st.session_state.runtime_solar_engines = solar_engines
+    return st.session_state.runtime_devices, st.session_state.runtime_solar_engines
+
+
 def _init_setup_defaults():
     if "setup_initialized" not in st.session_state:
         st.session_state.setup_initialized = True
@@ -52,6 +67,8 @@ def _init_setup_defaults():
             st.session_state.airport_country = "-"
         if "airport_icao" not in st.session_state:
             st.session_state.airport_icao = ""
+
+    _get_runtime_catalog_cached()
 
     _refresh_study_ready()
 
@@ -134,13 +151,13 @@ def longest_night_hours(lat_deg: float) -> float:
 
 
 def _device_label(device_id):
-    DEVICES, _ = get_runtime_catalog()
+    DEVICES, _ = _get_runtime_catalog_cached()
     d = DEVICES[device_id]
     return d["name"]
 
 
 def _device_manufacturer(device_id):
-    DEVICES, _ = get_runtime_catalog()
+    DEVICES, _ = _get_runtime_catalog_cached()
     d = DEVICES[device_id]
     return d.get("manufacturer", "S4GA")
 
@@ -153,7 +170,7 @@ def _safe_float(value, default=0.0):
 
 
 def _engine_summary(device_id, engine_key, battery_mode):
-    DEVICES, SOLAR_ENGINES = get_runtime_catalog()
+    DEVICES, SOLAR_ENGINES = _get_runtime_catalog_cached()
     dspec = DEVICES[device_id]
     system_type = dspec.get("system_type", "builtin")
 
@@ -194,7 +211,7 @@ def _engine_summary(device_id, engine_key, battery_mode):
 
 
 def _supports_intensity_adjustment(device_id):
-    DEVICES, _ = get_runtime_catalog()
+    DEVICES, _ = _get_runtime_catalog_cached()
     dspec = DEVICES[device_id]
     return bool(dspec.get("supports_intensity_adjustment", dspec.get("system_type") in {"builtin", "avlite_fixture"}))
 
@@ -208,7 +225,7 @@ def _effective_intensity_pct(mode, fixed_pct, share_a, intensity_a, intensity_b)
 
 
 def _default_multiselect_labels():
-    DEVICES, _ = get_runtime_catalog()
+    DEVICES, _ = _get_runtime_catalog_cached()
     labels = []
     for did in st.session_state.get("selected_ids", []):
         if did in DEVICES:
@@ -262,7 +279,7 @@ def _apply_operating_profile():
 def render_setup(disabled=False):
     _init_setup_defaults()
     lang = st.session_state.get("language", "en")
-    DEVICES, SOLAR_ENGINES = get_runtime_catalog()
+    DEVICES, SOLAR_ENGINES = _get_runtime_catalog_cached()
 
     st.markdown(
         """
@@ -532,41 +549,80 @@ def render_setup(disabled=False):
 
         manufacturer_options = sorted({d.get("manufacturer", "Unknown") for d in DEVICES.values()})
         current_manufacturers = st.session_state.get("selected_manufacturers", [])
-        selected_manufacturers = st.multiselect(
-            t("ui.manufacturers_included", lang),
-            manufacturer_options,
-            default=current_manufacturers,
-            key="selected_manufacturers_multiselect",
-            disabled=disabled,
-            help=t("ui.manufacturers_included", lang),
-        )
-        st.session_state.selected_manufacturers = selected_manufacturers
+        with st.form("manufacturer_selection_form", clear_on_submit=False):
+            selected_manufacturers = st.multiselect(
+                t("ui.manufacturers_included", lang),
+                manufacturer_options,
+                default=current_manufacturers,
+                key="selected_manufacturers_form_value",
+                disabled=disabled,
+                help=t("ui.manufacturers_included", lang),
+            )
+            manufacturer_apply = st.form_submit_button(
+                t("ui.apply_selection", lang),
+                disabled=disabled,
+                use_container_width=True,
+            )
+        if manufacturer_apply:
+            st.session_state.selected_manufacturers = selected_manufacturers
+            filtered_after_apply = {
+                did for did, spec in DEVICES.items()
+                if spec.get("manufacturer", "Unknown") in selected_manufacturers
+            }
+            st.session_state.selected_ids = [
+                did for did in st.session_state.get("selected_ids", [])
+                if did in filtered_after_apply
+            ]
+
+        selected_manufacturers = st.session_state.get("selected_manufacturers", [])
 
         st.markdown(f"### 4. {t('ui.select_devices', lang)}")
 
         filtered_device_ids = [
-            k for k in DEVICES.keys()
-            if _device_manufacturer(k) in selected_manufacturers
+            did for did, spec in DEVICES.items()
+            if spec.get("manufacturer", "Unknown") in selected_manufacturers
+        ]
+        filtered_device_ids.sort(key=lambda did: _device_label(did))
+        device_filter_text = st.session_state.get("device_search_filter", "")
+        device_filter_norm = " ".join(device_filter_text.lower().split())
+
+        filtered_device_ids_local = [
+            did for did in filtered_device_ids
+            if not device_filter_norm or device_filter_norm in _device_label(did).lower()
         ]
 
-        device_options = {_device_label(k): k for k in filtered_device_ids}
-
+        device_options = {_device_label(did): did for did in filtered_device_ids_local}
         default_labels = [
             _device_label(did)
             for did in st.session_state.get("selected_ids", [])
-            if did in filtered_device_ids
+            if did in filtered_device_ids_local
         ]
 
-        selected_labels = st.multiselect(
-            t("ui.devices_included", lang),
-            list(device_options.keys()),
-            default=default_labels,
-            key="selected_devices_multiselect",
-            disabled=disabled,
-        )
+        with st.form("device_selection_form", clear_on_submit=False):
+            next_device_filter_text = st.text_input(
+                t("ui.device_search_filter", lang),
+                value=device_filter_text,
+                key="device_search_filter_form_value",
+                disabled=disabled,
+                placeholder=t("ui.device_search_filter_placeholder", lang),
+            )
+            selected_labels = st.multiselect(
+                t("ui.devices_included", lang),
+                list(device_options.keys()),
+                default=default_labels,
+                key="selected_devices_form_value",
+                disabled=disabled,
+            )
+            device_apply = st.form_submit_button(
+                t("ui.apply_selection", lang),
+                disabled=disabled,
+                use_container_width=True,
+            )
+        if device_apply:
+            st.session_state.device_search_filter = next_device_filter_text
+            st.session_state.selected_ids = [device_options[label] for label in selected_labels]
 
-        selected_ids = [device_options[label] for label in selected_labels]
-        st.session_state.selected_ids = selected_ids
+        selected_ids = st.session_state.get("selected_ids", [])
 
     with right:
         st.markdown(f"### {t('ui.study_point', lang)}")

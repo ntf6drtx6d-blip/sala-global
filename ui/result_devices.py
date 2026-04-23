@@ -1,10 +1,13 @@
 # ui/result_devices.py
 
+import hashlib
+import json
 import textwrap
 
 import plotly.graph_objects as go
 import streamlit as st
 
+from core.energy_design import analyze_device_energy_design, needs_energy_design_analysis
 from core.i18n import month_label, month_labels, t
 from core.intensity import format_intensity_summary
 from ui.result_helpers import battery_reserve_hours, device_blackout_days, format_battery_hours, format_energy_wh, short_device_label
@@ -345,6 +348,141 @@ def _device_metrics(result_row):
     }
 
 
+def _energy_design_cache_key(result_row):
+    payload = {
+        "lat": st.session_state.get("lat"),
+        "lon": st.session_state.get("lon"),
+        "required_hours": st.session_state.get("required_hours"),
+        "pv": result_row.get("pv"),
+        "equivalent_panel_wp": result_row.get("equivalent_panel_wp"),
+        "batt": result_row.get("batt"),
+        "power": result_row.get("power"),
+        "standby_power_w": result_row.get("standby_power_w"),
+        "cutoff_pct": result_row.get("cutoff_pct"),
+        "tilt": result_row.get("tilt"),
+        "azim": result_row.get("azim"),
+        "equivalent_panel_tilt": result_row.get("equivalent_panel_tilt"),
+        "equivalent_panel_aspect": result_row.get("equivalent_panel_aspect"),
+        "system_type": result_row.get("system_type"),
+        "panel_count": result_row.get("panel_count"),
+        "panel_list": result_row.get("panel_list"),
+        "min_margin": result_row.get("min_margin"),
+        "empty_battery_days_by_month": result_row.get("empty_battery_days_by_month"),
+    }
+    raw = json.dumps(payload, sort_keys=True, default=str)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _get_energy_design_analysis(result_row):
+    if not needs_energy_design_analysis(result_row):
+        return None
+
+    cache = st.session_state.setdefault("energy_design_analysis_cache", {})
+    cache_key = _energy_design_cache_key(result_row)
+    if cache_key in cache:
+        return cache[cache_key]
+
+    analysis = analyze_device_energy_design(
+        result_row=result_row,
+        lat=float(st.session_state.get("lat", 0.0) or 0.0),
+        lon=float(st.session_state.get("lon", 0.0) or 0.0),
+        required_hrs=float(st.session_state.get("required_hours", 0.0) or 0.0),
+    )
+    cache[cache_key] = analysis
+    return analysis
+
+
+def _fmt_wh(val):
+    try:
+        return f"{float(val):.0f} Wh"
+    except Exception:
+        return "N/A"
+
+
+def _energy_design_status_text(passes, lang):
+    if passes:
+        return t("ui.pass", lang)
+    return t("ui.fail", lang)
+
+
+def render_energy_design_analysis(result_row):
+    lang = st.session_state.get("language", "en")
+    analysis = _get_energy_design_analysis(result_row)
+    if not analysis:
+        return
+
+    current_panel = _fmt_wp(analysis.get("current_panel_wp"))
+    required_panel = _fmt_wp(analysis.get("required_panel_wp"))
+    current_battery = _fmt_wh(analysis.get("current_battery_wh"))
+    required_battery = _fmt_wh(analysis.get("required_battery_wh"))
+
+    table_rows = "".join(
+        [
+            f"""
+            <tr>
+                <td style="padding:10px 12px;border-top:1px solid #eef2f6;color:#344054;font-weight:700;">{t('ui.panel', lang)}</td>
+                <td style="padding:10px 12px;border-top:1px solid #eef2f6;color:#101828;font-weight:700;">{current_panel}</td>
+                <td style="padding:10px 12px;border-top:1px solid #eef2f6;color:#101828;font-weight:800;">{required_panel}</td>
+            </tr>
+            """,
+            f"""
+            <tr>
+                <td style="padding:10px 12px;border-top:1px solid #eef2f6;color:#344054;font-weight:700;">{t('ui.battery', lang)}</td>
+                <td style="padding:10px 12px;border-top:1px solid #eef2f6;color:#101828;font-weight:700;">{current_battery}</td>
+                <td style="padding:10px 12px;border-top:1px solid #eef2f6;color:#101828;font-weight:800;">{required_battery}</td>
+            </tr>
+            """,
+        ]
+    )
+
+    insight_rows = [
+        f"{t('ui.battery', lang)} +100% → {_energy_design_status_text(analysis.get('battery_plus_passes'), lang)}",
+        f"{t('ui.solar', lang)} +100% → {_energy_design_status_text(analysis.get('solar_plus_passes'), lang)}",
+    ]
+
+    st.markdown(f"### {t('ui.energy_design_analysis', lang)}")
+    st.markdown(
+        f"""
+        <div style="border:1px solid #e6eaf0;border-radius:16px;background:#ffffff;padding:14px 16px;margin-top:6px;">
+            <div style="font-size:0.84rem;color:#667085;font-weight:800;letter-spacing:0.04em;text-transform:uppercase;margin-bottom:10px;">
+                {t('ui.required_design', lang)}
+            </div>
+            <table style="width:100%;border-collapse:collapse;font-size:0.95rem;">
+                <thead>
+                    <tr>
+                        <th style="text-align:left;padding:0 12px 8px 12px;color:#667085;font-size:0.82rem;text-transform:uppercase;">{t('ui.parameter', lang)}</th>
+                        <th style="text-align:left;padding:0 12px 8px 12px;color:#667085;font-size:0.82rem;text-transform:uppercase;">{t('ui.current', lang)}</th>
+                        <th style="text-align:left;padding:0 12px 8px 12px;color:#667085;font-size:0.82rem;text-transform:uppercase;">{t('ui.required', lang)}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {table_rows}
+                </tbody>
+            </table>
+            <div style="font-size:0.88rem;color:#667085;line-height:1.45;margin-top:12px;">
+                {t('ui.energy_demand_locked', lang)}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        f"""
+        <div style="border:1px solid #e6eaf0;border-radius:16px;background:#ffffff;padding:14px 16px;margin-top:12px;">
+            <div style="font-size:0.84rem;color:#667085;font-weight:800;letter-spacing:0.04em;text-transform:uppercase;margin-bottom:10px;">
+                {t('ui.insight', lang)}
+            </div>
+            <div style="font-size:0.95rem;color:#344054;line-height:1.6;">
+                {insight_rows[0]}<br/>
+                {insight_rows[1]}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render_operational_chart(result_row, metrics):
     lang = st.session_state.get("language", "en")
     month_tick_labels = month_labels(lang)
@@ -560,6 +698,8 @@ def render_device_capability_cards(results: dict):
                             ]
                         ),
                     )
+
+                render_energy_design_analysis(result_row)
 
                 source_status, source_name, source_copy, source_style = _lighting_input_source(result_row)
                 source_palette = STATUS_STYLES.get(source_style, STATUS_STYLES["neutral"])

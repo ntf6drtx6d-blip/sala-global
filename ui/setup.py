@@ -548,33 +548,14 @@ def render_setup(disabled=False):
         st.markdown(f"### 3. {t('ui.manufacturer', lang)}")
 
         manufacturer_options = sorted({d.get("manufacturer", "Unknown") for d in DEVICES.values()})
-        current_manufacturers = st.session_state.get("selected_manufacturers", [])
-        with st.form("manufacturer_selection_form", clear_on_submit=False):
-            selected_manufacturers = st.multiselect(
-                t("ui.manufacturers_included", lang),
-                manufacturer_options,
-                default=current_manufacturers,
-                key="selected_manufacturers_form_value",
-                disabled=disabled,
-                help=t("ui.manufacturers_included", lang),
-            )
-            manufacturer_apply = st.form_submit_button(
-                t("ui.apply_selection", lang),
-                disabled=disabled,
-                use_container_width=True,
-            )
-        if manufacturer_apply:
-            st.session_state.selected_manufacturers = selected_manufacturers
-            filtered_after_apply = {
-                did for did, spec in DEVICES.items()
-                if spec.get("manufacturer", "Unknown") in selected_manufacturers
-            }
-            st.session_state.selected_ids = [
-                did for did in st.session_state.get("selected_ids", [])
-                if did in filtered_after_apply
-            ]
-
-        selected_manufacturers = st.session_state.get("selected_manufacturers", [])
+        selected_manufacturers = st.multiselect(
+            t("ui.manufacturers_included", lang),
+            manufacturer_options,
+            default=st.session_state.get("selected_manufacturers", []),
+            key="selected_manufacturers",
+            disabled=disabled,
+            help=t("ui.manufacturers_included", lang),
+        )
 
         st.markdown(f"### 4. {t('ui.select_devices', lang)}")
 
@@ -583,46 +564,39 @@ def render_setup(disabled=False):
             if spec.get("manufacturer", "Unknown") in selected_manufacturers
         ]
         filtered_device_ids.sort(key=lambda did: _device_label(did))
-        device_filter_text = st.session_state.get("device_search_filter", "")
+        valid_manufacturer_ids = set(filtered_device_ids)
+        st.session_state.selected_ids = [
+            did for did in st.session_state.get("selected_ids", [])
+            if did in valid_manufacturer_ids
+        ]
+
+        device_filter_text = st.text_input(
+            t("ui.device_search_filter", lang),
+            value=st.session_state.get("device_search_filter", ""),
+            key="device_search_filter",
+            disabled=disabled,
+            placeholder=t("ui.device_search_filter_placeholder", lang),
+        )
         device_filter_norm = " ".join(device_filter_text.lower().split())
 
         filtered_device_ids_local = [
             did for did in filtered_device_ids
             if not device_filter_norm or device_filter_norm in _device_label(did).lower()
         ]
-
-        device_options = {_device_label(did): did for did in filtered_device_ids_local}
-        default_labels = [
-            _device_label(did)
-            for did in st.session_state.get("selected_ids", [])
-            if did in filtered_device_ids_local
+        valid_filtered_ids = set(filtered_device_ids_local)
+        st.session_state.selected_ids = [
+            did for did in st.session_state.get("selected_ids", [])
+            if did in valid_filtered_ids
         ]
 
-        with st.form("device_selection_form", clear_on_submit=False):
-            next_device_filter_text = st.text_input(
-                t("ui.device_search_filter", lang),
-                value=device_filter_text,
-                key="device_search_filter_form_value",
-                disabled=disabled,
-                placeholder=t("ui.device_search_filter_placeholder", lang),
-            )
-            selected_labels = st.multiselect(
-                t("ui.devices_included", lang),
-                list(device_options.keys()),
-                default=default_labels,
-                key="selected_devices_form_value",
-                disabled=disabled,
-            )
-            device_apply = st.form_submit_button(
-                t("ui.apply_selection", lang),
-                disabled=disabled,
-                use_container_width=True,
-            )
-        if device_apply:
-            st.session_state.device_search_filter = next_device_filter_text
-            st.session_state.selected_ids = [device_options[label] for label in selected_labels]
-
-        selected_ids = st.session_state.get("selected_ids", [])
+        selected_ids = st.multiselect(
+            t("ui.devices_included", lang),
+            filtered_device_ids_local,
+            default=st.session_state.get("selected_ids", []),
+            key="selected_ids",
+            disabled=disabled,
+            format_func=_device_label,
+        )
 
     with right:
         st.markdown(f"### {t('ui.study_point', lang)}")

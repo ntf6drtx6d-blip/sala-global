@@ -675,6 +675,27 @@ def update_user_password(user_id, password_hash):
         )
 
 
+def update_user_profile(user_id, email, full_name=None, organization=None):
+    with db_cursor() as (_, cur):
+        cur.execute(
+            """
+            UPDATE users
+            SET email = %s,
+                full_name = %s,
+                organization = %s
+            WHERE id = %s
+            RETURNING *
+            """,
+            (email, full_name, organization, user_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        row["created_at"] = _dt_to_text(row.get("created_at"))
+        row["last_login_at"] = _dt_to_text(row.get("last_login_at"))
+        return row
+
+
 def list_device_catalog(entity_type=None):
     with db_cursor() as (_, cur):
         if entity_type:

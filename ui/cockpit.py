@@ -104,6 +104,19 @@ def _build_pdf(results, overall, lang):
     return pdf_name or "SALA_report.pdf", pdf_bytes
 
 
+def regenerate_pdf_for_current_results():
+    lang = st.session_state.get("language", "en")
+    results = st.session_state.get("results")
+    overall = st.session_state.get("overall")
+    if results is None or overall is None:
+        return False
+    pdf_name, pdf_bytes = _build_pdf(results, overall, lang)
+    st.session_state.pdf_bytes = pdf_bytes
+    st.session_state.pdf_name = pdf_name or "SALA_report.pdf"
+    st.session_state.pdf_error = None
+    return True
+
+
 def short_device_label_from_id(device_id):
     try:
         d = DEVICES[device_id]
@@ -167,6 +180,7 @@ def reset_study():
         "overall": None,
         "pdf_bytes": None,
         "pdf_name": "SALA_report.pdf",
+        "pdf_error": None,
         "elapsed": None,
         "running": False,
         "run_progress": 0,
@@ -300,7 +314,14 @@ def _run_simulation(progress_callback=None):
     push_progress(92, t("ui.stage_calculating_feasibility", lang))
     add_log(t("ui.log_pvgis_responses_received", lang))
     add_log(t("ui.log_preparing_conclusion", lang))
-    pdf_name, pdf_bytes = _build_pdf(results, overall, lang)
+    pdf_name = "SALA_report.pdf"
+    pdf_bytes = None
+    pdf_error = None
+    try:
+        pdf_name, pdf_bytes = _build_pdf(results, overall, lang)
+    except Exception as exc:
+        pdf_error = str(exc)
+        add_log(t("ui.pdf_generation_failed", lang, error=str(exc)))
 
     push_progress(100, t("ui.stage_generating_results", lang))
     add_log(t("ui.log_simulation_complete", lang))
@@ -310,6 +331,7 @@ def _run_simulation(progress_callback=None):
     st.session_state.overall = overall
     st.session_state.pdf_bytes = pdf_bytes
     st.session_state.pdf_name = pdf_name or "SALA_report.pdf"
+    st.session_state.pdf_error = pdf_error
     st.session_state.elapsed = elapsed
     st.session_state.running = False
     st.session_state.trigger_run = False

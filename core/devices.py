@@ -145,7 +145,7 @@ DEVICES = {
         "default_power": 320.0,
         "default_engine": "se_max",
         "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_max"],
-        "supports_intensity_adjustment": False,
+        "supports_intensity_adjustment": True,
         "standby_power_w": None,
     },
     6: {
@@ -156,7 +156,7 @@ DEVICES = {
         "default_power": 160.0,
         "default_engine": "se_max",
         "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_max"],
-        "supports_intensity_adjustment": False,
+        "supports_intensity_adjustment": True,
         "standby_power_w": None,
     },
     7: {

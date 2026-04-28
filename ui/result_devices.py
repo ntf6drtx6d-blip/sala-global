@@ -483,6 +483,78 @@ def render_energy_design_analysis(result_row):
     )
 
 
+def render_energy_design_overview(results: dict):
+    lang = st.session_state.get("language", "en")
+    if not results:
+        return
+
+    items = []
+    for device_name, result_row in results.items():
+        analysis = _get_energy_design_analysis(result_row)
+        if not analysis:
+            continue
+        items.append((short_device_label(device_name), analysis))
+
+    if not items:
+        return
+
+    st.markdown(f"## {t('ui.energy_design_analysis', lang)}")
+    st.caption(t("ui.energy_demand_locked", lang))
+
+    for label, analysis in items:
+        current_panel = _fmt_wp(analysis.get("current_panel_wp"))
+        required_panel = _fmt_wp(analysis.get("required_panel_wp"))
+        current_battery = _fmt_wh(analysis.get("current_battery_wh"))
+        required_battery = _fmt_wh(analysis.get("required_battery_wh"))
+        insight_rows = [
+            f"{t('ui.battery', lang)} +100% → {_energy_design_status_text(analysis.get('battery_plus_passes'), lang)}",
+            f"{t('ui.solar', lang)} +100% → {_energy_design_status_text(analysis.get('solar_plus_passes'), lang)}",
+        ]
+
+        table_rows = "".join(
+            [
+                f"""
+                <tr>
+                    <td style="padding:10px 12px;border-top:1px solid #eef2f6;color:#344054;font-weight:700;">{t('ui.panel', lang)}</td>
+                    <td style="padding:10px 12px;border-top:1px solid #eef2f6;color:#101828;font-weight:700;">{current_panel}</td>
+                    <td style="padding:10px 12px;border-top:1px solid #eef2f6;color:#101828;font-weight:800;">{required_panel}</td>
+                </tr>
+                """,
+                f"""
+                <tr>
+                    <td style="padding:10px 12px;border-top:1px solid #eef2f6;color:#344054;font-weight:700;">{t('ui.battery', lang)}</td>
+                    <td style="padding:10px 12px;border-top:1px solid #eef2f6;color:#101828;font-weight:700;">{current_battery}</td>
+                    <td style="padding:10px 12px;border-top:1px solid #eef2f6;color:#101828;font-weight:800;">{required_battery}</td>
+                </tr>
+                """,
+            ]
+        )
+
+        st.markdown(
+            f"""
+            <div style="border:1px solid #e6eaf0;border-radius:16px;background:#ffffff;padding:16px 18px;margin-top:10px;">
+                <div style="font-size:1rem;color:#101828;font-weight:900;margin-bottom:12px;">{label}</div>
+                <table style="width:100%;border-collapse:collapse;font-size:0.95rem;">
+                    <thead>
+                        <tr>
+                            <th style="text-align:left;padding:0 12px 8px 12px;color:#667085;font-size:0.82rem;text-transform:uppercase;">{t('ui.parameter', lang)}</th>
+                            <th style="text-align:left;padding:0 12px 8px 12px;color:#667085;font-size:0.82rem;text-transform:uppercase;">{t('ui.current', lang)}</th>
+                            <th style="text-align:left;padding:0 12px 8px 12px;color:#667085;font-size:0.82rem;text-transform:uppercase;">{t('ui.required', lang)}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {table_rows}
+                    </tbody>
+                </table>
+                <div style="font-size:0.92rem;color:#344054;line-height:1.55;margin-top:12px;">
+                    {insight_rows[0]}<br/>{insight_rows[1]}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
 def render_operational_chart(result_row, metrics):
     lang = st.session_state.get("language", "en")
     month_tick_labels = month_labels(lang)

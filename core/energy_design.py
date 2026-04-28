@@ -32,13 +32,7 @@ def _panel_count(result_row: dict) -> int:
 
 def needs_energy_design_analysis(result_row: dict) -> bool:
     blackout_days = sum(float(x or 0.0) for x in (result_row.get("empty_battery_days_by_month") or []))
-    min_margin = _safe_float(result_row.get("min_margin"), 0.0)
-    status = str(result_row.get("status", "")).upper()
-    if blackout_days > 0:
-        return True
-    if status != "PASS":
-        return True
-    return min_margin < BORDERLINE_MARGIN_HOURS
+    return blackout_days > 0
 
 
 def _design_base_from_result(result_row: dict) -> dict:

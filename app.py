@@ -8,13 +8,15 @@ import streamlit as st
 from streamlit.errors import StreamlitSecretNotFoundError
 
 from core.i18n import AVAILABLE_LANGUAGES, month_label, month_labels, t
-from core.db import init_db, upsert_user, save_study, get_user_by_email
-from core.person import normalize_person_name
+from psycopg.errors import UniqueViolation
+
+from core.db import init_db, upsert_user, save_study, get_user_by_email, update_user_profile
+from core.person import normalize_person_name, split_person_name
 from core.auth import hash_password, init_auth_state, is_logged_in, is_admin, logout
 
 from ui.setup import render_setup
-from ui.cockpit import _run_simulation, reset_study
-from ui.result import render_result, render_device_capability_cards
+from ui.cockpit import _run_simulation, regenerate_pdf_for_current_results, reset_study
+from ui.result import render_result, render_device_capability_cards, render_energy_design_overview
 from ui.graph import render_graph
 from ui.weather_basis import render_weather_basis
 from ui.admin import render_admin_panel
@@ -210,6 +212,7 @@ def init_state():
         "overall": None,
         "pdf_bytes": None,
         "pdf_name": "SALA_report.pdf",
+        "pdf_error": None,
         "elapsed": None,
         "search_message": "",
         "map_click_info": "",
@@ -492,6 +495,64 @@ def render_header():
             st.markdown(f"**{t('ui.my_profile', lang)}**")
             st.write(f"{t('ui.email', lang)}: {email}")
             st.write(f"{t('ui.role', lang)}: {role}")
+            first_name, last_name = split_person_name(st.session_state.get("auth_full_name", ""))
+
+            with st.form("profile_edit_form", clear_on_submit=False):
+                new_first_name = st.text_input(
+                    t("ui.first_name", lang),
+                    value=first_name,
+                    key="profile_first_name",
+                )
+                new_last_name = st.text_input(
+                    t("ui.last_name", lang),
+                    value=last_name,
+                    key="profile_last_name",
+                )
+                new_email = st.text_input(
+                    t("ui.email", lang),
+                    value=email,
+                    key="profile_email",
+                )
+                new_organization = st.text_input(
+                    t("ui.organization", lang),
+                    value=st.session_state.get("auth_organization", "") or "",
+                    key="profile_organization",
+                )
+                save_profile = st.form_submit_button(
+                    t("ui.save_profile", lang),
+                    use_container_width=True,
+                )
+
+            if save_profile:
+                normalized_first = normalize_person_name(new_first_name)
+                normalized_last = normalize_person_name(new_last_name)
+                normalized_email = str(new_email or "").strip().lower()
+                normalized_org = str(new_organization or "").strip() or None
+
+                if not normalized_first:
+                    st.error(t("ui.enter_first_name", lang))
+                elif not normalized_email:
+                    st.error(t("ui.enter_email", lang))
+                else:
+                    full_name = " ".join(part for part in [normalized_first, normalized_last] if part).strip()
+                    try:
+                        updated_user = update_user_profile(
+                            user_id=st.session_state.get("auth_user_id"),
+                            email=normalized_email,
+                            full_name=full_name,
+                            organization=normalized_org,
+                        )
+                    except UniqueViolation:
+                        st.error(t("ui.email_already_in_use", lang))
+                    except Exception as exc:
+                        st.error(str(exc))
+                    else:
+                        if updated_user:
+                            st.session_state.auth_email = updated_user["email"]
+                            st.session_state.auth_full_name = updated_user.get("full_name")
+                            st.session_state.auth_organization = updated_user.get("organization")
+                            persist_login_to_query_token()
+                            st.success(t("ui.profile_updated", lang))
 
             if st.button(t("ui.log_out", lang), key="logout_from_popover", use_container_width=True):
                 logout_and_forget()
@@ -506,6 +567,7 @@ def _trigger_simulation():
     st.session_state.run_eta_seconds = None
     st.session_state.trigger_run = True
     st.session_state.study_saved_for_current_result = False
+    st.session_state.pdf_error = None
     st.rerun()
 
 
@@ -656,6 +718,23 @@ def render_top_action_bar():
                     use_container_width=True,
                     key="top_download_pdf_report",
                 )
+            else:
+                pdf_error = st.session_state.get("pdf_error")
+                if pdf_error:
+                    st.warning(t("ui.pdf_generation_failed", lang, error=pdf_error))
+                else:
+                    st.warning(t("ui.pdf_not_ready", lang))
+
+                if st.button(
+                    t("ui.generate_pdf_report", lang),
+                    use_container_width=True,
+                    key="top_generate_pdf_report",
+                ):
+                    try:
+                        regenerate_pdf_for_current_results()
+                    except Exception as exc:
+                        st.session_state.pdf_error = str(exc)
+                    st.rerun()
 
         with c2:
             if st.button(
@@ -974,7 +1053,9 @@ def render_calculator_app():
         results = st.session_state.get("results")
         render_result()
         render_graph()
+        render_energy_design_overview(results)
         render_device_capability_cards(results)
+        st.divider()
         render_weather_basis()
 
 

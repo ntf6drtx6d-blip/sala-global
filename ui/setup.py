@@ -63,6 +63,8 @@ def _init_setup_defaults():
             st.session_state.search_message = ""
         if "map_click_info" not in st.session_state:
             st.session_state.map_click_info = ""
+        if "last_map_click" not in st.session_state:
+            st.session_state.last_map_click = None
         if "last_airport_query" not in st.session_state:
             st.session_state.last_airport_query = ""
         if "airport_country" not in st.session_state:
@@ -618,11 +620,10 @@ def render_setup(disabled=False):
         if clicked and not disabled:
             clicked_lat = float(clicked["lat"])
             clicked_lon = float(clicked["lng"])
+            click_signature = (round(clicked_lat, 6), round(clicked_lon, 6))
 
-            if (
-                abs(clicked_lat - st.session_state.lat) > 1e-7
-                or abs(clicked_lon - st.session_state.lon) > 1e-7
-            ):
+            if click_signature != st.session_state.get("last_map_click"):
+                st.session_state.last_map_click = click_signature
                 st.session_state.lat = clicked_lat
                 st.session_state.lon = clicked_lon
                 st.session_state.study_point_confirmed = True
@@ -631,7 +632,6 @@ def render_setup(disabled=False):
                 if st.session_state.get("operating_profile_mode") == "Dusk to dawn":
                     _apply_operating_profile()
                 _refresh_study_ready()
-                st.rerun()
 
         if st.session_state.map_click_info:
             st.success(st.session_state.map_click_info)

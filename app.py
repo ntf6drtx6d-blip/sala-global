@@ -699,6 +699,10 @@ def render_header():
 
 def _trigger_simulation():
     now = time.time()
+    st.session_state.results = None
+    st.session_state.overall = None
+    st.session_state.pdf_bytes = None
+    st.session_state.pdf_name = "SALA_report.pdf"
     st.session_state.running = True
     st.session_state.run_stage = "Connecting to PVGIS"
     st.session_state.run_progress = 0.0
@@ -724,7 +728,7 @@ def render_top_action_bar():
     ready = bool(st.session_state.get("study_ready", False))
     has_results = st.session_state.get("results") is not None
     is_running = bool(st.session_state.get("running", False))
-    if has_results and is_running:
+    if has_results and is_running and not st.session_state.get("trigger_run"):
         st.session_state.running = False
         st.session_state.trigger_run = False
         is_running = False

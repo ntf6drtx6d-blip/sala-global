@@ -16,9 +16,7 @@ from core.auth import hash_password, init_auth_state, is_logged_in, is_admin, lo
 
 from ui.setup import render_setup
 from ui.cockpit import _run_simulation, regenerate_pdf_for_current_results, reset_study
-from ui.result import render_result, render_device_capability_cards, render_energy_design_overview
-from ui.graph import render_graph
-from ui.weather_basis import render_weather_basis
+from ui.result import render_result
 from ui.admin import render_admin_panel
 from ui.my_studies import render_my_studies
 from ui.result_helpers import annual_empty_battery_stats, overall_state
@@ -44,6 +42,7 @@ AUTH_QUERY_PARAM = "auth"
 STUDY_QUERY_PARAM = "study"
 AUTH_TOKEN_TTL_DAYS = 30
 RUN_STALL_TIMEOUT_SECONDS = 180
+STABILITY_ROLLBACK_MODE = os.getenv("SALA_STABILITY_ROLLBACK", "1") not in {"0", "false", "False"}
 
 
 def _secret_or_env(name: str, default=None):
@@ -1255,29 +1254,36 @@ def render_calculator_app():
         results = st.session_state.get("results")
         render_result()
 
-        try:
-            render_energy_design_overview(results)
-        except Exception as exc:
-            st.error(f"Energy Design Analysis render failed: {exc}")
+        if STABILITY_ROLLBACK_MODE:
+            st.info("Advanced result sections are temporarily disabled in stability mode.")
+        else:
+            from ui.result import render_device_capability_cards, render_energy_design_overview
+            from ui.weather_basis import render_weather_basis
+            from ui.graph import render_graph
 
-        try:
-            render_device_capability_cards(results)
-        except Exception as exc:
-            st.error(f"Per-device result render failed: {exc}")
+            try:
+                render_energy_design_overview(results)
+            except Exception as exc:
+                st.error(f"Energy Design Analysis render failed: {exc}")
 
-        st.divider()
+            try:
+                render_device_capability_cards(results)
+            except Exception as exc:
+                st.error(f"Per-device result render failed: {exc}")
 
-        try:
-            render_weather_basis()
-        except Exception as exc:
-            st.error(f"Methodology render failed: {exc}")
+            st.divider()
 
-        st.divider()
+            try:
+                render_weather_basis()
+            except Exception as exc:
+                st.error(f"Methodology render failed: {exc}")
 
-        try:
-            render_graph()
-        except Exception as exc:
-            st.error(f"Annual graph render failed: {exc}")
+            st.divider()
+
+            try:
+                render_graph()
+            except Exception as exc:
+                st.error(f"Annual graph render failed: {exc}")
 
 
 init_state()

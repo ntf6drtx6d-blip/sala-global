@@ -414,8 +414,40 @@ def _energy_design_status_text(passes, lang):
     return t("ui.fail", lang)
 
 
+def _energy_design_requested_devices():
+    return st.session_state.setdefault("energy_design_requested_devices", [])
+
+
+def _energy_design_is_enabled_for(result_row):
+    if st.session_state.get("energy_design_requested_all", False):
+        return True
+    requested = set(str(x) for x in _energy_design_requested_devices())
+    row_name = str(result_row.get("name") or "")
+    row_code = str(result_row.get("device_code") or "")
+    return row_name in requested or row_code in requested
+
+
+def _request_energy_design_for(result_row):
+    requested = _energy_design_requested_devices()
+    marker = str(result_row.get("name") or result_row.get("device_code") or "")
+    if marker and marker not in requested:
+        requested.append(marker)
+    st.session_state.energy_design_requested_devices = requested
+
+
 def render_energy_design_analysis(result_row):
     lang = st.session_state.get("language", "en")
+    if not needs_energy_design_analysis(result_row):
+        return
+
+    if not _energy_design_is_enabled_for(result_row):
+        st.markdown(f"### {t('ui.energy_design_analysis', lang)}")
+        st.caption(t('ui.energy_design_deferred_note', lang))
+        if st.button(t('ui.calculate_energy_design_for_device', lang), key=f"energy_design_device_{result_row.get('name', '')}", use_container_width=False):
+            _request_energy_design_for(result_row)
+            st.rerun()
+        return
+
     analysis = _get_energy_design_analysis(result_row)
     if not analysis:
         return
@@ -497,18 +529,36 @@ def render_energy_design_overview(results: dict):
     if not results:
         return
 
-    items = []
-    for device_name, result_row in results.items():
-        analysis = _get_energy_design_analysis(result_row)
-        if not analysis:
-            continue
-        items.append((short_device_label(device_name), analysis))
+    applicable = [
+        (device_name, result_row)
+        for device_name, result_row in results.items()
+        if needs_energy_design_analysis(result_row)
+    ]
 
-    if not items:
+    if not applicable:
         return
 
     st.markdown(f"## {t('ui.energy_design_analysis', lang)}")
     st.caption(t("ui.energy_demand_locked", lang))
+
+    if not st.session_state.get("energy_design_requested_all", False):
+        count = len(applicable)
+        st.info(t("ui.energy_design_deferred_summary", lang, count=count))
+        if st.button(t("ui.calculate_energy_design_all", lang), key="energy_design_all", use_container_width=False):
+            st.session_state.energy_design_requested_all = True
+            st.rerun()
+        return
+
+    items = []
+    with st.spinner(t("ui.calculating_energy_design", lang)):
+        for device_name, result_row in applicable:
+            analysis = _get_energy_design_analysis(result_row)
+            if not analysis:
+                continue
+            items.append((short_device_label(device_name), analysis))
+
+    if not items:
+        return
 
     for label, analysis in items:
         current_panel = _fmt_wp(analysis.get("current_panel_wp"))

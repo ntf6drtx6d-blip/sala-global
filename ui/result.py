@@ -16,6 +16,7 @@ from ui.result_helpers import (
     overall_conclusion_text,
     overall_interpretation_text,
     overall_state,
+    result_device_display_name,
 )
 from ui.result_devices import render_device_capability_cards, render_energy_design_overview
 
@@ -104,6 +105,11 @@ def render_required_time_card(hours_value: float, mode_text: str):
 
 def _worst_device_month(results: dict, device_name: str) -> str | None:
     row = (results or {}).get(device_name) or {}
+    if not row:
+        for result_key, candidate in (results or {}).items():
+            if result_device_display_name(result_key, candidate) == device_name:
+                row = candidate
+                break
     lang = st.session_state.get("language", "en")
     values = list(row.get("empty_battery_days_by_month") or [])[:12]
     values = values + [0] * max(0, 12 - len(values))

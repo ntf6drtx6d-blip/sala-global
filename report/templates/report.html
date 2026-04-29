@@ -76,9 +76,9 @@
 
       <article class="card analyzed-devices-card page-break-avoid">
         <div class="eyebrow">{{ report.i18n['report.analyzed_devices'] }}</div>
-        <div class="device-chip-row">
+        <div class="device-name-list">
           {% for name in report.device_names %}
-            <span class="device-chip">{{ name }}</span>
+            <div class="device-name-item">{{ name }}</div>
           {% endfor %}
         </div>
       </article>

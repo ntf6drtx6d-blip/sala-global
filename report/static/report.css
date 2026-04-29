@@ -572,27 +572,34 @@ body {
 }
 
 .analyzed-devices-card {
-  margin-top: 12px;
-  padding: 14px 16px;
+  margin-top: 10px;
+  padding: 12px 14px;
 }
 
-.device-chip-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 8px;
+.device-name-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 12px;
+  margin-top: 6px;
 }
 
-.device-chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: #f8fbff;
-  border: 1px solid #d6e4ff;
+.device-name-item {
   color: #12355b;
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 1.25;
   font-weight: 700;
+  padding-left: 10px;
+  position: relative;
+  overflow-wrap: anywhere;
+}
+
+.device-name-item::before {
+  content: "•";
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: #98b8f5;
+  font-weight: 900;
 }
 
 .dataset-highlight {

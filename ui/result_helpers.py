@@ -93,6 +93,24 @@ def short_device_label(full_name: str) -> str:
     return full_name
 
 
+def result_device_display_name(result_key: str, result_row: dict) -> str:
+    label = str((result_row or {}).get("name") or result_key or "").strip()
+    engine = str((result_row or {}).get("engine") or "").strip()
+    lamp_variant = str((result_row or {}).get("lamp_variant") or "").strip()
+    if label:
+        if engine and engine != "BUILT-IN" and engine not in label:
+            return f"{label} + {engine}"
+        return label
+    code = str((result_row or {}).get("device_code") or "").strip()
+    if lamp_variant and code:
+        return f"{code} / {lamp_variant}"
+    if code and engine and engine != "BUILT-IN":
+        return f"{code} + {engine}"
+    if code:
+        return code
+    return short_device_label(str(result_key or ""))
+
+
 def annual_empty_battery_stats(results: dict):
     worst_name = None
     worst_pct = None
@@ -111,7 +129,7 @@ def annual_empty_battery_stats(results: dict):
 
         if worst_pct is None or pct > worst_pct:
             worst_pct = pct
-            worst_name = short_device_label(device_name)
+            worst_name = result_device_display_name(device_name, r)
             worst_days = days
 
     if worst_pct is None:

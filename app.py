@@ -10,7 +10,7 @@ from streamlit.errors import StreamlitSecretNotFoundError
 from core.i18n import AVAILABLE_LANGUAGES, month_label, month_labels, t
 from psycopg.errors import UniqueViolation
 
-from core.db import init_db, upsert_user, save_study, get_study, get_user_by_email, update_user_profile
+from core.db import init_db, upsert_user, save_study, update_study, get_study, get_user_by_email, update_user_profile
 from core.person import normalize_person_name, split_person_name
 from core.auth import hash_password, init_auth_state, is_logged_in, is_admin, logout
 
@@ -225,8 +225,6 @@ def restore_study_from_query_id():
         result_summary = {}
 
     results = result_summary.get("results")
-    if not results:
-        return
 
     selected_devices_raw = row.get("selected_devices_json")
     per_device_config_raw = row.get("per_device_config_json")
@@ -247,13 +245,24 @@ def restore_study_from_query_id():
     st.session_state.selected_simulation_keys = selected_devices
     st.session_state.selected_ids = [item for item in selected_devices if "||" not in str(item)]
     st.session_state.per_device_config = per_device_config
-    st.session_state.results = results
-    st.session_state.overall = row.get("overall_result") or result_summary.get("overall_state")
-    st.session_state.pdf_name = row.get("pdf_name") or "SALA_report.pdf"
-    st.session_state.pdf_bytes = row.get("pdf_bytes")
-    st.session_state.pdf_error = None
-    st.session_state.study_saved_for_current_result = True
+    st.session_state.active_study_id = study_id
     st.session_state.study_point_confirmed = True
+    if results:
+        st.session_state.results = results
+        st.session_state.overall = row.get("overall_result") or result_summary.get("overall_state")
+        st.session_state.pdf_name = row.get("pdf_name") or "SALA_report.pdf"
+        st.session_state.pdf_bytes = row.get("pdf_bytes")
+        st.session_state.pdf_error = None
+        st.session_state.study_saved_for_current_result = True
+    else:
+        st.session_state.results = None
+        st.session_state.overall = None
+        st.session_state.pdf_bytes = None
+        st.session_state.pdf_name = "SALA_report.pdf"
+        st.session_state.pdf_error = None
+        st.session_state.study_saved_for_current_result = False
+        if str(row.get("overall_result") or "").upper() in {"RUNNING", "PENDING"}:
+            st.session_state.run_error = t("ui.simulation_interrupted_recoverable", st.session_state.get("language", "en"))
     refresh_study_ready_from_state()
 
 
@@ -331,6 +340,7 @@ def init_state():
         "simulation_cache_pdf_context": None,
         "energy_design_requested_all": False,
         "energy_design_requested_devices": [],
+        "active_study_id": None,
     }
 
     for k, v in defaults.items():
@@ -673,6 +683,7 @@ def _trigger_simulation():
     st.session_state.pdf_error = None
     st.session_state.energy_design_requested_all = False
     st.session_state.energy_design_requested_devices = []
+    ensure_active_study_record()
     st.rerun()
 
 
@@ -866,6 +877,7 @@ def render_top_action_bar():
                 key="top_start_new_study",
             ):
                 _set_study_query_id(None)
+                st.session_state.active_study_id = None
                 reset_study()
 
         st.markdown(
@@ -875,6 +887,36 @@ def render_top_action_bar():
 
     st.markdown("</div>", unsafe_allow_html=True)
     return action_state
+
+
+def ensure_active_study_record():
+    if st.session_state.get("active_study_id"):
+        return st.session_state.get("active_study_id")
+
+    user_id = st.session_state.get("auth_user_id")
+    if not user_id:
+        return None
+
+    study_id = save_study(
+        user_id=user_id,
+        airport_label=st.session_state.get("airport_label", ""),
+        lat=float(st.session_state.get("lat", 0)),
+        lon=float(st.session_state.get("lon", 0)),
+        required_hours=float(st.session_state.get("required_hours", 0)),
+        operating_profile_mode=st.session_state.get("operating_profile_mode", ""),
+        selected_devices=st.session_state.get("selected_simulation_keys") or st.session_state.get("selected_ids", []),
+        per_device_config=st.session_state.get("per_device_config", {}),
+        overall_result="RUNNING",
+        worst_blackout_days=None,
+        worst_blackout_pct=None,
+        result_summary={"overall_state": "running", "results": None},
+        pdf_name=None,
+        pdf_bytes=None,
+    )
+    if study_id:
+        st.session_state.active_study_id = study_id
+        _set_study_query_id(study_id)
+    return study_id
 
 
 def maybe_save_current_study():
@@ -900,7 +942,9 @@ def maybe_save_current_study():
         "results": results,
     }
 
-    study_id = save_study(
+    active_study_id = st.session_state.get("active_study_id")
+    save_fn = update_study if active_study_id else save_study
+    save_kwargs = dict(
         user_id=user_id,
         airport_label=st.session_state.get("airport_label", ""),
         lat=float(st.session_state.get("lat", 0)),
@@ -916,6 +960,9 @@ def maybe_save_current_study():
         pdf_name=st.session_state.get("pdf_name", "SALA_report.pdf"),
         pdf_bytes=st.session_state.get("pdf_bytes"),
     )
+    if active_study_id:
+        save_kwargs["study_id"] = active_study_id
+    study_id = save_fn(**save_kwargs)
 
     st.session_state.study_saved_for_current_result = True
     if study_id:

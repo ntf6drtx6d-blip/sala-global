@@ -485,6 +485,54 @@ def list_all_users():
         return rows
 
 
+def _save_study_payload(cur, study_id, user_id, airport_label, payload, pdf_name=None, pdf_bytes=None):
+    if study_id is None:
+        cur.execute(
+            """
+            INSERT INTO studies (
+                user_id,
+                study_name,
+                study_data,
+                pdf_name,
+                pdf_bytes,
+                updated_at
+            )
+            VALUES (%s, %s, %s, %s, %s, NOW())
+            RETURNING id
+            """,
+            (
+                user_id,
+                airport_label or "Unnamed study",
+                Jsonb(payload),
+                pdf_name,
+                pdf_bytes,
+            ),
+        )
+    else:
+        cur.execute(
+            """
+            UPDATE studies
+            SET study_name = %s,
+                study_data = %s,
+                pdf_name = %s,
+                pdf_bytes = %s,
+                updated_at = NOW()
+            WHERE id = %s AND user_id = %s
+            RETURNING id
+            """,
+            (
+                airport_label or "Unnamed study",
+                Jsonb(payload),
+                pdf_name,
+                pdf_bytes,
+                study_id,
+                user_id,
+            ),
+        )
+    row = cur.fetchone()
+    return row["id"] if row else None
+
+
 def save_study(
     user_id,
     airport_label,
@@ -516,29 +564,58 @@ def save_study(
     )
 
     with db_cursor() as (_, cur):
-        cur.execute(
-            """
-            INSERT INTO studies (
-                user_id,
-                study_name,
-                study_data,
-                pdf_name,
-                pdf_bytes,
-                updated_at
-            )
-            VALUES (%s, %s, %s, %s, %s, NOW())
-            RETURNING id
-            """,
-            (
-                user_id,
-                airport_label or "Unnamed study",
-                Jsonb(payload),
-                pdf_name,
-                pdf_bytes,
-            ),
+        return _save_study_payload(
+            cur,
+            None,
+            user_id,
+            airport_label,
+            payload,
+            pdf_name=pdf_name,
+            pdf_bytes=pdf_bytes,
         )
-        row = cur.fetchone()
-        return row["id"] if row else None
+
+
+def update_study(
+    study_id,
+    user_id,
+    airport_label,
+    lat,
+    lon,
+    required_hours,
+    operating_profile_mode,
+    selected_devices,
+    per_device_config,
+    overall_result,
+    worst_blackout_days,
+    worst_blackout_pct,
+    result_summary,
+    pdf_name=None,
+    pdf_bytes=None,
+):
+    payload = _study_payload(
+        airport_label=airport_label,
+        lat=lat,
+        lon=lon,
+        required_hours=required_hours,
+        operating_profile_mode=operating_profile_mode,
+        selected_devices=selected_devices,
+        per_device_config=per_device_config,
+        overall_result=overall_result,
+        worst_blackout_days=worst_blackout_days,
+        worst_blackout_pct=worst_blackout_pct,
+        result_summary=result_summary,
+    )
+
+    with db_cursor() as (_, cur):
+        return _save_study_payload(
+            cur,
+            study_id,
+            user_id,
+            airport_label,
+            payload,
+            pdf_name=pdf_name,
+            pdf_bytes=pdf_bytes,
+        )
 
 
 def get_study(study_id, user_id=None):

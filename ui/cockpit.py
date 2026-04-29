@@ -197,6 +197,9 @@ def reset_study():
         "simulation_cache_results": None,
         "simulation_cache_overall": None,
         "simulation_cache_pdf_context": None,
+        "energy_design_requested_all": False,
+        "energy_design_requested_devices": [],
+        "active_study_id": None,
     }
 
     for key in list(st.session_state.keys()):

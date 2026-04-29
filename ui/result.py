@@ -5,9 +5,9 @@ import textwrap
 
 import folium
 import streamlit as st
-from streamlit_folium import st_folium
 
 from core.i18n import month_label, t
+from ui.map_embed import render_folium_map
 from ui.result_helpers import (
     annual_empty_battery_stats,
     count_device_statuses,
@@ -270,12 +270,12 @@ def render_location_map(lat: float, lon: float, airport_name: str):
     results = st.session_state.get("results", {})
     map_height = 460 if len(results) > 1 else 400
 
-    st_folium(
+    render_folium_map(
         fmap,
-        width=None,
         height=map_height,
         returned_objects=[],
         key="result_location_map",
+        interactive=False,
     )
 
 

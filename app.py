@@ -119,33 +119,50 @@ def _parse_auth_token(token: str) -> dict | None:
         return None
 
 
+def _query_param_value(name: str):
+    value = st.query_params.get(name)
+    if isinstance(value, list):
+        return value[0] if value else None
+    return value
+
+
 def _set_auth_query_token(token: str | None):
     qp = st.query_params
-    if token:
-        qp[AUTH_QUERY_PARAM] = token
+    current = _query_param_value(AUTH_QUERY_PARAM)
+    target = str(token) if token else None
+    if current == target:
+        return
+    if target:
+        qp[AUTH_QUERY_PARAM] = target
     else:
         try:
             del qp[AUTH_QUERY_PARAM]
         except Exception:
-            qp[AUTH_QUERY_PARAM] = ""
+            if _query_param_value(AUTH_QUERY_PARAM):
+                qp[AUTH_QUERY_PARAM] = ""
 
 
 def _set_study_query_id(study_id: int | str | None):
     qp = st.query_params
-    if study_id:
-        qp[STUDY_QUERY_PARAM] = str(study_id)
+    current = _query_param_value(STUDY_QUERY_PARAM)
+    target = str(study_id) if study_id else None
+    if current == target:
+        return
+    if target:
+        qp[STUDY_QUERY_PARAM] = target
     else:
         try:
             del qp[STUDY_QUERY_PARAM]
         except Exception:
-            qp[STUDY_QUERY_PARAM] = ""
+            if _query_param_value(STUDY_QUERY_PARAM):
+                qp[STUDY_QUERY_PARAM] = ""
 
 
 def restore_login_from_query_token():
     if is_logged_in():
         return
 
-    token = st.query_params.get(AUTH_QUERY_PARAM)
+    token = _query_param_value(AUTH_QUERY_PARAM)
     if not token:
         return
 
@@ -176,7 +193,7 @@ def persist_login_to_query_token():
     if not is_logged_in():
         return
 
-    current = st.query_params.get(AUTH_QUERY_PARAM)
+    current = _query_param_value(AUTH_QUERY_PARAM)
     payload = _parse_auth_token(current) if current else None
 
     # refresh token if missing, invalid, or belongs to a different user
@@ -203,7 +220,7 @@ def restore_study_from_query_id():
     if not is_logged_in():
         return
 
-    raw_study_id = st.query_params.get(STUDY_QUERY_PARAM)
+    raw_study_id = _query_param_value(STUDY_QUERY_PARAM)
     if not raw_study_id:
         return
 

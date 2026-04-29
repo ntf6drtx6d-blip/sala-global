@@ -1129,11 +1129,12 @@ def render_calculator_app():
 
         results = st.session_state.get("results")
         render_result()
-        render_graph()
         render_energy_design_overview(results)
         render_device_capability_cards(results)
         st.divider()
         render_weather_basis()
+        st.divider()
+        render_graph()
 
 
 init_state()

@@ -10,7 +10,7 @@ from streamlit.errors import StreamlitSecretNotFoundError
 from core.i18n import AVAILABLE_LANGUAGES, month_label, month_labels, t
 from psycopg.errors import UniqueViolation
 
-from core.db import init_db, upsert_user, save_study, get_user_by_email, update_user_profile
+from core.db import init_db, upsert_user, save_study, get_study, get_user_by_email, update_user_profile
 from core.person import normalize_person_name, split_person_name
 from core.auth import hash_password, init_auth_state, is_logged_in, is_admin, logout
 
@@ -41,6 +41,7 @@ LANGUAGE_FLAGS = {
 # This survives Streamlit restarts because it is stored in the browser URL.
 # It is not as strong as HttpOnly cookies, but it works without extra packages.
 AUTH_QUERY_PARAM = "auth"
+STUDY_QUERY_PARAM = "study"
 AUTH_TOKEN_TTL_DAYS = 30
 
 
@@ -128,6 +129,17 @@ def _set_auth_query_token(token: str | None):
             qp[AUTH_QUERY_PARAM] = ""
 
 
+def _set_study_query_id(study_id: int | str | None):
+    qp = st.query_params
+    if study_id:
+        qp[STUDY_QUERY_PARAM] = str(study_id)
+    else:
+        try:
+            del qp[STUDY_QUERY_PARAM]
+        except Exception:
+            qp[STUDY_QUERY_PARAM] = ""
+
+
 def restore_login_from_query_token():
     if is_logged_in():
         return
@@ -179,7 +191,69 @@ def persist_login_to_query_token():
 
 def logout_and_forget():
     _set_auth_query_token(None)
+    _set_study_query_id(None)
     logout()
+
+
+def restore_study_from_query_id():
+    if st.session_state.get("results") is not None:
+        return
+
+    if not is_logged_in():
+        return
+
+    raw_study_id = st.query_params.get(STUDY_QUERY_PARAM)
+    if not raw_study_id:
+        return
+
+    try:
+        study_id = int(str(raw_study_id))
+    except Exception:
+        _set_study_query_id(None)
+        return
+
+    row = get_study(study_id, user_id=st.session_state.get("auth_user_id"))
+    if not row:
+        _set_study_query_id(None)
+        return
+
+    result_summary_raw = row.get("result_summary_json")
+    try:
+        result_summary = json.loads(result_summary_raw) if result_summary_raw else {}
+    except Exception:
+        result_summary = {}
+
+    results = result_summary.get("results")
+    if not results:
+        return
+
+    selected_devices_raw = row.get("selected_devices_json")
+    per_device_config_raw = row.get("per_device_config_json")
+    try:
+        selected_devices = json.loads(selected_devices_raw) if selected_devices_raw else []
+    except Exception:
+        selected_devices = []
+    try:
+        per_device_config = json.loads(per_device_config_raw) if per_device_config_raw else {}
+    except Exception:
+        per_device_config = {}
+
+    st.session_state.airport_label = row.get("airport_label") or ""
+    st.session_state.lat = float(row.get("lat", 0) or 0)
+    st.session_state.lon = float(row.get("lon", 0) or 0)
+    st.session_state.required_hours = float(row.get("required_hours", 0) or 0)
+    st.session_state.operating_profile_mode = row.get("operating_profile_mode") or st.session_state.get("operating_profile_mode")
+    st.session_state.selected_simulation_keys = selected_devices
+    st.session_state.selected_ids = [item for item in selected_devices if "||" not in str(item)]
+    st.session_state.per_device_config = per_device_config
+    st.session_state.results = results
+    st.session_state.overall = row.get("overall_result") or result_summary.get("overall_state")
+    st.session_state.pdf_name = row.get("pdf_name") or "SALA_report.pdf"
+    st.session_state.pdf_bytes = row.get("pdf_bytes")
+    st.session_state.pdf_error = None
+    st.session_state.study_saved_for_current_result = True
+    st.session_state.study_point_confirmed = True
+    refresh_study_ready_from_state()
 
 
 def _format_duration(seconds):
@@ -752,6 +826,7 @@ def render_top_action_bar():
                 use_container_width=True,
                 key="top_start_new_study",
             ):
+                _set_study_query_id(None)
                 reset_study()
 
         st.markdown(
@@ -786,7 +861,7 @@ def maybe_save_current_study():
         "results": results,
     }
 
-    save_study(
+    study_id = save_study(
         user_id=user_id,
         airport_label=st.session_state.get("airport_label", ""),
         lat=float(st.session_state.get("lat", 0)),
@@ -804,6 +879,8 @@ def maybe_save_current_study():
     )
 
     st.session_state.study_saved_for_current_result = True
+    if study_id:
+        _set_study_query_id(study_id)
 
 
 def _extract_energy_flow_payload(results, required_hours, overall, selected_ids):
@@ -1063,6 +1140,7 @@ init_state()
 init_auth_state()
 bootstrap_admin_user()
 restore_login_from_query_token()
+restore_study_from_query_id()
 apply_global_styles()
 
 if not is_logged_in():

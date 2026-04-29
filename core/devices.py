@@ -132,7 +132,7 @@ DEVICES = {
         "manufacturer": "S4GA",
         "system_type": "external_engine",
         "default_power": 5.0,
-        "default_engine": "se_mini",
+        "default_engine": "se_micro",
         "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_max"],
         "supports_intensity_adjustment": False,
         "standby_power_w": None,

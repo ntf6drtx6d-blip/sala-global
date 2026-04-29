@@ -33,11 +33,18 @@ def _device_label(device_id):
     return raw
 
 
-def _device_list_text(selected_ids):
+def _device_list_text(selected_ids=None, results=None):
     ordered = OrderedDict()
-    for item in selected_ids or []:
-        label = _device_label(item)
-        ordered[label] = ordered.get(label, 0) + 1
+    if results:
+        for row in results.values():
+            label = str(row.get("name") or row.get("device_code") or "").strip()
+            if not label:
+                continue
+            ordered[label] = ordered.get(label, 0) + 1
+    else:
+        for item in selected_ids or []:
+            label = _device_label(item)
+            ordered[label] = ordered.get(label, 0) + 1
     if not ordered:
         return "—"
     return ", ".join(f"{count} × {label}" for label, count in ordered.items())
@@ -215,7 +222,7 @@ def make_pdf(
         data["generated_for_organization"] = user_organization
 
     data["operating_profile_mode"] = kwargs.get("operating_profile_mode", "Custom hours per day")
-    data["selected_devices_text"] = _device_list_text(kwargs.get("selected_ids") or [])
+    data["selected_devices_text"] = _device_list_text(kwargs.get("selected_ids") or [], results=results)
 
     report_filename = build_pdf_filename(
         kwargs.get("airport_icao")

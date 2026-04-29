@@ -317,8 +317,10 @@ def _device_metrics(result_row):
     required_hours = _safe_float(st.session_state.get("required_hours"), 0.0)
     blackout_days = device_blackout_days(result_row) or 0
 
-    annual_min = list(result_row.get("soc_monthly_cycle_min") or result_row.get("soc_monthly_preclip_min") or result_row.get("soc_monthly_min") or [])[:12]
-    annual_min = annual_min + [None] * max(0, 12 - len(annual_min))
+    annual_cycle_min = list(result_row.get("soc_monthly_cycle_min") or result_row.get("soc_monthly_preclip_min") or result_row.get("soc_monthly_min") or [])[:12]
+    annual_cycle_min = annual_cycle_min + [None] * max(0, 12 - len(annual_cycle_min))
+    annual_proxy_min = list(result_row.get("soc_monthly_fullness_proxy") or [])[:12]
+    annual_proxy_min = annual_proxy_min + [None] * max(0, 12 - len(annual_proxy_min))
 
     margin_by_month = [float(g) - float(d) for g, d in zip(generated, discharge)]
     if any(float(v) > 0 for v in empty_days):
@@ -328,8 +330,15 @@ def _device_metrics(result_row):
     else:
         weakest_month_idx = 0
 
-    annual_lowest_month_idx = min(range(12), key=lambda i: 999 if annual_min[i] is None else float(annual_min[i])) if annual_min else 0
-    lowest_total_pct = _usable_to_total_pct(result_row, annual_min[annual_lowest_month_idx])
+    annual_total_min = []
+    for i in range(12):
+        cycle_total = _usable_to_total_pct(result_row, annual_cycle_min[i]) if annual_cycle_min[i] is not None else None
+        proxy_total = _usable_to_total_pct(result_row, annual_proxy_min[i]) if annual_proxy_min[i] is not None else None
+        candidates = [v for v in [cycle_total, proxy_total] if v is not None]
+        annual_total_min.append(min(candidates) if candidates else None)
+
+    annual_lowest_month_idx = min(range(12), key=lambda i: 999 if annual_total_min[i] is None else float(annual_total_min[i])) if annual_total_min else 0
+    lowest_total_pct = annual_total_min[annual_lowest_month_idx]
     worst_blackout_risk = max(int(round(float(v))) for v in empty_days) if empty_days else 0
     generated_consumed_close = bool(generated) and max(abs(float(g) - float(d)) for g, d in zip(generated, discharge)) <= 2.0
     return {
@@ -750,25 +759,28 @@ def render_device_capability_cards(results: dict):
                         ],
                     )
                 with right:
+                    solar_rows = (
+                        [
+                            (t("ui.configuration", lang), _solar_configuration_summary(result_row)),
+                            (t("ui.nominal_power", lang), _fmt_wp(result_row.get("total_nominal_wp", result_row.get("pv")))),
+                            (t("ui.single_panel_tilt", lang), f"{_safe_float(result_row.get('tilt', result_row.get('equivalent_panel_tilt', 0))):.0f}°"),
+                            (t("ui.panel_orientation", lang), _panel_orientation_text(result_row)),
+                        ]
+                        if metrics["is_single_panel"]
+                        else [
+                            (t("ui.configuration", lang), _solar_configuration_summary(result_row)),
+                            (t("ui.nominal_power", lang), _fmt_wp(result_row.get("total_nominal_wp", result_row.get("pv")))),
+                            (t("ui.effective_power", lang), _fmt_wp(result_row.get("equivalent_panel_wp", result_row.get("pv")))),
+                            (t("ui.effective_ratio", lang), _fmt_pct(result_row.get("equivalent_pct_of_physical_nominal"))),
+                            (t("ui.equivalent_tilt", lang), f"{_safe_float(result_row.get('equivalent_panel_tilt', result_row.get('tilt', 0))):.0f}°"),
+                            (t("ui.panel_orientation", lang), _panel_orientation_text(result_row, "equivalent_panel_aspect")),
+                        ]
+                    )
+                    if int(result_row.get("quantity", 1) or 1) > 1:
+                        solar_rows.insert(0, (t("ui.quantity", lang), str(int(result_row.get("quantity", 1) or 1))))
                     render_device_basis_card(
                         t("ui.solar", lang),
-                        (
-                            [
-                                (t("ui.configuration", lang), _solar_configuration_summary(result_row)),
-                                (t("ui.nominal_power", lang), _fmt_wp(result_row.get("total_nominal_wp", result_row.get("pv")))),
-                                (t("ui.single_panel_tilt", lang), f"{_safe_float(result_row.get('tilt', result_row.get('equivalent_panel_tilt', 0))):.0f}°"),
-                                (t("ui.panel_orientation", lang), _panel_orientation_text(result_row)),
-                            ]
-                            if metrics["is_single_panel"]
-                            else [
-                                (t("ui.configuration", lang), _solar_configuration_summary(result_row)),
-                                (t("ui.nominal_power", lang), _fmt_wp(result_row.get("total_nominal_wp", result_row.get("pv")))),
-                                (t("ui.effective_power", lang), _fmt_wp(result_row.get("equivalent_panel_wp", result_row.get("pv")))),
-                                (t("ui.effective_ratio", lang), _fmt_pct(result_row.get("equivalent_pct_of_physical_nominal"))),
-                                (t("ui.equivalent_tilt", lang), f"{_safe_float(result_row.get('equivalent_panel_tilt', result_row.get('tilt', 0))):.0f}°"),
-                                (t("ui.panel_orientation", lang), _panel_orientation_text(result_row, "equivalent_panel_aspect")),
-                            ]
-                        ),
+                        solar_rows,
                     )
 
                 render_energy_design_analysis(result_row)

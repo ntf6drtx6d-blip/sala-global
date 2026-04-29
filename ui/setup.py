@@ -1,11 +1,11 @@
 import math
 import streamlit as st
 import folium
-from streamlit_folium import st_folium
 
 from core.catalog import get_runtime_catalog
 from core.geocoding import search_airport
 from core.i18n import t
+from ui.map_embed import render_folium_map
 
 INTENSITY_PRESETS = [3, 10, 30, 60, 100]
 
@@ -607,12 +607,12 @@ def render_setup(disabled=False):
             st.session_state.airport_label or "Selected study point",
         )
 
-        map_data = st_folium(
+        map_data = render_folium_map(
             fmap,
-            width=None,
             height=360,
             returned_objects=["last_clicked"],
             key="study_map_modular",
+            interactive=True,
         )
 
         clicked = map_data.get("last_clicked") if isinstance(map_data, dict) else None
@@ -726,10 +726,12 @@ def render_setup(disabled=False):
                     base_power = _safe_float(dspec.get("default_power", dspec.get("power", dspec.get("default_consumption", 0.0))), 0.0)
 
                 supports_intensity = _supports_intensity_adjustment(did)
-                default_power = float(saved_cfg.get("power", base_power))
+                default_power = float(saved_cfg.get("unit_power", saved_cfg.get("power", base_power)))
                 engine_key = saved_cfg.get("engine_key", dspec.get("default_engine"))
                 battery_mode = saved_cfg.get("battery_mode", "Std")
                 display_label = _simulation_label(did, lamp_variant)
+                quantity = max(1, int(saved_cfg.get("quantity", 1) or 1))
+                quantity_enabled = system_type == "external_engine" and dspec.get("code") == "SP-200"
 
                 if render_device_config_note:
                     st.markdown(
@@ -832,6 +834,18 @@ def render_setup(disabled=False):
                         )
 
                     if system_type == "external_engine":
+                        if quantity_enabled:
+                            quantity = int(
+                                st.number_input(
+                                    t("ui.quantity", lang),
+                                    min_value=1,
+                                    value=int(quantity),
+                                    step=1,
+                                    key=f"quantity_{sim_key}",
+                                    disabled=disabled,
+                                )
+                            )
+                            st.caption(t("ui.quantity_connected_note", lang))
                         compatible = dspec["compatible_engines"]
                         if engine_key not in compatible:
                             engine_key = dspec["default_engine"]
@@ -865,10 +879,11 @@ def render_setup(disabled=False):
                         st.caption(t("ui.built_in_source", lang))
 
                     summary = _engine_summary(did, engine_key, battery_mode)
+                    total_power = float(power) * float(quantity) if system_type == "external_engine" else float(power)
 
                     m1, m2, m3, m4 = st.columns(4)
                     with m1:
-                        st.metric("Power", f"{float(power):.2f} W")
+                        st.metric(t("ui.total_power", lang) if quantity_enabled else "Power", f"{float(total_power):.2f} W")
                     with m2:
                         st.metric(t("ui.solar_panel", lang), f"{summary['pv']} W")
                     with m3:
@@ -892,6 +907,8 @@ def render_setup(disabled=False):
                         "lamp_variant": lamp_variant,
                         "display_label": display_label,
                         "power": float(power),
+                        "unit_power": float(power),
+                        "quantity": int(quantity),
                         "base_power_w": float(base_power),
                         "supports_intensity_adjustment": supports_intensity,
                         "intensity_mode": intensity_mode if supports_intensity else "fixed",

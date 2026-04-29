@@ -93,8 +93,9 @@ def resolve_device_config(device_id, per_device_config=None):
     supports_intensity_adjustment = bool(
         dspec.get("supports_intensity_adjustment", dspec.get("system_type") in {"builtin", "avlite_fixture"})
     )
+    quantity = max(1, int(user_cfg.get("quantity", 1) or 1))
     standby_power_w = float(user_cfg.get("standby_power_w", dspec.get("standby_power_w", 0.0) or 0.0))
-    power = float(user_cfg.get("power", default_power))
+    power = float(user_cfg.get("unit_power", user_cfg.get("power", default_power)))
     base_power_100 = float(user_cfg.get("base_power_w", default_power))
     intensity_mode = str(user_cfg.get("intensity_mode", "fixed"))
     intensity_pct = float(user_cfg.get("intensity_pct", 100.0))
@@ -104,6 +105,8 @@ def resolve_device_config(device_id, per_device_config=None):
     effective_intensity_pct = float(user_cfg.get("effective_intensity_pct", intensity_pct))
     variant_suffix = f" / {_variant_short_label(lamp_variant)}" if lamp_variant else ""
     display_name = user_cfg.get("display_label") or f"{dspec['name']}{variant_suffix}"
+    if quantity > 1:
+        display_name = f"{display_name} × {quantity}"
 
     if dspec["system_type"] == "builtin":
         tilt_options = list(dspec.get("tilt_options") or [])
@@ -123,6 +126,7 @@ def resolve_device_config(device_id, per_device_config=None):
             "power": power,
             "base_power_100": base_power_100,
             "supports_intensity_adjustment": supports_intensity_adjustment,
+            "quantity": quantity,
             "intensity_mode": intensity_mode,
             "intensity_pct": intensity_pct,
             "mixed_share_pct": mixed_share_pct,
@@ -158,9 +162,11 @@ def resolve_device_config(device_id, per_device_config=None):
         "system_type": "external_engine",
         "engine_key": engine_key,
         "engine_name": eng["short_name"],
-        "power": power,
-        "base_power_100": base_power_100,
+        "power": power * quantity,
+        "base_power_100": base_power_100 * quantity,
         "supports_intensity_adjustment": supports_intensity_adjustment,
+        "quantity": quantity,
+        "unit_power": power,
         "intensity_mode": intensity_mode,
         "intensity_pct": intensity_pct,
         "mixed_share_pct": mixed_share_pct,
@@ -327,6 +333,7 @@ def _battery_behavior_metrics(
     required_hrs,
     standby_power_w=0.0,
     monthly_empty_battery_days=None,
+    shs_monthly_rows=None,
     lat=None,
 ):
     """
@@ -352,6 +359,7 @@ def _battery_behavior_metrics(
     monthly_soc_preclip_min = []
     monthly_soc_preclip_median = []
     monthly_soc_cycle_min = []
+    monthly_soc_fullness_proxy = []
     monthly_status = []
 
     reserve = 100.0
@@ -425,6 +433,12 @@ def _battery_behavior_metrics(
         monthly_soc_preclip_min.append(min(reserve_values_month_preclip) if reserve_values_month_preclip else reserve)
         monthly_soc_preclip_median.append(_median(reserve_values_month_preclip) if reserve_values_month_preclip else reserve)
         monthly_soc_cycle_min.append(min(reserve_values_month_cycle) if reserve_values_month_cycle else reserve)
+        month_row = (shs_monthly_rows or [{}] * 12)[mi - 1] if shs_monthly_rows else {}
+        try:
+            full_battery_pct = max(0.0, min(100.0, float(month_row.get("f_f", 0.0) or 0.0)))
+        except Exception:
+            full_battery_pct = 0.0
+        monthly_soc_fullness_proxy.append(full_battery_pct)
 
     weekly_labels = [f"W{i}" for i in range(1, len(_aggregate_weekly(daily_reserve)) + 1)]
     weekly_reserve_pct = _aggregate_weekly(daily_reserve)
@@ -454,6 +468,7 @@ def _battery_behavior_metrics(
         "monthly_soc_preclip_min": monthly_soc_preclip_min,
         "monthly_soc_preclip_median": monthly_soc_preclip_median,
         "monthly_soc_cycle_min": monthly_soc_cycle_min,
+        "monthly_soc_fullness_proxy": monthly_soc_fullness_proxy,
         "monthly_status": monthly_status,
 
         "weekly_labels": weekly_labels,
@@ -778,6 +793,7 @@ def simulate_for_devices(
             required_hrs=required_hrs,
             standby_power_w=resolved.get("standby_power_w", 0.0),
             monthly_empty_battery_days=empty_battery_days_by_month,
+            shs_monthly_rows=shs_monthly_rows,
             lat=lat,
         )
         behavior_seconds = time.time() - behavior_started
@@ -809,6 +825,8 @@ def simulate_for_devices(
             "min_margin": min_margin,
             "fail_months": fail_months,
             "power": resolved["power"],
+            "unit_power": resolved.get("unit_power", resolved["power"]),
+            "quantity": resolved.get("quantity", 1),
             "base_power_100": resolved.get("base_power_100", resolved["power"]),
             "supports_intensity_adjustment": resolved.get("supports_intensity_adjustment", False),
             "intensity_mode": resolved.get("intensity_mode", "fixed"),
@@ -844,6 +862,7 @@ def simulate_for_devices(
             "soc_monthly_preclip_min": behavior["monthly_soc_preclip_min"],
             "soc_monthly_preclip_median": behavior["monthly_soc_preclip_median"],
             "soc_monthly_cycle_min": behavior["monthly_soc_cycle_min"],
+            "soc_monthly_fullness_proxy": behavior["monthly_soc_fullness_proxy"],
             "charge_discharge_status_by_month": behavior["monthly_status"],
             "weekly_labels": behavior["weekly_labels"],
             "weekly_reserve_pct": behavior["weekly_reserve_pct"],

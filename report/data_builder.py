@@ -205,13 +205,21 @@ def _weakest_month_metrics(r: dict) -> tuple[int, float | None, float | None]:
 
     preclip_median = list(r.get("soc_monthly_preclip_median") or r.get("soc_monthly_median") or [])[:12]
     cycle_min = list(r.get("soc_monthly_cycle_min") or r.get("soc_monthly_preclip_min") or r.get("soc_monthly_min") or [])[:12]
+    fullness_proxy = list(r.get("soc_monthly_fullness_proxy") or [])[:12]
     preclip_median = preclip_median + [None] * max(0, 12 - len(preclip_median))
     cycle_min = cycle_min + [None] * max(0, 12 - len(cycle_min))
-    annual_lowest_idx = min(range(12), key=lambda i: 999 if cycle_min[i] is None else float(cycle_min[i])) if cycle_min else weakest_idx
+    fullness_proxy = fullness_proxy + [None] * max(0, 12 - len(fullness_proxy))
+    annual_total_min = []
+    for i in range(12):
+        cycle_total = _usable_to_total_pct(r, cycle_min[i]) if cycle_min[i] is not None else None
+        proxy_total = _usable_to_total_pct(r, fullness_proxy[i]) if fullness_proxy[i] is not None else None
+        candidates = [v for v in [cycle_total, proxy_total] if v is not None]
+        annual_total_min.append(min(candidates) if candidates else None)
+    annual_lowest_idx = min(range(12), key=lambda i: 999 if annual_total_min[i] is None else float(annual_total_min[i])) if annual_total_min else weakest_idx
     return (
         weakest_idx,
         _usable_to_total_pct(r, preclip_median[weakest_idx]),
-        _usable_to_total_pct(r, cycle_min[annual_lowest_idx]),
+        annual_total_min[annual_lowest_idx],
         annual_lowest_idx,
     )
 

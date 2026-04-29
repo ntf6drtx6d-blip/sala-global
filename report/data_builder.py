@@ -46,6 +46,13 @@ def _classify(days: int) -> str:
     return "FAIL"
 
 
+def _classify_result_row(r: dict) -> str:
+    raw = str((r or {}).get("status", "")).upper().strip()
+    if raw in {"PASS", "FAIL", "NEAR THRESHOLD"}:
+        return raw
+    return _classify(_annual_days(r))
+
+
 def _overall_case(pass_count: int, near_count: int, fail_count: int, total: int, language: str = "en") -> tuple[str, str, str]:
     if pass_count == total:
         options = {
@@ -325,7 +332,7 @@ def build_report_data(loc, required_hours, results, overall, user_name, user_org
     for result_key, r in results.items():
         short = _short_name(result_key, r)
         annual_days = _annual_days(r)
-        cls = _classify(annual_days)
+        cls = _classify_result_row(r)
         energy_margin_pct = _net_margin_pct(r)
         reserve_span_pct = _reserve_span_pct(r)
         weakest_month_idx, weakest_floor_total_pct, deepest_drop_total_pct, annual_lowest_month_idx = _weakest_month_metrics(r)

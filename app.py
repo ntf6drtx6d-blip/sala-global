@@ -43,6 +43,7 @@ LANGUAGE_FLAGS = {
 AUTH_QUERY_PARAM = "auth"
 STUDY_QUERY_PARAM = "study"
 AUTH_TOKEN_TTL_DAYS = 30
+RUN_STALL_TIMEOUT_SECONDS = 180
 
 
 def _secret_or_env(name: str, default=None):
@@ -256,17 +257,38 @@ def restore_study_from_query_id():
     refresh_study_ready_from_state()
 
 
-def _format_duration(seconds):
-    if seconds is None:
-        return None
-    total = max(0, int(round(float(seconds))))
-    mins, secs = divmod(total, 60)
-    hrs, mins = divmod(mins, 60)
-    if hrs:
-        return f"{hrs}h {mins:02d}m"
-    if mins:
-        return f"{mins}m {secs:02d}s"
-    return f"{secs}s"
+def _mark_run_failed(message: str):
+    lang = st.session_state.get("language", "en")
+    logs = st.session_state.get("run_log", [])
+    logs.append(f"**{time.strftime('%H:%M:%S')}** — {message}")
+    st.session_state.run_log = logs[-6:]
+    st.session_state.running = False
+    st.session_state.trigger_run = False
+    st.session_state.run_stage = t("ui.failed", lang)
+    st.session_state.run_eta_seconds = None
+    st.session_state.run_last_update_at = time.time()
+    st.session_state.run_error = message
+
+
+def _recover_stalled_run_if_needed():
+    if not st.session_state.get("running"):
+        return
+    if st.session_state.get("results") is not None:
+        return
+    if st.session_state.get("trigger_run"):
+        return
+
+    last_update = st.session_state.get("run_last_update_at") or st.session_state.get("run_started_at")
+    if not last_update:
+        return
+
+    stalled_for = time.time() - float(last_update)
+    if stalled_for < RUN_STALL_TIMEOUT_SECONDS:
+        return
+
+    lang = st.session_state.get("language", "en")
+    message = t("ui.simulation_interrupted", lang, seconds=_format_duration(stalled_for))
+    _mark_run_failed(message)
 
 
 def init_state():
@@ -297,6 +319,8 @@ def init_state():
         "run_started_at": None,
         "run_elapsed_seconds": None,
         "run_eta_seconds": None,
+        "run_last_update_at": None,
+        "run_error": None,
         "trigger_run": False,
         "study_point_confirmed": False,
         "study_ready": False,
@@ -305,6 +329,8 @@ def init_state():
         "simulation_cache_results": None,
         "simulation_cache_overall": None,
         "simulation_cache_pdf_context": None,
+        "energy_design_requested_all": False,
+        "energy_design_requested_devices": [],
     }
 
     for k, v in defaults.items():
@@ -633,15 +659,20 @@ def render_header():
 
 
 def _trigger_simulation():
+    now = time.time()
     st.session_state.running = True
     st.session_state.run_stage = "Connecting to PVGIS"
     st.session_state.run_progress = 0.0
-    st.session_state.run_started_at = time.time()
+    st.session_state.run_started_at = now
     st.session_state.run_elapsed_seconds = 0.0
     st.session_state.run_eta_seconds = None
+    st.session_state.run_last_update_at = now
+    st.session_state.run_error = None
     st.session_state.trigger_run = True
     st.session_state.study_saved_for_current_result = False
     st.session_state.pdf_error = None
+    st.session_state.energy_design_requested_all = False
+    st.session_state.energy_design_requested_devices = []
     st.rerun()
 
 
@@ -653,6 +684,10 @@ def render_top_action_bar():
     ready = bool(st.session_state.get("study_ready", False))
     has_results = st.session_state.get("results") is not None
     is_running = bool(st.session_state.get("running", False))
+    if has_results and is_running:
+        st.session_state.running = False
+        st.session_state.trigger_run = False
+        is_running = False
 
     action_state = {
         "progress_bar": None,
@@ -753,6 +788,10 @@ def render_top_action_bar():
         )
 
     elif not has_results:
+        run_error = st.session_state.get("run_error")
+        if run_error:
+            st.error(run_error)
+
         c1, c2 = st.columns([1.4, 4])
 
         with c1:
@@ -1038,6 +1077,7 @@ def _extract_energy_flow_payload(results, required_hours, overall, selected_ids)
 
 def render_calculator_app():
     lang = st.session_state.get("language", "en")
+    _recover_stalled_run_if_needed()
     if st.session_state.get("running", False):
         with st.expander(t("ui.show_study_setup", lang), expanded=False):
             st.caption(t("ui.inputs_locked", lang))
@@ -1061,6 +1101,7 @@ def render_calculator_app():
             started_at = st.session_state.get("run_started_at")
             if started_at:
                 st.session_state.run_elapsed_seconds = max(0.0, time.time() - float(started_at))
+            st.session_state.run_last_update_at = time.time()
 
             if action_state["progress_bar"] is not None:
                 action_state["progress_bar"].progress(percent)
@@ -1122,19 +1163,44 @@ def render_calculator_app():
                     unsafe_allow_html=True,
                 )
 
-        _run_simulation(progress_callback=progress_callback)
+        try:
+            _run_simulation(progress_callback=progress_callback)
+        except Exception as exc:
+            _mark_run_failed(t("ui.simulation_failed", lang, error=str(exc)))
+            st.rerun()
 
     if st.session_state.get("results") is not None:
+        st.session_state.running = False
+        st.session_state.trigger_run = False
+        st.session_state.run_error = None
         maybe_save_current_study()
 
         results = st.session_state.get("results")
         render_result()
-        render_energy_design_overview(results)
-        render_device_capability_cards(results)
+
+        try:
+            render_energy_design_overview(results)
+        except Exception as exc:
+            st.error(f"Energy Design Analysis render failed: {exc}")
+
+        try:
+            render_device_capability_cards(results)
+        except Exception as exc:
+            st.error(f"Per-device result render failed: {exc}")
+
         st.divider()
-        render_weather_basis()
+
+        try:
+            render_weather_basis()
+        except Exception as exc:
+            st.error(f"Methodology render failed: {exc}")
+
         st.divider()
-        render_graph()
+
+        try:
+            render_graph()
+        except Exception as exc:
+            st.error(f"Annual graph render failed: {exc}")
 
 
 init_state()

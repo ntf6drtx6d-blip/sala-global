@@ -43,6 +43,8 @@ def _init_setup_defaults():
             st.session_state.per_device_config = {}
         if "selected_lamp_types" not in st.session_state:
             st.session_state.selected_lamp_types = {}
+        if "device_search_filter" not in st.session_state:
+            st.session_state.device_search_filter = ""
 
         if "required_hours" not in st.session_state:
             st.session_state.required_hours = 12.0
@@ -551,7 +553,6 @@ def render_setup(disabled=False):
         selected_manufacturers = st.multiselect(
             t("ui.manufacturers_included", lang),
             manufacturer_options,
-            default=st.session_state.get("selected_manufacturers", []),
             key="selected_manufacturers",
             disabled=disabled,
             help=t("ui.manufacturers_included", lang),
@@ -572,7 +573,6 @@ def render_setup(disabled=False):
 
         device_filter_text = st.text_input(
             t("ui.device_search_filter", lang),
-            value=st.session_state.get("device_search_filter", ""),
             key="device_search_filter",
             disabled=disabled,
             placeholder=t("ui.device_search_filter_placeholder", lang),
@@ -592,7 +592,6 @@ def render_setup(disabled=False):
         selected_ids = st.multiselect(
             t("ui.devices_included", lang),
             filtered_device_ids_local,
-            default=st.session_state.get("selected_ids", []),
             key="selected_ids",
             disabled=disabled,
             format_func=_device_label,

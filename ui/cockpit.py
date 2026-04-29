@@ -189,6 +189,8 @@ def reset_study():
         "run_started_at": None,
         "run_elapsed_seconds": None,
         "run_eta_seconds": None,
+        "run_last_update_at": None,
+        "run_error": None,
         "trigger_run": False,
         "study_saved_for_current_result": False,
         "simulation_cache_key": None,
@@ -218,11 +220,14 @@ def _run_simulation(progress_callback=None):
     st.session_state.run_started_at = time.time()
     st.session_state.run_elapsed_seconds = 0.0
     st.session_state.run_eta_seconds = None
+    st.session_state.run_last_update_at = st.session_state.run_started_at
+    st.session_state.run_error = None
 
     def add_log(message):
         logs = st.session_state.get("run_log", [])
         logs.append(f"**{now_ts()}** — {message}")
         st.session_state.run_log = logs[-5:]
+        st.session_state.run_last_update_at = time.time()
 
     def render_stage(percent):
         if percent < 10:
@@ -265,19 +270,42 @@ def _run_simulation(progress_callback=None):
         percent = int(pct * 100)
         st.session_state.run_elapsed_seconds = max(0.0, float(elapsed or 0.0))
         st.session_state.run_eta_seconds = max(0.0, float(eta or 0.0)) if eta is not None else None
+
+        month_parts = str(month_name or '').split('|')
+        month_base = month_parts[0] if month_parts else ''
+        month_phase = month_parts[1] if len(month_parts) > 1 else ''
+        search_step = int(month_parts[2]) if len(month_parts) > 2 and str(month_parts[2]).isdigit() else None
+        search_total = int(month_parts[3]) if len(month_parts) > 3 and str(month_parts[3]).isdigit() else None
+
         stage = render_stage(percent)
+        if month_base:
+            stage = f"{stage} — {device_name} / {month_base}"
+            if month_phase == 'search' and search_step and search_total:
+                stage = f"{stage} ({search_step}/{search_total})"
 
         push_progress(percent, stage)
 
-        if done == 1:
+        if float(done or 0) <= 1.0:
             add_log(t("ui.log_connecting_pvgis", lang))
             add_log(t("ui.log_using_jrc_engine", lang))
 
-        if month_name == "Jan":
-            add_log(t("ui.log_starting_annual_assessment", lang, device_name=device_name))
-        if month_name == "Jun":
+        if month_phase == 'start':
+            add_log({
+                'en': f'Evaluating {month_base} for {device_name}.',
+                'es': f'Evaluando {month_base} para {device_name}.',
+                'fr': f'Évaluation de {month_base} pour {device_name}.',
+            }.get(lang, f'Evaluating {month_base} for {device_name}.'))
+
+        if month_phase == 'search' and search_step in {4, 8, 12, 16} and search_total:
+            add_log({
+                'en': f'Running PVGIS monthly search {month_base} {search_step}/{search_total} for {device_name}.',
+                'es': f'Ejecutando búsqueda mensual PVGIS {month_base} {search_step}/{search_total} para {device_name}.',
+                'fr': f'Recherche mensuelle PVGIS {month_base} {search_step}/{search_total} pour {device_name}.',
+            }.get(lang, f'Running PVGIS monthly search {month_base} {search_step}/{search_total} for {device_name}.'))
+
+        if month_base == "Jun" and month_phase == 'start':
             add_log(t("ui.log_reviewing_midyear", lang, device_name=device_name))
-        if month_name == "Dec":
+        if month_base == "Dec" and month_phase == 'start':
             add_log(t("ui.log_checking_winter", lang, device_name=device_name))
 
     cached_key = st.session_state.get("simulation_cache_key")
@@ -339,4 +367,5 @@ def _run_simulation(progress_callback=None):
     st.session_state.run_progress = 100
     st.session_state.run_elapsed_seconds = elapsed
     st.session_state.run_eta_seconds = 0.0
+    st.session_state.run_last_update_at = time.time()
     st.rerun()

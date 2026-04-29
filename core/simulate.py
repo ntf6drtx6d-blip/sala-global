@@ -555,7 +555,7 @@ def build_pvgis_meta(lat, lon, resolved_cfg, tilt, azim):
     }
 
 
-def max_wh_for_month_fast(lat, lon, pv_wp, batt_wh, tilt, aspect, mi, shs_eval_cache=None, cutoff_pct=30):
+def max_wh_for_month_fast(lat, lon, pv_wp, batt_wh, tilt, aspect, mi, shs_eval_cache=None, cutoff_pct=30, search_progress_callback=None):
     hi_cap = float(min(20000, max(3 * batt_wh, 8 * pv_wp * 24)))
     shs_eval_cache = shs_eval_cache if shs_eval_cache is not None else {}
 
@@ -583,7 +583,7 @@ def max_wh_for_month_fast(lat, lon, pv_wp, batt_wh, tilt, aspect, mi, shs_eval_c
     lo, hi = 0.0, hi_cap
     best = 0.0
 
-    for _ in range(SHS_BINARY_SEARCH_STEPS):
+    for step_index in range(SHS_BINARY_SEARCH_STEPS):
         mid = (lo + hi) / 2.0
         fe = fe_for(mid)
 
@@ -592,6 +592,9 @@ def max_wh_for_month_fast(lat, lon, pv_wp, batt_wh, tilt, aspect, mi, shs_eval_c
             lo = mid
         else:
             hi = mid
+
+        if search_progress_callback is not None:
+            search_progress_callback(step_index + 1, SHS_BINARY_SEARCH_STEPS)
 
     return float(best)
 
@@ -716,6 +719,37 @@ def simulate_for_devices(
 
         search_started = time.time()
         for mi in range(12):
+            if progress_callback:
+                elapsed = time.time() - started_at
+                pct = completed_steps / total_steps if total_steps else 0.0
+                eta = (elapsed / max(completed_steps, 1)) * max(total_steps - completed_steps, 0) if completed_steps else None
+                progress_callback(
+                    completed_steps,
+                    total_steps,
+                    pct,
+                    elapsed,
+                    eta,
+                    resolved["device_name"],
+                    f"{MONTHS[mi]}|start",
+                )
+
+            def month_search_progress(step_index, step_total):
+                if not progress_callback:
+                    return
+                fractional_done = completed_steps + (step_index / max(step_total, 1))
+                elapsed = time.time() - started_at
+                pct = fractional_done / total_steps if total_steps else 0.0
+                eta = (elapsed / max(fractional_done, 0.0001)) * max(total_steps - fractional_done, 0.0)
+                progress_callback(
+                    fractional_done,
+                    total_steps,
+                    pct,
+                    elapsed,
+                    eta,
+                    resolved["device_name"],
+                    f"{MONTHS[mi]}|search|{step_index}|{step_total}",
+                )
+
             best_wh = max_wh_for_month_fast(
                 lat=lat,
                 lon=lon,
@@ -726,6 +760,7 @@ def simulate_for_devices(
                 mi=mi,
                 shs_eval_cache=shs_eval_cache,
                 cutoff_pct=cutoff_pct,
+                search_progress_callback=month_search_progress,
             )
             monthly_energy_wh.append(best_wh)
             active_power = max(float(resolved["power"]), 0.001)

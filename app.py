@@ -266,6 +266,19 @@ def restore_study_from_query_id():
     refresh_study_ready_from_state()
 
 
+def _format_duration(seconds):
+    if seconds is None:
+        return None
+    total = max(0, int(round(float(seconds))))
+    mins, secs = divmod(total, 60)
+    hrs, mins = divmod(mins, 60)
+    if hrs:
+        return f"{hrs}h {mins:02d}m"
+    if mins:
+        return f"{mins}m {secs:02d}s"
+    return f"{secs}s"
+
+
 def _mark_run_failed(message: str):
     lang = st.session_state.get("language", "en")
     logs = st.session_state.get("run_log", [])

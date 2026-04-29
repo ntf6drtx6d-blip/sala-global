@@ -65,6 +65,8 @@ def _init_setup_defaults():
             st.session_state.map_click_info = ""
         if "last_map_click" not in st.session_state:
             st.session_state.last_map_click = None
+        if "map_click_pending_rerender" not in st.session_state:
+            st.session_state.map_click_pending_rerender = False
         if "last_airport_query" not in st.session_state:
             st.session_state.last_airport_query = ""
         if "airport_country" not in st.session_state:
@@ -585,15 +587,15 @@ def render_setup(disabled=False):
             did for did in filtered_device_ids
             if not device_filter_norm or device_filter_norm in _device_label(did).lower()
         ]
-        valid_filtered_ids = set(filtered_device_ids_local)
-        st.session_state.selected_ids = [
-            did for did in st.session_state.get("selected_ids", [])
-            if did in valid_filtered_ids
-        ]
+        current_selected_ids = st.session_state.get("selected_ids", [])
+        options_for_multiselect = sorted(
+            set(filtered_device_ids_local) | set(current_selected_ids),
+            key=lambda did: _device_label(did),
+        )
 
         selected_ids = st.multiselect(
             t("ui.devices_included", lang),
-            filtered_device_ids_local,
+            options_for_multiselect,
             key="selected_ids",
             disabled=disabled,
             format_func=_device_label,
@@ -629,6 +631,7 @@ def render_setup(disabled=False):
                 st.session_state.study_point_confirmed = True
                 st.session_state.map_click_info = t("ui.point_selected", lang, lat=clicked_lat, lon=clicked_lon)
                 st.session_state.search_message = ""
+                st.session_state.map_click_pending_rerender = True
                 if st.session_state.get("operating_profile_mode") == "Dusk to dawn":
                     _apply_operating_profile()
                 _refresh_study_ready()
@@ -642,6 +645,10 @@ def render_setup(disabled=False):
             )
         else:
             st.caption(t("ui.select_airport_or_click", lang))
+
+        if st.session_state.get("map_click_pending_rerender"):
+            st.session_state.map_click_pending_rerender = False
+            st.rerun()
 
 
     st.markdown(f"### 5. {t('ui.configure_devices', lang)}")

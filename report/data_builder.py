@@ -208,7 +208,14 @@ def _weakest_month_metrics(r: dict) -> tuple[int, float | None, float | None]:
 
     weakest_idx = 0
     if any(float(v) > 0 for v in empty_days):
-        weakest_idx = max(range(12), key=lambda i: float(empty_days[i]))
+        max_days = max(float(v) for v in empty_days)
+        candidates = [i for i in range(12) if float(empty_days[i]) == max_days]
+        if hours and any(float(v) > 0 for v in hours):
+            weakest_idx = min(candidates, key=lambda i: float(hours[i]))
+        elif margins:
+            weakest_idx = min(candidates, key=lambda i: margins[i])
+        else:
+            weakest_idx = candidates[0]
     elif hours and any(float(v) > 0 for v in hours):
         weakest_idx = min(range(12), key=lambda i: float(hours[i]))
     elif margins:

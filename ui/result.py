@@ -114,7 +114,14 @@ def _worst_device_month(results: dict, device_name: str) -> str | None:
     values = list(row.get("empty_battery_days_by_month") or [])[:12]
     values = values + [0] * max(0, 12 - len(values))
     if values and max(float(v) for v in values) > 0:
-        idx = max(range(12), key=lambda i: float(values[i]))
+        max_days = max(float(v) for v in values)
+        candidates = [i for i in range(12) if float(values[i]) == max_days]
+        hours = list(row.get("hours") or [])[:12]
+        hours = hours + [0.0] * max(0, 12 - len(hours))
+        if hours and any(float(v) > 0 for v in hours):
+            idx = min(candidates, key=lambda i: float(hours[i]))
+        else:
+            idx = candidates[0]
         return month_label(MONTHS[idx], lang)
     hours = list(row.get("hours") or [])[:12]
     hours = hours + [0.0] * max(0, 12 - len(hours))

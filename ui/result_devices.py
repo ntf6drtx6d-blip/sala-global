@@ -117,16 +117,6 @@ def _fmt_pct(val):
         return "N/A"
 
 
-def _annual_lowest_battery_state_label(result_row, total_pct):
-    base = _fmt_pct(total_pct)
-    if total_pct is None:
-        return base
-    cutoff = _safe_float(result_row.get("cutoff_pct"), 0.0)
-    if abs(float(total_pct) - cutoff) < 0.05:
-        return f"{base} (cut-off level)"
-    return base
-
-
 def _intensity_summary(result_row):
     lang = st.session_state.get("language", "en")
     return format_intensity_summary(
@@ -769,7 +759,7 @@ def render_device_capability_cards(results: dict):
             with st.container(border=True):
                 _device_header(label, result_row)
 
-                cols = st.columns(4)
+                cols = st.columns(3)
                 cards = [
                     (
                         t("ui.required_daily_operation", lang),
@@ -782,12 +772,6 @@ def render_device_capability_cards(results: dict):
                         f"{metrics['blackout_days_year']} {t('ui.days_per_year_unit', lang)}",
                         t("ui.annual_days_full_depletion", lang),
                         _risk_status_from_days(metrics["blackout_days_year"]),
-                    ),
-                    (
-                        t("ui.lowest_battery_state", lang),
-                        _annual_lowest_battery_state_label(result_row, metrics["lowest_battery_state_pct"]),
-                        t("ui.lowest_level_reached", lang, month=month_label(MONTHS[metrics["annual_lowest_month_idx"]], lang)),
-                        _risk_status_from_total_pct(result_row, metrics["lowest_battery_state_pct"]),
                     ),
                     (
                         t("ui.annual_result", lang),

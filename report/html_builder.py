@@ -76,18 +76,6 @@ def _border_status_from_result(result: str) -> str:
     return "danger"
 
 
-def _border_status_from_battery(device: dict, total_pct: float | None) -> str:
-    if total_pct is None:
-        return "neutral"
-    cutoff = float(device.get("cutoff_pct", 0) or 0)
-    gap = float(total_pct) - cutoff
-    if gap >= 25:
-        return "success"
-    if gap >= 10:
-        return "warning"
-    return "danger"
-
-
 def _device_interpretation(device: dict, report_i18n: dict[str, str]) -> str:
     if str(device.get("result_class", "FAIL")).upper() == "PASS":
         return {
@@ -109,11 +97,6 @@ def _device_interpretation(device: dict, report_i18n: dict[str, str]) -> str:
 
 
 def _device_kpis(device: dict, report_i18n: dict[str, str]) -> list[dict]:
-    lowest_battery_pct = device.get("lowest_battery_state_pct")
-    cutoff_pct = float(device.get("cutoff_pct", 0) or 0)
-    battery_value = _fmt_pct(lowest_battery_pct)
-    if lowest_battery_pct is not None and abs(float(lowest_battery_pct) - cutoff_pct) < 0.05:
-        battery_value = f"{battery_value} (cut-off level)"
     return [
         {
             "title": report_i18n["ui.required_daily_operation"],
@@ -126,12 +109,6 @@ def _device_kpis(device: dict, report_i18n: dict[str, str]) -> list[dict]:
             "value": f"{int(device.get('worst_blackout_risk', 0) or 0)} {report_i18n['ui.days_per_year_unit']}",
             "helper": report_i18n["ui.annual_days_full_depletion"],
             "status": _border_status_from_days(int(device.get("worst_blackout_risk", 0) or 0)),
-        },
-        {
-            "title": report_i18n["ui.lowest_battery_state"],
-            "value": battery_value,
-            "helper": report_i18n["ui.lowest_level_reached"].format(month=device.get("annual_lowest_month_label", device.get("weakest_month_label", "the weakest month"))),
-            "status": _border_status_from_battery(device, device.get("lowest_battery_state_pct")),
         },
         {
             "title": report_i18n["ui.annual_result"],

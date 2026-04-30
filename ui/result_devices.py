@@ -314,6 +314,8 @@ def _panel_count(result_row):
 
 def _device_metrics(result_row):
     generated, discharge, empty_days = _monthly_graph_data(result_row)
+    hours = list(result_row.get("hours") or [])[:12]
+    hours = hours + [0.0] * max(0, 12 - len(hours))
     required_hours = _safe_float(st.session_state.get("required_hours"), 0.0)
     blackout_days = device_blackout_days(result_row) or 0
 
@@ -325,6 +327,8 @@ def _device_metrics(result_row):
     margin_by_month = [float(g) - float(d) for g, d in zip(generated, discharge)]
     if any(float(v) > 0 for v in empty_days):
         weakest_month_idx = max(range(12), key=lambda i: float(empty_days[i]))
+    elif hours and any(float(v) > 0 for v in hours):
+        weakest_month_idx = min(range(12), key=lambda i: float(hours[i]))
     elif margin_by_month:
         weakest_month_idx = min(range(12), key=lambda i: margin_by_month[i])
     else:
@@ -337,7 +341,13 @@ def _device_metrics(result_row):
         candidates = [v for v in [cycle_total, proxy_total] if v is not None]
         annual_total_min.append(min(candidates) if candidates else None)
 
-    annual_lowest_month_idx = min(range(12), key=lambda i: 999 if annual_total_min[i] is None else float(annual_total_min[i])) if annual_total_min else 0
+    if any(float(v) > 0 for v in empty_days):
+        annual_lowest_month_idx = min(
+            range(12),
+            key=lambda i: 999 if annual_total_min[i] is None else float(annual_total_min[i]),
+        ) if annual_total_min else 0
+    else:
+        annual_lowest_month_idx = weakest_month_idx
     lowest_total_pct = annual_total_min[annual_lowest_month_idx]
     worst_blackout_risk = max(int(round(float(v))) for v in empty_days) if empty_days else 0
     generated_consumed_close = bool(generated) and max(abs(float(g) - float(d)) for g, d in zip(generated, discharge)) <= 2.0

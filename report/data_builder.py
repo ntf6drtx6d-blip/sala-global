@@ -199,6 +199,8 @@ def _intensity_summary(r: dict, language: str = "en") -> str:
 def _weakest_month_metrics(r: dict) -> tuple[int, float | None, float | None]:
     generated = list(r.get("charge_day_pct_by_month") or [])[:12]
     generated = generated + [0.0] * max(0, 12 - len(generated))
+    hours = list(r.get("hours") or [])[:12]
+    hours = hours + [0.0] * max(0, 12 - len(hours))
     discharge = [float(r.get("discharge_pct_per_day", 0) or 0)] * 12
     empty_days = list(r.get("empty_battery_days_by_month") or [])[:12]
     empty_days = empty_days + [0] * max(0, 12 - len(empty_days))
@@ -207,6 +209,8 @@ def _weakest_month_metrics(r: dict) -> tuple[int, float | None, float | None]:
     weakest_idx = 0
     if any(float(v) > 0 for v in empty_days):
         weakest_idx = max(range(12), key=lambda i: float(empty_days[i]))
+    elif hours and any(float(v) > 0 for v in hours):
+        weakest_idx = min(range(12), key=lambda i: float(hours[i]))
     elif margins:
         weakest_idx = min(range(12), key=lambda i: margins[i])
 
@@ -222,7 +226,15 @@ def _weakest_month_metrics(r: dict) -> tuple[int, float | None, float | None]:
         proxy_total = _usable_to_total_pct(r, fullness_proxy[i]) if fullness_proxy[i] is not None else None
         candidates = [v for v in [cycle_total, proxy_total] if v is not None]
         annual_total_min.append(min(candidates) if candidates else None)
-    annual_lowest_idx = min(range(12), key=lambda i: 999 if annual_total_min[i] is None else float(annual_total_min[i])) if annual_total_min else weakest_idx
+    if any(float(v) > 0 for v in empty_days):
+        annual_lowest_idx = min(
+            range(12),
+            key=lambda i: 999 if annual_total_min[i] is None else float(annual_total_min[i]),
+        ) if annual_total_min else weakest_idx
+    else:
+        # For zero-blackout studies, use the actual weakest operating month rather than
+        # the explanatory reserve walk, which starts in January at 100% and can bias the label.
+        annual_lowest_idx = weakest_idx
     return (
         weakest_idx,
         _usable_to_total_pct(r, preclip_median[weakest_idx]),

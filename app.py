@@ -264,15 +264,31 @@ def restore_study_from_query_id():
     st.session_state.active_study_id = study_id
     st.session_state.study_point_confirmed = True
     if results:
-        st.session_state.results = results
-        st.session_state.overall = row.get("overall_result") or result_summary.get("overall_state")
-        st.session_state.pdf_name = row.get("pdf_name") or "SALA_report.pdf"
-        st.session_state.pdf_bytes = row.get("pdf_bytes")
-        st.session_state.pdf_error = None
-        st.session_state.study_saved_for_current_result = True
+        overall_value = row.get("overall_result") or result_summary.get("overall_state")
+        if str(overall_value or "").upper() in {"RUNNING", "PENDING"}:
+            st.session_state.results = None
+            st.session_state.overall = None
+            st.session_state.partial_results = results
+            st.session_state.partial_overall = overall_value
+            st.session_state.pdf_name = "SALA_report.pdf"
+            st.session_state.pdf_bytes = None
+            st.session_state.pdf_error = None
+            st.session_state.study_saved_for_current_result = False
+            st.session_state.run_error = t("ui.simulation_interrupted_recoverable", st.session_state.get("language", "en"))
+        else:
+            st.session_state.results = results
+            st.session_state.overall = overall_value
+            st.session_state.partial_results = None
+            st.session_state.partial_overall = None
+            st.session_state.pdf_name = row.get("pdf_name") or "SALA_report.pdf"
+            st.session_state.pdf_bytes = row.get("pdf_bytes")
+            st.session_state.pdf_error = None
+            st.session_state.study_saved_for_current_result = True
     else:
         st.session_state.results = None
         st.session_state.overall = None
+        st.session_state.partial_results = None
+        st.session_state.partial_overall = None
         st.session_state.pdf_bytes = None
         st.session_state.pdf_name = "SALA_report.pdf"
         st.session_state.pdf_error = None
@@ -370,6 +386,8 @@ def init_state():
         "energy_design_requested_all": False,
         "energy_design_requested_devices": [],
         "active_study_id": None,
+        "partial_results": None,
+        "partial_overall": None,
     }
 
     for k, v in defaults.items():
@@ -950,6 +968,36 @@ def ensure_active_study_record():
         st.session_state.active_study_id = study_id
         _set_study_query_id(study_id)
     return study_id
+
+
+def save_running_checkpoint(partial_results=None):
+    active_study_id = st.session_state.get("active_study_id")
+    user_id = st.session_state.get("auth_user_id")
+    if not active_study_id or not user_id:
+        return None
+
+    result_summary = {
+        "overall_state": "running",
+        "results": partial_results if partial_results is not None else st.session_state.get("partial_results"),
+    }
+
+    return update_study(
+        study_id=active_study_id,
+        user_id=user_id,
+        airport_label=st.session_state.get("airport_label", ""),
+        lat=float(st.session_state.get("lat", 0)),
+        lon=float(st.session_state.get("lon", 0)),
+        required_hours=float(st.session_state.get("required_hours", 0)),
+        operating_profile_mode=st.session_state.get("operating_profile_mode", ""),
+        selected_devices=st.session_state.get("selected_simulation_keys") or st.session_state.get("selected_ids", []),
+        per_device_config=st.session_state.get("per_device_config", {}),
+        overall_result="RUNNING",
+        worst_blackout_days=None,
+        worst_blackout_pct=None,
+        result_summary=result_summary,
+        pdf_name=None,
+        pdf_bytes=None,
+    )
 
 
 def maybe_save_current_study():

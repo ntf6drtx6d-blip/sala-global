@@ -645,6 +645,8 @@ def simulate_for_devices(
     az_override=None,
     progress_callback=None,
     profiling=None,
+    existing_results=None,
+    device_done_callback=None,
 ):
     per_device_config = per_device_config or {}
     DEVICES, _ = get_runtime_catalog()
@@ -657,7 +659,8 @@ def simulate_for_devices(
     if slope is None:
         slope = lat_based_tilt(lat)
 
-    results = {}
+    existing_results = dict(existing_results or {})
+    results = dict(existing_results)
     az_for_tilt = {}
 
     work_items = []
@@ -674,14 +677,21 @@ def simulate_for_devices(
             resolved = resolve_device_config(did, per_device_config)
             work_items.append(("standard", did, resolved))
 
+    remaining_items = []
+    for source_type, did, resolved in work_items:
+        if resolved["device_name"] in results:
+            continue
+        remaining_items.append((source_type, did, resolved))
+
     total_steps = max(1, len(work_items) * 12)
-    completed_steps = 0
+    completed_steps = max(0, len(results) * 12)
     started_at = time.time()
     if profiling is not None:
         profiling.clear()
         profiling.update({
             "started_at": started_at,
             "devices_total": len(work_items),
+            "devices_resumed": len(results),
             "device_breakdown": [],
             "monthly_search_total_seconds": 0.0,
             "blackout_stats_total_seconds": 0.0,
@@ -689,7 +699,7 @@ def simulate_for_devices(
             "behavior_total_seconds": 0.0,
         })
 
-    for source_type, did, resolved in work_items:
+    for source_type, did, resolved in remaining_items:
         device_profile = {
             "device_name": resolved["device_name"],
             "source_type": source_type,
@@ -925,6 +935,8 @@ def simulate_for_devices(
             if k in resolved:
                 row[k] = resolved[k]
         results[result_key] = row
+        if device_done_callback:
+            device_done_callback(dict(results), result_key)
         if profiling is not None:
             profiling["device_breakdown"].append(device_profile)
 

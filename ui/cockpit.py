@@ -200,6 +200,8 @@ def reset_study():
         "energy_design_requested_all": False,
         "energy_design_requested_devices": [],
         "active_study_id": None,
+        "partial_results": None,
+        "partial_overall": None,
     }
 
     for key in list(st.session_state.keys()):
@@ -214,8 +216,11 @@ def reset_study():
 
 
 def _run_simulation(progress_callback=None):
+    from app import save_running_checkpoint
+
     lang = st.session_state.get("language", "en")
     signature = _simulation_signature(lang)
+    resumed_results = dict(st.session_state.get("partial_results") or {})
     st.session_state.running = True
     st.session_state.run_stage = t("ui.preparing_simulation", lang)
     st.session_state.run_progress = 0
@@ -252,6 +257,16 @@ def _run_simulation(progress_callback=None):
         st.session_state.run_stage = stage
         if progress_callback:
             progress_callback(percent, stage)
+
+    def checkpoint_results(partial_rows, result_key):
+        st.session_state.partial_results = dict(partial_rows)
+        st.session_state.partial_overall = "RUNNING"
+        save_running_checkpoint(st.session_state.partial_results)
+        add_log({
+            "en": f"Checkpoint saved after {result_key}.",
+            "es": f"Punto de control guardado tras {result_key}.",
+            "fr": f"Point de reprise enregistre apres {result_key}.",
+        }.get(lang, f"Checkpoint saved after {result_key}."))
 
     add_log(t("ui.log_checking_airport_inputs", lang))
     push_progress(5, t("ui.stage_validating_inputs", lang))
@@ -319,6 +334,8 @@ def _run_simulation(progress_callback=None):
     if reused_simulation:
         results = cached_results
         overall = cached_overall
+        st.session_state.partial_results = None
+        st.session_state.partial_overall = None
         elapsed = 0.0
         st.session_state.run_elapsed_seconds = 0.0
         st.session_state.run_eta_seconds = 0.0
@@ -326,6 +343,8 @@ def _run_simulation(progress_callback=None):
         push_progress(88, t("ui.stage_calculating_feasibility", lang))
     else:
         simulation_profile = {}
+        if resumed_results:
+            add_log(t("ui.simulation_resuming_from_checkpoint", lang, count=len(resumed_results)))
         results, overall, worst_name, worst_gap, slope = simulate_for_devices(
             loc=loc,
             required_hrs=st.session_state.required_hours,
@@ -334,7 +353,11 @@ def _run_simulation(progress_callback=None):
             az_override=None,
             progress_callback=simulation_progress,
             profiling=simulation_profile,
+            existing_results=resumed_results,
+            device_done_callback=checkpoint_results,
         )
+        st.session_state.partial_results = None
+        st.session_state.partial_overall = None
         elapsed = time.time() - started
         st.session_state.simulation_cache_key = signature
         st.session_state.simulation_cache_results = results
@@ -363,6 +386,8 @@ def _run_simulation(progress_callback=None):
     st.session_state.pdf_bytes = pdf_bytes
     st.session_state.pdf_name = pdf_name or "SALA_report.pdf"
     st.session_state.pdf_error = pdf_error
+    st.session_state.partial_results = None
+    st.session_state.partial_overall = None
     st.session_state.elapsed = elapsed
     st.session_state.running = False
     st.session_state.trigger_run = False

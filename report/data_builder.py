@@ -210,16 +210,29 @@ def _weakest_month_metrics(r: dict) -> tuple[int, float | None, float | None]:
     if any(float(v) > 0 for v in empty_days):
         max_days = max(float(v) for v in empty_days)
         candidates = [i for i in range(12) if float(empty_days[i]) == max_days]
-        if hours and any(float(v) > 0 for v in hours):
-            weakest_idx = min(candidates, key=lambda i: float(hours[i]))
-        elif margins:
-            weakest_idx = min(candidates, key=lambda i: margins[i])
-        else:
-            weakest_idx = candidates[0]
+        weakest_idx = min(
+            candidates,
+            key=lambda i: (
+                float(generated[i]),
+                float(hours[i]) if hours else float("inf"),
+                float(margins[i]) if margins else float("inf"),
+                i,
+            ),
+        )
+    elif generated and any(float(v) > 0 for v in generated):
+        weakest_idx = min(
+            range(12),
+            key=lambda i: (
+                float(generated[i]),
+                float(hours[i]) if hours else float("inf"),
+                float(margins[i]) if margins else float("inf"),
+                i,
+            ),
+        )
     elif hours and any(float(v) > 0 for v in hours):
-        weakest_idx = min(range(12), key=lambda i: float(hours[i]))
+        weakest_idx = min(range(12), key=lambda i: (float(hours[i]), i))
     elif margins:
-        weakest_idx = min(range(12), key=lambda i: margins[i])
+        weakest_idx = min(range(12), key=lambda i: (margins[i], i))
 
     preclip_median = list(r.get("soc_monthly_preclip_median") or r.get("soc_monthly_median") or [])[:12]
     cycle_min = list(r.get("soc_monthly_cycle_min") or r.get("soc_monthly_preclip_min") or r.get("soc_monthly_min") or [])[:12]

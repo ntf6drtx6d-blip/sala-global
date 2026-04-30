@@ -113,21 +113,40 @@ def _worst_device_month(results: dict, device_name: str) -> str | None:
     lang = st.session_state.get("language", "en")
     values = list(row.get("empty_battery_days_by_month") or [])[:12]
     values = values + [0] * max(0, 12 - len(values))
+    generated = list(row.get("charge_day_pct_by_month") or [])[:12]
+    generated = generated + [0.0] * max(0, 12 - len(generated))
+    hours = list(row.get("hours") or [])[:12]
+    hours = hours + [0.0] * max(0, 12 - len(hours))
+
     if values and max(float(v) for v in values) > 0:
         max_days = max(float(v) for v in values)
         candidates = [i for i in range(12) if float(values[i]) == max_days]
-        hours = list(row.get("hours") or [])[:12]
-        hours = hours + [0.0] * max(0, 12 - len(hours))
-        if hours and any(float(v) > 0 for v in hours):
-            idx = min(candidates, key=lambda i: float(hours[i]))
-        else:
-            idx = candidates[0]
+        idx = min(
+            candidates,
+            key=lambda i: (
+                float(generated[i]),
+                float(hours[i]) if hours else float("inf"),
+                i,
+            ),
+        )
         return month_label(MONTHS[idx], lang)
-    hours = list(row.get("hours") or [])[:12]
-    hours = hours + [0.0] * max(0, 12 - len(hours))
-    if not hours or not any(float(v) > 0 for v in hours):
+
+    if not generated or not any(float(v) > 0 for v in generated):
+        if not hours or not any(float(v) > 0 for v in hours):
+            return None
+        idx = min(range(12), key=lambda i: (float(hours[i]), i))
+        return month_label(MONTHS[idx], lang)
+
+    idx = min(
+        range(12),
+        key=lambda i: (
+            float(generated[i]),
+            float(hours[i]) if hours else float("inf"),
+            i,
+        ),
+    )
+    if not hours and not generated:
         return None
-    idx = min(range(12), key=lambda i: float(hours[i]))
     return month_label(MONTHS[idx], lang)
 
 

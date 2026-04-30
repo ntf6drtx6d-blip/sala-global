@@ -241,6 +241,7 @@ def restore_study_from_query_id():
         result_summary = {}
 
     results = result_summary.get("results")
+    simulation_job = result_summary.get("simulation_job") or None
 
     selected_devices_raw = row.get("selected_devices_json")
     per_device_config_raw = row.get("per_device_config_json")
@@ -263,6 +264,7 @@ def restore_study_from_query_id():
     st.session_state.per_device_config = per_device_config
     st.session_state.active_study_id = study_id
     st.session_state.study_point_confirmed = True
+    st.session_state.active_simulation_job = simulation_job
     if results:
         overall_value = row.get("overall_result") or result_summary.get("overall_state")
         if str(overall_value or "").upper() in {"RUNNING", "PENDING"}:
@@ -275,6 +277,8 @@ def restore_study_from_query_id():
             st.session_state.pdf_error = None
             st.session_state.study_saved_for_current_result = False
             st.session_state.run_error = t("ui.simulation_interrupted_recoverable", st.session_state.get("language", "en"))
+            st.session_state.simulation_resume_required = True
+            st.session_state.simulation_auto_continue = False
         else:
             st.session_state.results = results
             st.session_state.overall = overall_value
@@ -284,6 +288,9 @@ def restore_study_from_query_id():
             st.session_state.pdf_bytes = row.get("pdf_bytes")
             st.session_state.pdf_error = None
             st.session_state.study_saved_for_current_result = True
+            st.session_state.active_simulation_job = None
+            st.session_state.simulation_resume_required = False
+            st.session_state.simulation_auto_continue = False
     else:
         st.session_state.results = None
         st.session_state.overall = None
@@ -295,6 +302,12 @@ def restore_study_from_query_id():
         st.session_state.study_saved_for_current_result = False
         if str(row.get("overall_result") or "").upper() in {"RUNNING", "PENDING"}:
             st.session_state.run_error = t("ui.simulation_interrupted_recoverable", st.session_state.get("language", "en"))
+            st.session_state.simulation_resume_required = True
+            st.session_state.simulation_auto_continue = False
+        else:
+            st.session_state.active_simulation_job = None
+            st.session_state.simulation_resume_required = False
+            st.session_state.simulation_auto_continue = False
     refresh_study_ready_from_state()
 
 
@@ -322,6 +335,9 @@ def _mark_run_failed(message: str):
     st.session_state.run_eta_seconds = None
     st.session_state.run_last_update_at = time.time()
     st.session_state.run_error = message
+    if st.session_state.get("active_simulation_job"):
+        st.session_state.simulation_resume_required = True
+        st.session_state.simulation_auto_continue = False
 
 
 def _recover_stalled_run_if_needed():
@@ -388,6 +404,9 @@ def init_state():
         "active_study_id": None,
         "partial_results": None,
         "partial_overall": None,
+        "active_simulation_job": None,
+        "simulation_resume_required": False,
+        "simulation_auto_continue": False,
     }
 
     for k, v in defaults.items():
@@ -734,7 +753,46 @@ def _trigger_simulation():
     st.session_state.pdf_error = None
     st.session_state.energy_design_requested_all = False
     st.session_state.energy_design_requested_devices = []
+    st.session_state.partial_results = {}
+    st.session_state.partial_overall = "RUNNING"
+    selected_devices = list(st.session_state.get("selected_simulation_keys") or st.session_state.get("selected_ids", []))
+    st.session_state.active_simulation_job = {
+        "status": "RUNNING",
+        "selected_devices": selected_devices,
+        "current_device_index": 0,
+        "total_devices": len(selected_devices),
+        "completed_device_keys": [],
+    }
+    st.session_state.simulation_resume_required = False
+    st.session_state.simulation_auto_continue = True
+    st.session_state.simulation_cache_key = None
+    st.session_state.simulation_cache_results = None
+    st.session_state.simulation_cache_overall = None
+    st.session_state.simulation_cache_pdf_context = None
     ensure_active_study_record()
+    save_running_checkpoint({}, st.session_state.active_simulation_job)
+    st.rerun()
+
+
+def _resume_simulation_job():
+    if not st.session_state.get("active_simulation_job"):
+        return
+    now = time.time()
+    st.session_state.results = None
+    st.session_state.overall = None
+    st.session_state.pdf_bytes = None
+    st.session_state.pdf_name = "SALA_report.pdf"
+    st.session_state.running = True
+    st.session_state.run_stage = t("ui.preparing_simulation", st.session_state.get("language", "en"))
+    st.session_state.run_progress = 0.0
+    st.session_state.run_started_at = now
+    st.session_state.run_elapsed_seconds = 0.0
+    st.session_state.run_eta_seconds = None
+    st.session_state.run_last_update_at = now
+    st.session_state.run_error = None
+    st.session_state.trigger_run = True
+    st.session_state.simulation_resume_required = False
+    st.session_state.simulation_auto_continue = True
     st.rerun()
 
 
@@ -746,6 +804,8 @@ def render_top_action_bar():
     ready = bool(st.session_state.get("study_ready", False))
     has_results = st.session_state.get("results") is not None
     is_running = bool(st.session_state.get("running", False))
+    active_job = st.session_state.get("active_simulation_job") or {}
+    resume_required = bool(st.session_state.get("simulation_resume_required", False) and active_job)
     if has_results and is_running and not st.session_state.get("trigger_run"):
         st.session_state.running = False
         st.session_state.trigger_run = False
@@ -790,6 +850,25 @@ def render_top_action_bar():
             f"<div class='secondary-note'><b>{t('ui.current_step', lang)}</b> {stage}</div>",
             unsafe_allow_html=True,
         )
+        if active_job:
+            current_index = int(active_job.get("current_device_index", 0))
+            total_devices = max(1, int(active_job.get("total_devices", 0) or len(active_job.get("selected_devices", [])) or 1))
+            completed_devices = list(active_job.get("completed_device_keys", []))
+            selected_devices = list(active_job.get("selected_devices", []))
+            current_device_name = (
+                str(selected_devices[current_index])
+                if 0 <= current_index < len(selected_devices)
+                else t("ui.finalizing_results", lang)
+            )
+            action_state["stage_text"].markdown(
+                f"""
+                <div class='secondary-note'><b>{t('ui.current_step', lang)}</b> {stage}</div>
+                <div class='secondary-note' style='margin-top:4px;'><b>{t('ui.processing_device_progress', lang, current=min(current_index + 1, total_devices), total=total_devices)}</b></div>
+                <div class='secondary-note' style='margin-top:4px;'>{t('ui.current_device_name', lang, name=current_device_name)}</div>
+                <div class='secondary-note' style='margin-top:4px;'>{t('ui.completed_devices_list', lang, names=', '.join(completed_devices) if completed_devices else t('ui.none', lang))}</div>
+                """,
+                unsafe_allow_html=True,
+            )
         elapsed_seconds = st.session_state.get("run_elapsed_seconds")
         eta_seconds = st.session_state.get("run_eta_seconds")
         if elapsed_seconds is not None:
@@ -845,6 +924,18 @@ def render_top_action_bar():
             ">
                 <b>{t('ui.transparent_method_title', lang)}</b> {t('ui.transparent_method_body', lang)}
             </div>
+            <div style="
+                margin-top:10px;
+                border:1px solid #fde68a;
+                border-radius:12px;
+                background:#fffbeb;
+                padding:10px 12px;
+                color:#92400e;
+                font-size:0.93rem;
+                line-height:1.45;
+            ">
+                {t('ui.do_not_close_page', lang)}
+            </div>
             """,
             unsafe_allow_html=True,
         )
@@ -857,17 +948,33 @@ def render_top_action_bar():
         c1, c2 = st.columns([1.4, 4])
 
         with c1:
-            if st.button(
-                t("ui.run_simulation", lang),
-                type="primary",
-                use_container_width=True,
-                disabled=not ready,
-                key="top_run_simulation",
-            ):
-                _trigger_simulation()
+            if resume_required:
+                if st.button(
+                    t("ui.resume_simulation", lang),
+                    type="primary",
+                    use_container_width=True,
+                    key="top_resume_simulation",
+                ):
+                    _resume_simulation_job()
+            else:
+                if st.button(
+                    t("ui.run_simulation", lang),
+                    type="primary",
+                    use_container_width=True,
+                    disabled=not ready,
+                    key="top_run_simulation",
+                ):
+                    _trigger_simulation()
 
         with c2:
-            if ready:
+            if resume_required:
+                completed = len(active_job.get("completed_device_keys", []))
+                total = max(1, int(active_job.get("total_devices", 0) or len(active_job.get("selected_devices", [])) or 1))
+                st.markdown(
+                    f'<div class="secondary-note">{t("ui.resume_simulation_note", lang, completed=completed, total=total)}</div>',
+                    unsafe_allow_html=True,
+                )
+            elif ready:
                 st.markdown(
                     f'<div class="secondary-note">{t("ui.setup_complete_ready", lang)}</div>',
                     unsafe_allow_html=True,
@@ -970,7 +1077,7 @@ def ensure_active_study_record():
     return study_id
 
 
-def save_running_checkpoint(partial_results=None):
+def _save_running_checkpoint_impl(partial_results=None):
     active_study_id = st.session_state.get("active_study_id")
     user_id = st.session_state.get("auth_user_id")
     if not active_study_id or not user_id:
@@ -979,6 +1086,7 @@ def save_running_checkpoint(partial_results=None):
     result_summary = {
         "overall_state": "running",
         "results": partial_results if partial_results is not None else st.session_state.get("partial_results"),
+        "simulation_job": st.session_state.get("active_simulation_job"),
     }
 
     return update_study(
@@ -998,6 +1106,12 @@ def save_running_checkpoint(partial_results=None):
         pdf_name=None,
         pdf_bytes=None,
     )
+
+
+def save_running_checkpoint(partial_results=None, simulation_job=None):
+    if simulation_job is not None:
+        st.session_state.active_simulation_job = simulation_job
+    return _save_running_checkpoint_impl(partial_results)
 
 
 def maybe_save_current_study():
@@ -1021,6 +1135,7 @@ def maybe_save_current_study():
         "worst_blackout_days": days,
         "worst_blackout_pct": pct,
         "results": results,
+        "simulation_job": None,
     }
 
     active_study_id = st.session_state.get("active_study_id")
@@ -1206,7 +1321,21 @@ def _extract_energy_flow_payload(results, required_hours, overall, selected_ids)
 def render_calculator_app():
     lang = st.session_state.get("language", "en")
     _recover_stalled_run_if_needed()
+    active_job = st.session_state.get("active_simulation_job") or {}
+    resume_required = bool(st.session_state.get("simulation_resume_required") and active_job)
+    if (
+        active_job
+        and str(active_job.get("status", "")).upper() == "RUNNING"
+        and st.session_state.get("simulation_auto_continue")
+        and not st.session_state.get("trigger_run")
+        and st.session_state.get("results") is None
+    ):
+        st.session_state.running = True
+        st.session_state.trigger_run = True
     if st.session_state.get("running", False):
+        with st.expander(t("ui.show_study_setup", lang), expanded=False):
+            st.caption(t("ui.inputs_locked", lang))
+    elif resume_required:
         with st.expander(t("ui.show_study_setup", lang), expanded=False):
             st.caption(t("ui.inputs_locked", lang))
     elif not st.session_state.get("results"):

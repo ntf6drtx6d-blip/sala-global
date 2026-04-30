@@ -940,16 +940,24 @@ def simulate_for_devices(
         if profiling is not None:
             profiling["device_breakdown"].append(device_profile)
 
+    overall, worst_name, worst_gap = summarize_simulation_results(results)
+
+    if profiling is not None:
+        profiling["total_seconds"] = time.time() - started_at
+    return results, overall, worst_name, worst_gap, slope
+
+
+def summarize_simulation_results(results):
     worst_name, worst_gap = None, 1e9
     overall = "PASS"
 
-    for name, r in results.items():
+    for name, r in (results or {}).items():
         gap = r["min_margin"]
         if gap < worst_gap:
             worst_gap, worst_name = gap, name
         if r["status"] == "FAIL":
             overall = "FAIL"
 
-    if profiling is not None:
-        profiling["total_seconds"] = time.time() - started_at
-    return results, overall, worst_name, worst_gap, slope
+    if worst_name is None:
+        worst_gap = 0.0
+    return overall, worst_name, worst_gap

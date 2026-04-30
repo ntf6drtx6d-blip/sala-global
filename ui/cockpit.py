@@ -202,6 +202,9 @@ def reset_study():
         "active_study_id": None,
         "partial_results": None,
         "partial_overall": None,
+        "active_simulation_job": None,
+        "simulation_resume_required": False,
+        "simulation_auto_continue": False,
     }
 
     for key in list(st.session_state.keys()):
@@ -219,11 +222,24 @@ def _run_simulation(progress_callback=None):
     from app import save_running_checkpoint
 
     lang = st.session_state.get("language", "en")
-    signature = _simulation_signature(lang)
-    resumed_results = dict(st.session_state.get("partial_results") or {})
+    active_job = dict(st.session_state.get("active_simulation_job") or {})
+    if not active_job:
+        raise RuntimeError("No active simulation job found.")
+
+    selected_devices = list(active_job.get("selected_devices") or st.session_state.get("selected_simulation_keys") or st.session_state.get("selected_ids", []))
+    total_devices = len(selected_devices)
+    current_index = int(active_job.get("current_device_index", 0) or 0)
+    if total_devices <= 0:
+        raise RuntimeError("No devices selected for simulation.")
+    if current_index >= total_devices:
+        current_index = total_devices - 1
+
+    current_device_key = selected_devices[current_index]
+    current_device_label = str(current_device_key)
+    partial_results = dict(st.session_state.get("partial_results") or {})
     st.session_state.running = True
     st.session_state.run_stage = t("ui.preparing_simulation", lang)
-    st.session_state.run_progress = 0
+    st.session_state.run_progress = max(0, int((current_index / max(total_devices, 1)) * 100))
     st.session_state.run_log = []
     st.session_state.run_started_at = time.time()
     st.session_state.run_elapsed_seconds = 0.0
@@ -234,7 +250,7 @@ def _run_simulation(progress_callback=None):
     def add_log(message):
         logs = st.session_state.get("run_log", [])
         logs.append(f"**{now_ts()}** — {message}")
-        st.session_state.run_log = logs[-5:]
+        st.session_state.run_log = logs[-6:]
         st.session_state.run_last_update_at = time.time()
 
     def render_stage(percent):
@@ -258,21 +274,16 @@ def _run_simulation(progress_callback=None):
         if progress_callback:
             progress_callback(percent, stage)
 
-    def checkpoint_results(partial_rows, result_key):
-        st.session_state.partial_results = dict(partial_rows)
-        st.session_state.partial_overall = "RUNNING"
-        save_running_checkpoint(st.session_state.partial_results)
-        add_log({
-            "en": f"Checkpoint saved after {result_key}.",
-            "es": f"Punto de control guardado tras {result_key}.",
-            "fr": f"Point de reprise enregistre apres {result_key}.",
-        }.get(lang, f"Checkpoint saved after {result_key}."))
-
     add_log(t("ui.log_checking_airport_inputs", lang))
-    push_progress(5, t("ui.stage_validating_inputs", lang))
+    push_progress(max(1, int((current_index / total_devices) * 100)), t("ui.stage_validating_inputs", lang))
 
     add_log(t("ui.log_preparing_request_parameters", lang))
-    push_progress(12, t("ui.stage_preparing_requests", lang))
+    push_progress(max(5, int((current_index / total_devices) * 100)), t("ui.stage_preparing_requests", lang))
+
+    if partial_results:
+        add_log(t("ui.simulation_resuming_from_checkpoint", lang, count=len(partial_results)))
+    add_log(t("ui.processing_device_progress", lang, current=current_index + 1, total=total_devices))
+    add_log(t("ui.current_device_name", lang, name=current_device_label))
 
     loc = {
         "lat": st.session_state.lat,
@@ -285,9 +296,16 @@ def _run_simulation(progress_callback=None):
     started = time.time()
 
     def simulation_progress(done, total, pct, elapsed, eta, device_name, month_name):
-        percent = int(pct * 100)
+        overall_done = (current_index * 12.0) + float(done or 0.0)
+        overall_total = max(1.0, float(total_devices * 12))
+        percent = int((overall_done / overall_total) * 100)
         st.session_state.run_elapsed_seconds = max(0.0, float(elapsed or 0.0))
-        st.session_state.run_eta_seconds = max(0.0, float(eta or 0.0)) if eta is not None else None
+        remaining_devices = max(total_devices - current_index - 1, 0)
+        chunk_eta = max(0.0, float(eta or 0.0)) if eta is not None else None
+        if chunk_eta is not None:
+            st.session_state.run_eta_seconds = chunk_eta + (remaining_devices * max(st.session_state.run_elapsed_seconds, 1.0))
+        else:
+            st.session_state.run_eta_seconds = None
 
         month_parts = str(month_name or '').split('|')
         month_base = month_parts[0] if month_parts else ''
@@ -321,51 +339,58 @@ def _run_simulation(progress_callback=None):
                 'fr': f'Recherche mensuelle PVGIS {month_base} {search_step}/{search_total} pour {device_name}.',
             }.get(lang, f'Running PVGIS monthly search {month_base} {search_step}/{search_total} for {device_name}.'))
 
-        if month_base == "Jun" and month_phase == 'start':
-            add_log(t("ui.log_reviewing_midyear", lang, device_name=device_name))
-        if month_base == "Dec" and month_phase == 'start':
-            add_log(t("ui.log_checking_winter", lang, device_name=device_name))
+    simulation_profile = {}
+    chunk_results, chunk_overall, worst_name, worst_gap, slope = simulate_for_devices(
+        loc=loc,
+        required_hrs=st.session_state.required_hours,
+        selected_ids=[current_device_key],
+        per_device_config=st.session_state.per_device_config,
+        az_override=None,
+        progress_callback=simulation_progress,
+        profiling=simulation_profile,
+    )
+    elapsed = time.time() - started
+    for line in _profiling_summary(simulation_profile):
+        add_log(line)
 
-    cached_key = st.session_state.get("simulation_cache_key")
-    cached_results = st.session_state.get("simulation_cache_results")
-    cached_overall = st.session_state.get("simulation_cache_overall")
-    reused_simulation = bool(cached_key == signature and cached_results is not None and cached_overall is not None)
+    partial_results.update(chunk_results)
+    completed_key = next(iter(chunk_results.keys())) if chunk_results else current_device_label
+    completed_devices = list(active_job.get("completed_device_keys", []))
+    if completed_key not in completed_devices:
+        completed_devices.append(completed_key)
 
-    if reused_simulation:
-        results = cached_results
-        overall = cached_overall
-        st.session_state.partial_results = None
-        st.session_state.partial_overall = None
-        elapsed = 0.0
-        st.session_state.run_elapsed_seconds = 0.0
-        st.session_state.run_eta_seconds = 0.0
-        add_log(t("ui.log_reusing_previous_simulation", lang))
-        push_progress(88, t("ui.stage_calculating_feasibility", lang))
-    else:
-        simulation_profile = {}
-        if resumed_results:
-            add_log(t("ui.simulation_resuming_from_checkpoint", lang, count=len(resumed_results)))
-        results, overall, worst_name, worst_gap, slope = simulate_for_devices(
-            loc=loc,
-            required_hrs=st.session_state.required_hours,
-            selected_ids=st.session_state.get("selected_simulation_keys") or st.session_state.selected_ids,
-            per_device_config=st.session_state.per_device_config,
-            az_override=None,
-            progress_callback=simulation_progress,
-            profiling=simulation_profile,
-            existing_results=resumed_results,
-            device_done_callback=checkpoint_results,
-        )
-        st.session_state.partial_results = None
-        st.session_state.partial_overall = None
-        elapsed = time.time() - started
-        st.session_state.simulation_cache_key = signature
-        st.session_state.simulation_cache_results = results
-        st.session_state.simulation_cache_overall = overall
-        for line in _profiling_summary(simulation_profile):
-            add_log(line)
+    next_index = current_index + 1
+    st.session_state.partial_results = partial_results
+    st.session_state.partial_overall = "RUNNING"
 
-    push_progress(92, t("ui.stage_calculating_feasibility", lang))
+    if next_index < total_devices:
+        active_job.update({
+            "status": "RUNNING",
+            "selected_devices": selected_devices,
+            "current_device_index": next_index,
+            "total_devices": total_devices,
+            "completed_device_keys": completed_devices,
+        })
+        st.session_state.active_simulation_job = active_job
+        save_running_checkpoint(partial_results, active_job)
+        push_progress(int((next_index / total_devices) * 100), t("ui.stage_calculating_feasibility", lang))
+        add_log({
+            "en": f"Checkpoint saved after {completed_key}.",
+            "es": f"Punto de control guardado tras {completed_key}.",
+            "fr": f"Point de reprise enregistre apres {completed_key}.",
+        }.get(lang, f"Checkpoint saved after {completed_key}."))
+        st.session_state.elapsed = elapsed
+        st.session_state.running = True
+        st.session_state.trigger_run = True
+        st.session_state.run_last_update_at = time.time()
+        st.session_state.simulation_auto_continue = True
+        st.session_state.simulation_resume_required = False
+        st.rerun()
+
+    from core.simulate import summarize_simulation_results
+
+    results = partial_results
+    overall, worst_name, worst_gap = summarize_simulation_results(results)
     add_log(t("ui.log_pvgis_responses_received", lang))
     add_log(t("ui.log_preparing_conclusion", lang))
     pdf_name = "SALA_report.pdf"
@@ -388,6 +413,9 @@ def _run_simulation(progress_callback=None):
     st.session_state.pdf_error = pdf_error
     st.session_state.partial_results = None
     st.session_state.partial_overall = None
+    st.session_state.active_simulation_job = None
+    st.session_state.simulation_auto_continue = False
+    st.session_state.simulation_resume_required = False
     st.session_state.elapsed = elapsed
     st.session_state.running = False
     st.session_state.trigger_run = False

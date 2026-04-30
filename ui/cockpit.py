@@ -9,6 +9,7 @@ import streamlit as st
 
 from core.simulate import simulate_for_devices
 from core.devices import DEVICES
+from core.db import save_running_study_checkpoint
 from core.i18n import t
 from core.person import normalize_person_name
 from core.time_utils import format_clock_timestamp, now_local
@@ -219,8 +220,6 @@ def reset_study():
 
 
 def _run_simulation(progress_callback=None):
-    from app import save_running_checkpoint
-
     lang = st.session_state.get("language", "en")
     active_job = dict(st.session_state.get("active_simulation_job") or {})
     if not active_job:
@@ -372,7 +371,19 @@ def _run_simulation(progress_callback=None):
             "completed_device_keys": completed_devices,
         })
         st.session_state.active_simulation_job = active_job
-        save_running_checkpoint(partial_results, active_job)
+        save_running_study_checkpoint(
+            study_id=st.session_state.get("active_study_id"),
+            user_id=st.session_state.get("auth_user_id"),
+            airport_label=st.session_state.get("airport_label", ""),
+            lat=float(st.session_state.get("lat", 0)),
+            lon=float(st.session_state.get("lon", 0)),
+            required_hours=float(st.session_state.get("required_hours", 0)),
+            operating_profile_mode=st.session_state.get("operating_profile_mode", ""),
+            selected_devices=st.session_state.get("selected_simulation_keys") or st.session_state.get("selected_ids", []),
+            per_device_config=st.session_state.get("per_device_config", {}),
+            partial_results=partial_results,
+            simulation_job=active_job,
+        )
         push_progress(int((next_index / total_devices) * 100), t("ui.stage_calculating_feasibility", lang))
         add_log({
             "en": f"Checkpoint saved after {completed_key}.",

@@ -10,7 +10,7 @@ from streamlit.errors import StreamlitSecretNotFoundError
 from core.i18n import AVAILABLE_LANGUAGES, month_label, month_labels, t
 from psycopg.errors import UniqueViolation
 
-from core.db import init_db, upsert_user, save_study, update_study, get_study, get_user_by_email, update_user_profile
+from core.db import init_db, upsert_user, save_study, update_study, get_study, get_user_by_email, update_user_profile, save_running_study_checkpoint
 from core.person import normalize_person_name, split_person_name
 from core.auth import hash_password, init_auth_state, is_logged_in, is_admin, logout
 
@@ -1083,13 +1083,7 @@ def _save_running_checkpoint_impl(partial_results=None):
     if not active_study_id or not user_id:
         return None
 
-    result_summary = {
-        "overall_state": "running",
-        "results": partial_results if partial_results is not None else st.session_state.get("partial_results"),
-        "simulation_job": st.session_state.get("active_simulation_job"),
-    }
-
-    return update_study(
+    return save_running_study_checkpoint(
         study_id=active_study_id,
         user_id=user_id,
         airport_label=st.session_state.get("airport_label", ""),
@@ -1099,12 +1093,8 @@ def _save_running_checkpoint_impl(partial_results=None):
         operating_profile_mode=st.session_state.get("operating_profile_mode", ""),
         selected_devices=st.session_state.get("selected_simulation_keys") or st.session_state.get("selected_ids", []),
         per_device_config=st.session_state.get("per_device_config", {}),
-        overall_result="RUNNING",
-        worst_blackout_days=None,
-        worst_blackout_pct=None,
-        result_summary=result_summary,
-        pdf_name=None,
-        pdf_bytes=None,
+        partial_results=partial_results if partial_results is not None else st.session_state.get("partial_results"),
+        simulation_job=st.session_state.get("active_simulation_job"),
     )
 
 

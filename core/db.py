@@ -618,6 +618,42 @@ def update_study(
         )
 
 
+def save_running_study_checkpoint(
+    study_id,
+    user_id,
+    airport_label,
+    lat,
+    lon,
+    required_hours,
+    operating_profile_mode,
+    selected_devices,
+    per_device_config,
+    partial_results,
+    simulation_job,
+):
+    return update_study(
+        study_id=study_id,
+        user_id=user_id,
+        airport_label=airport_label,
+        lat=lat,
+        lon=lon,
+        required_hours=required_hours,
+        operating_profile_mode=operating_profile_mode,
+        selected_devices=selected_devices,
+        per_device_config=per_device_config,
+        overall_result="RUNNING",
+        worst_blackout_days=None,
+        worst_blackout_pct=None,
+        result_summary={
+            "overall_state": "running",
+            "results": partial_results,
+            "simulation_job": simulation_job,
+        },
+        pdf_name=None,
+        pdf_bytes=None,
+    )
+
+
 def get_study(study_id, user_id=None):
     with db_cursor() as (_, cur):
         if user_id is None:

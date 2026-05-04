@@ -1,11 +1,16 @@
 from datetime import UTC
 import math
+import re
 from core.i18n import get_report_i18n, month_label, normalize_language, t
 from core.intensity import format_intensity_summary
 from core.time_utils import format_timestamp, now_local, now_utc
 
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
+def _plain_text(value: str) -> str:
+    return re.sub(r"<[^>]+>", "", str(value or "")).strip()
 
 
 def _short_name(result_key: str, r: dict) -> str:
@@ -470,13 +475,13 @@ def build_report_data(loc, required_hours, results, overall, user_name, user_org
         if max_blackout == 0:
             blackout_card_helper = t("ui.no_annual_blackout_expected", language)
             if single_worst_month:
-                blackout_card_helper += f" {t('ui.worst_month_only', language, month=single_worst_month)}"
+                blackout_card_helper += f" {_plain_text(t('ui.worst_month_only', language, month=single_worst_month))}"
         else:
-            blackout_card_helper = t("ui.worst_month_only", language, month=single_worst_month) if single_worst_month else t("ui.single_device_blackout_summary", language)
+            blackout_card_helper = _plain_text(t("ui.worst_month_only", language, month=single_worst_month)) if single_worst_month else t("ui.single_device_blackout_summary", language)
     else:
         blackout_card_helper = (
             f"{worst_blackout_device_pct:.1f}% of the year. "
-            + t("ui.worst_device_named", language, device=worst_blackout_device_name)
+            + _plain_text(t("ui.worst_device_named", language, device=worst_blackout_device_name))
         ) if max_blackout > 0 and worst_blackout_device_name else t("ui.no_annual_blackout_expected", language)
 
     blackout_summary_rows = [

@@ -197,10 +197,12 @@ def _intensity_summary(r: dict, language: str = "en") -> str:
 
 
 def _weakest_month_metrics(r: dict) -> tuple[int, float | None, float | None]:
-    generated = list(r.get("charge_day_pct_by_month") or [])[:12]
-    generated = generated + [0.0] * max(0, 12 - len(generated))
+    solar_resource = list(r.get("monthly_solar_resource_wh_day") or r.get("monthly_generation_wh_day") or [])[:12]
+    solar_resource = solar_resource + [0.0] * max(0, 12 - len(solar_resource))
     hours = list(r.get("hours") or [])[:12]
     hours = hours + [0.0] * max(0, 12 - len(hours))
+    generated = list(r.get("charge_day_pct_by_month") or [])[:12]
+    generated = generated + [0.0] * max(0, 12 - len(generated))
     discharge = [float(r.get("discharge_pct_per_day", 0) or 0)] * 12
     empty_days = list(r.get("empty_battery_days_by_month") or [])[:12]
     empty_days = empty_days + [0] * max(0, 12 - len(empty_days))
@@ -213,17 +215,17 @@ def _weakest_month_metrics(r: dict) -> tuple[int, float | None, float | None]:
         weakest_idx = min(
             candidates,
             key=lambda i: (
-                float(generated[i]),
+                float(solar_resource[i]),
                 float(hours[i]) if hours else float("inf"),
                 float(margins[i]) if margins else float("inf"),
                 i,
             ),
         )
-    elif generated and any(float(v) > 0 for v in generated):
+    elif solar_resource and any(float(v) > 0 for v in solar_resource):
         weakest_idx = min(
             range(12),
             key=lambda i: (
-                float(generated[i]),
+                float(solar_resource[i]),
                 float(hours[i]) if hours else float("inf"),
                 float(margins[i]) if margins else float("inf"),
                 i,

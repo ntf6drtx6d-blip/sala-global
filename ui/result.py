@@ -113,8 +113,8 @@ def _worst_device_month(results: dict, device_name: str) -> str | None:
     lang = st.session_state.get("language", "en")
     values = list(row.get("empty_battery_days_by_month") or [])[:12]
     values = values + [0] * max(0, 12 - len(values))
-    generated = list(row.get("charge_day_pct_by_month") or [])[:12]
-    generated = generated + [0.0] * max(0, 12 - len(generated))
+    solar_resource = list(row.get("monthly_solar_resource_wh_day") or row.get("monthly_generation_wh_day") or [])[:12]
+    solar_resource = solar_resource + [0.0] * max(0, 12 - len(solar_resource))
     hours = list(row.get("hours") or [])[:12]
     hours = hours + [0.0] * max(0, 12 - len(hours))
 
@@ -124,14 +124,14 @@ def _worst_device_month(results: dict, device_name: str) -> str | None:
         idx = min(
             candidates,
             key=lambda i: (
-                float(generated[i]),
+                float(solar_resource[i]),
                 float(hours[i]) if hours else float("inf"),
                 i,
             ),
         )
         return month_label(MONTHS[idx], lang)
 
-    if not generated or not any(float(v) > 0 for v in generated):
+    if not solar_resource or not any(float(v) > 0 for v in solar_resource):
         if not hours or not any(float(v) > 0 for v in hours):
             return None
         idx = min(range(12), key=lambda i: (float(hours[i]), i))
@@ -140,12 +140,12 @@ def _worst_device_month(results: dict, device_name: str) -> str | None:
     idx = min(
         range(12),
         key=lambda i: (
-            float(generated[i]),
+            float(solar_resource[i]),
             float(hours[i]) if hours else float("inf"),
             i,
         ),
     )
-    if not hours and not generated:
+    if not hours and not solar_resource:
         return None
     return month_label(MONTHS[idx], lang)
 

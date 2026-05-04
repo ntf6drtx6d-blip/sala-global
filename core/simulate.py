@@ -256,6 +256,27 @@ def _monthly_generation_used_in_simulation(lat, lon, resolved_cfg, tilt, azim, s
     return [0.0] * 12
 
 
+def _monthly_solar_resource_wh_day(lat, lon, resolved_cfg, tilt, azim):
+    """
+    Unclipped monthly PV resource proxy from PVcalc only.
+    This stays independent of battery saturation and load level, so it is suitable
+    for "worst month" selection in summaries and reports.
+    """
+    try:
+        values = pvcalc_monthly_wh_per_day(
+            lat=lat,
+            lon=lon,
+            pv_wp=float(resolved_cfg["pv"]),
+            tilt_deg=float(tilt),
+            aspect_deg=float(azim),
+        )
+        if any(v > 0 for v in values):
+            return values
+    except Exception:
+        pass
+    return [0.0] * 12
+
+
 def _estimate_daylight_hours_by_month(lat):
     """
     Simple astronomy approximation for mid-month daylight duration.
@@ -830,6 +851,9 @@ def simulate_for_devices(
         monthly_generation_wh_day = _monthly_generation_used_in_simulation(
             lat, lon, resolved, tilt, azim, shs_monthly_rows=shs_monthly_rows
         )
+        monthly_solar_resource_wh_day = _monthly_solar_resource_wh_day(
+            lat, lon, resolved, tilt, azim
+        )
         behavior = _battery_behavior_metrics(
             monthly_gen_wh_day=monthly_generation_wh_day,
             batt_wh=resolved["batt"],
@@ -892,6 +916,7 @@ def simulate_for_devices(
             "cutoff_pct": cutoff_pct,
             "usable_battery_wh": behavior["usable_battery_wh"],
             "monthly_generation_wh_day": monthly_generation_wh_day,
+            "monthly_solar_resource_wh_day": monthly_solar_resource_wh_day,
             "discharge_pct_per_hr": behavior["discharge_pct_per_hr"],
             "recharge_pct_per_hr_by_month": behavior["recharge_pct_per_hr_by_month"],
             "avg_recharge_pct_per_hr": behavior["avg_recharge_pct_per_hr"],

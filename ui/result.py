@@ -6,6 +6,7 @@ import textwrap
 import folium
 import streamlit as st
 
+from pvgis_client import pvcalc_monthly_wh_per_day
 from core.i18n import month_label, t
 from ui.map_embed import render_folium_map
 from ui.result_helpers import (
@@ -103,6 +104,54 @@ def render_required_time_card(hours_value: float, mode_text: str):
     )
 
 
+
+
+def _row_solar_resource_wh_day(row: dict) -> list[float]:
+    values = list(row.get("monthly_solar_resource_wh_day") or [])[:12]
+    values = values + [0.0] * max(0, 12 - len(values))
+    if any(float(v) > 0 for v in values):
+        return values
+
+    meta = row.get("pvgis_meta") or {}
+    lat = meta.get("lat")
+    lon = meta.get("lon")
+    pv = row.get("pv")
+    tilt = row.get("tilt") if row.get("tilt") is not None else meta.get("slope")
+    azim = row.get("azim") if row.get("azim") is not None else meta.get("aspect")
+    try:
+        if lat is not None and lon is not None and pv is not None and tilt is not None and azim is not None:
+            regen = pvcalc_monthly_wh_per_day(
+                lat=float(lat),
+                lon=float(lon),
+                pv_wp=float(pv),
+                tilt_deg=float(tilt),
+                aspect_deg=float(azim),
+            )
+            regen = list(regen or [])[:12]
+            regen = regen + [0.0] * max(0, 12 - len(regen))
+            if any(float(v) > 0 for v in regen):
+                return regen
+    except Exception:
+        pass
+
+    fallback = list(row.get("monthly_generation_wh_day") or [])[:12]
+    fallback = fallback + [0.0] * max(0, 12 - len(fallback))
+    return fallback
+
+
+def _suppress_zero_blackout_worst_month(row: dict) -> bool:
+    empty_days = list(row.get("empty_battery_days_by_month") or [])[:12]
+    empty_days = empty_days + [0] * max(0, 12 - len(empty_days))
+    if any(float(v) > 0 for v in empty_days):
+        return False
+    hours = [float(v) for v in (list(row.get("hours") or [])[:12] + [0.0] * 12)[:12]]
+    if not hours:
+        return False
+    # For fully saturated zero-blackout devices, a user-facing "worst month"
+    # is not meaningful. These rows are capped at 24h/day all year, so showing
+    # a month derived from solar-resource tie-breakers is misleading.
+    return min(hours) >= 23.95
+
 def _worst_device_month(results: dict, device_name: str) -> str | None:
     row = (results or {}).get(device_name) or {}
     if not row:
@@ -110,11 +159,12 @@ def _worst_device_month(results: dict, device_name: str) -> str | None:
             if result_device_display_name(result_key, candidate) == device_name:
                 row = candidate
                 break
+    if _suppress_zero_blackout_worst_month(row):
+        return None
     lang = st.session_state.get("language", "en")
     values = list(row.get("empty_battery_days_by_month") or [])[:12]
     values = values + [0] * max(0, 12 - len(values))
-    solar_resource = list(row.get("monthly_solar_resource_wh_day") or row.get("monthly_generation_wh_day") or [])[:12]
-    solar_resource = solar_resource + [0.0] * max(0, 12 - len(solar_resource))
+    solar_resource = _row_solar_resource_wh_day(row)
     hours = list(row.get("hours") or [])[:12]
     hours = hours + [0.0] * max(0, 12 - len(hours))
 

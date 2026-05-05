@@ -1,6 +1,7 @@
 from datetime import UTC
 import math
 import re
+from pvgis_client import pvcalc_monthly_wh_per_day
 from core.i18n import get_report_i18n, month_label, normalize_language, t
 from core.intensity import format_intensity_summary
 from core.time_utils import format_timestamp, now_local, now_utc
@@ -201,9 +202,55 @@ def _intensity_summary(r: dict, language: str = "en") -> str:
     )
 
 
+
+
+def _row_solar_resource_wh_day(r: dict) -> list[float]:
+    values = list(r.get("monthly_solar_resource_wh_day") or [])[:12]
+    values = values + [0.0] * max(0, 12 - len(values))
+    if any(float(v) > 0 for v in values):
+        return values
+
+    meta = r.get("pvgis_meta") or {}
+    lat = meta.get("lat")
+    lon = meta.get("lon")
+    pv = r.get("pv")
+    tilt = r.get("tilt") if r.get("tilt") is not None else meta.get("slope")
+    azim = r.get("azim") if r.get("azim") is not None else meta.get("aspect")
+    try:
+        if lat is not None and lon is not None and pv is not None and tilt is not None and azim is not None:
+            regen = pvcalc_monthly_wh_per_day(
+                lat=float(lat),
+                lon=float(lon),
+                pv_wp=float(pv),
+                tilt_deg=float(tilt),
+                aspect_deg=float(azim),
+            )
+            regen = list(regen or [])[:12]
+            regen = regen + [0.0] * max(0, 12 - len(regen))
+            if any(float(v) > 0 for v in regen):
+                return regen
+    except Exception:
+        pass
+
+    fallback = list(r.get("monthly_generation_wh_day") or [])[:12]
+    fallback = fallback + [0.0] * max(0, 12 - len(fallback))
+    return fallback
+
+
+def _suppress_zero_blackout_worst_month(r: dict) -> bool:
+    empty_days = list(r.get("empty_battery_days_by_month") or [])[:12]
+    empty_days = empty_days + [0] * max(0, 12 - len(empty_days))
+    if any(float(v) > 0 for v in empty_days):
+        return False
+    hours = [float(v) for v in (list(r.get("hours") or [])[:12] + [0.0] * 12)[:12]]
+    if not hours:
+        return False
+    # If the device is capped at 24h/day for the entire year and never hits
+    # blackout, showing a "worst month" is not meaningful to users.
+    return min(hours) >= 23.95
+
 def _weakest_month_metrics(r: dict) -> tuple[int, float | None, float | None]:
-    solar_resource = list(r.get("monthly_solar_resource_wh_day") or r.get("monthly_generation_wh_day") or [])[:12]
-    solar_resource = solar_resource + [0.0] * max(0, 12 - len(solar_resource))
+    solar_resource = _row_solar_resource_wh_day(r)
     hours = list(r.get("hours") or [])[:12]
     hours = hours + [0.0] * max(0, 12 - len(hours))
     generated = list(r.get("charge_day_pct_by_month") or [])[:12]
@@ -419,7 +466,7 @@ def build_report_data(loc, required_hours, results, overall, user_name, user_org
             "required_hours": float(required_hours),
             "worst_blackout_risk": annual_days,
             "weakest_month_idx": weakest_month_idx,
-            "weakest_month_label": month_label(MONTHS[weakest_month_idx], language),
+            "weakest_month_label": "" if _suppress_zero_blackout_worst_month(r) else month_label(MONTHS[weakest_month_idx], language),
             "annual_lowest_month_idx": annual_lowest_month_idx,
             "annual_lowest_month_label": month_label(MONTHS[annual_lowest_month_idx], language),
             "typical_floor_total_pct": weakest_floor_total_pct,

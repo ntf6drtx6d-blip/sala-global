@@ -76,7 +76,7 @@
 
       <article class="card analyzed-devices-card page-break-avoid">
         <div class="eyebrow">{{ report.i18n['report.analyzed_devices'] }}</div>
-        <div class="device-name-list">
+        <div class="device-name-list {% if report.device_names|length > 10 %}device-name-list-dense{% elif report.device_names|length > 6 %}device-name-list-compact{% endif %}">
           {% for name in report.device_names %}
             <div class="device-name-item">{{ name }}</div>
           {% endfor %}
@@ -128,7 +128,7 @@
       <div class="section-stack">
         <article class="card page-break-avoid">
           <div class="section-title">{{ report.i18n['report.annual_blackout_exposure'] }}</div>
-          <table class="report-table">
+          <table class="report-table blackout-summary-table">
             <thead>
               <tr>
                 <th>{{ report.i18n['report.table.device'] }}</th>

@@ -572,25 +572,40 @@ body {
 }
 
 .analyzed-devices-card {
-  margin-top: 10px;
-  padding: 12px 14px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  gap: 8px;
 }
 
 .device-name-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px 12px;
-  margin-top: 6px;
+  gap: 3px 12px;
+  margin-top: 2px;
+}
+
+.device-name-list-compact {
+  gap: 2px 10px;
+}
+
+.device-name-list-dense {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px 8px;
 }
 
 .device-name-item {
   color: #12355b;
-  font-size: 11px;
-  line-height: 1.25;
+  font-size: 10.5px;
+  line-height: 1.18;
   font-weight: 700;
-  padding-left: 10px;
+  padding-left: 9px;
   position: relative;
   overflow-wrap: anywhere;
+}
+
+.device-name-list-dense .device-name-item {
+  font-size: 9.5px;
+  line-height: 1.14;
 }
 
 .device-name-item::before {
@@ -727,6 +742,41 @@ body {
 
 .report-table .target-row td:first-child {
   color: #1d4ed8;
+}
+
+.blackout-summary-table {
+  table-layout: fixed;
+  font-size: 10.5px;
+}
+
+.blackout-summary-table thead th:first-child,
+.blackout-summary-table tbody td:first-child {
+  width: 40%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  hyphens: auto;
+}
+
+.blackout-summary-table thead th:nth-child(2),
+.blackout-summary-table tbody td:nth-child(2) {
+  width: 19%;
+}
+
+.blackout-summary-table thead th:nth-child(3),
+.blackout-summary-table tbody td:nth-child(3) {
+  width: 17%;
+}
+
+.blackout-summary-table thead th:nth-child(4),
+.blackout-summary-table tbody td:nth-child(4) {
+  width: 24%;
+}
+
+.blackout-summary-table td,
+.blackout-summary-table th {
+  padding-top: 7px;
+  padding-bottom: 7px;
 }
 
 .compact-month-table {

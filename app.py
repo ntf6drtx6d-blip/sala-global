@@ -4,14 +4,14 @@ import time
 import hmac
 import base64
 import hashlib
+from pathlib import Path
 import streamlit as st
 from streamlit.errors import StreamlitSecretNotFoundError
 
 from core.i18n import AVAILABLE_LANGUAGES, month_label, month_labels, t
-from psycopg.errors import UniqueViolation
 
-from core.db import init_db, upsert_user, save_study, update_study, get_study, get_user_by_email, update_user_profile, save_running_study_checkpoint
-from core.person import normalize_person_name, split_person_name
+from core.db import init_db, upsert_user, save_study, update_study, get_study, get_user_by_email, save_running_study_checkpoint
+from core.person import normalize_person_name
 from core.auth import hash_password, init_auth_state, is_logged_in, is_admin, logout
 
 from ui.setup import render_setup
@@ -22,13 +22,17 @@ from ui.my_studies import render_my_studies
 from ui.result_helpers import annual_empty_battery_stats, overall_state
 
 
+APP_DIR = Path(__file__).resolve().parent
+FAVICON_PATH = APP_DIR / "sala_favicon.png"
+LOGO_FILE_PATH = APP_DIR / "sala_logo.png"
+
 st.set_page_config(
     page_title="SALA Standardized Feasibility Study for Solar AGL",
-    page_icon="sala_favicon.png",
+    page_icon=str(FAVICON_PATH),
     layout="wide",
 )
 
-LOGO_PATH = "sala_logo.png"
+LOGO_PATH = str(LOGO_FILE_PATH)
 LANGUAGE_FLAGS = {
     "en": "🇬🇧",
     "es": "🇪🇸",
@@ -671,64 +675,12 @@ def render_header():
             st.markdown(f"**{t('ui.my_profile', lang)}**")
             st.write(f"{t('ui.email', lang)}: {email}")
             st.write(f"{t('ui.role', lang)}: {role}")
-            first_name, last_name = split_person_name(st.session_state.get("auth_full_name", ""))
-
-            with st.form("profile_edit_form", clear_on_submit=False):
-                new_first_name = st.text_input(
-                    t("ui.first_name", lang),
-                    value=first_name,
-                    key="profile_first_name",
-                )
-                new_last_name = st.text_input(
-                    t("ui.last_name", lang),
-                    value=last_name,
-                    key="profile_last_name",
-                )
-                new_email = st.text_input(
-                    t("ui.email", lang),
-                    value=email,
-                    key="profile_email",
-                )
-                new_organization = st.text_input(
-                    t("ui.organization", lang),
-                    value=st.session_state.get("auth_organization", "") or "",
-                    key="profile_organization",
-                )
-                save_profile = st.form_submit_button(
-                    t("ui.save_profile", lang),
-                    use_container_width=True,
-                )
-
-            if save_profile:
-                normalized_first = normalize_person_name(new_first_name)
-                normalized_last = normalize_person_name(new_last_name)
-                normalized_email = str(new_email or "").strip().lower()
-                normalized_org = str(new_organization or "").strip() or None
-
-                if not normalized_first:
-                    st.error(t("ui.enter_first_name", lang))
-                elif not normalized_email:
-                    st.error(t("ui.enter_email", lang))
-                else:
-                    full_name = " ".join(part for part in [normalized_first, normalized_last] if part).strip()
-                    try:
-                        updated_user = update_user_profile(
-                            user_id=st.session_state.get("auth_user_id"),
-                            email=normalized_email,
-                            full_name=full_name,
-                            organization=normalized_org,
-                        )
-                    except UniqueViolation:
-                        st.error(t("ui.email_already_in_use", lang))
-                    except Exception as exc:
-                        st.error(str(exc))
-                    else:
-                        if updated_user:
-                            st.session_state.auth_email = updated_user["email"]
-                            st.session_state.auth_full_name = updated_user.get("full_name")
-                            st.session_state.auth_organization = updated_user.get("organization")
-                            persist_login_to_query_token()
-                            st.success(t("ui.profile_updated", lang))
+            full_name = str(st.session_state.get("auth_full_name") or "").strip()
+            organization = str(st.session_state.get("auth_organization") or "").strip()
+            if full_name:
+                st.write(f"{t('ui.full_name', lang)}: {full_name}")
+            if organization:
+                st.write(f"{t('ui.organization', lang)}: {organization}")
 
             if st.button(t("ui.log_out", lang), key="logout_from_popover", use_container_width=True):
                 logout_and_forget()
@@ -1310,6 +1262,9 @@ def _extract_energy_flow_payload(results, required_hours, overall, selected_ids)
 
 def render_calculator_app():
     lang = st.session_state.get("language", "en")
+    if st.session_state.get("auth_token_refresh_required"):
+        persist_login_to_query_token()
+        st.session_state.auth_token_refresh_required = False
     _recover_stalled_run_if_needed()
     active_job = st.session_state.get("active_simulation_job") or {}
     resume_required = bool(st.session_state.get("simulation_resume_required") and active_job)

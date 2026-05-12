@@ -25,7 +25,7 @@ from core.db import (
     update_user_profile,
 )
 from core.auth import hash_password
-from core.catalog import get_runtime_catalog, runtime_device_label, invalidate_runtime_catalog_cache
+from core.catalog import get_cached_runtime_catalog, runtime_device_label, invalidate_runtime_catalog_cache
 from core.person import normalize_person_name, split_person_name
 from psycopg.errors import UniqueViolation
 
@@ -102,14 +102,57 @@ def _generate_temp_password(length=12):
 
 def _refresh_runtime_catalog_after_admin_save(runtime_id=None):
     invalidate_runtime_catalog_cache()
-    per_device_config = dict(st.session_state.get("per_device_config", {}))
-    if runtime_id is not None and per_device_config:
-        per_device_config = {
-            key: cfg
-            for key, cfg in per_device_config.items()
-            if int(cfg.get("device_id", -1)) != int(runtime_id)
-        }
-        st.session_state.per_device_config = per_device_config
+    if runtime_id is not None:
+        runtime_id = int(runtime_id)
+        per_device_config = dict(st.session_state.get("per_device_config", {}))
+        if per_device_config:
+            per_device_config = {
+                key: cfg
+                for key, cfg in per_device_config.items()
+                if int(cfg.get("device_id", -1)) != runtime_id
+            }
+            st.session_state.per_device_config = per_device_config
+
+        selected_simulation_keys = [
+            key
+            for key in st.session_state.get("selected_simulation_keys", [])
+            if key != str(runtime_id) and not str(key).startswith(f"{runtime_id}||")
+        ]
+        st.session_state.selected_simulation_keys = selected_simulation_keys
+
+        selected_lamp_types = dict(st.session_state.get("selected_lamp_types", {}))
+        selected_lamp_types.pop(runtime_id, None)
+        selected_lamp_types.pop(str(runtime_id), None)
+        st.session_state.selected_lamp_types = selected_lamp_types
+
+        dynamic_prefixes = [
+            "variant_enabled_",
+            "intensity_mode_",
+            "mixed_share_",
+            "mixed_intensity_a_",
+            "mixed_rest_",
+            "mixed_intensity_b_",
+            "intensity_pct_",
+            "power_",
+            "quantity_",
+            "engine_",
+            "battery_mode_",
+        ]
+        stale_keys = []
+        for key in list(st.session_state.keys()):
+            key_str = str(key)
+            if key_str.startswith(f"variant_enabled_{runtime_id}_"):
+                stale_keys.append(key)
+                continue
+            for prefix in dynamic_prefixes:
+                if key_str.startswith(prefix):
+                    suffix = key_str[len(prefix):]
+                    if suffix == str(runtime_id) or suffix.startswith(f"{runtime_id}||"):
+                        stale_keys.append(key)
+                    break
+        for key in stale_keys:
+            st.session_state.pop(key, None)
+
     st.session_state.pop("runtime_devices", None)
     st.session_state.pop("runtime_solar_engines", None)
 
@@ -382,7 +425,7 @@ def _catalog_form_payload(prefix, lang, existing=None):
             default_lamp_variant = None
 
     if selected_entity_type == "powered_device":
-        _, runtime_engines = get_runtime_catalog()
+        _, runtime_engines = get_cached_runtime_catalog()
         engine_codes = sorted(runtime_engines.keys())
         existing_default_engine = existing.get("default_engine_code")
         if existing_default_engine not in engine_codes:
@@ -814,8 +857,13 @@ def _render_device_database_tab():
             filtered_rows = [row for row in rows if row["entity_type"] == selected_entity_type]
 
     with st.expander(t("admin.add_catalog_item", lang), expanded=False):
-        payload = _catalog_form_payload("admin_catalog_create", lang)
-        if st.button(t("admin.save_new_catalog_item", lang), key="admin_catalog_create_btn", use_container_width=True):
+        with st.form("admin_catalog_create_form", border=False):
+            payload = _catalog_form_payload("admin_catalog_create", lang)
+            create_submitted = st.form_submit_button(
+                t("admin.save_new_catalog_item", lang),
+                width="stretch",
+            )
+        if create_submitted:
             if not payload["code"]:
                 st.error(t("admin.catalog_code_required", lang))
             elif device_catalog_code_exists(payload["code"]):
@@ -842,12 +890,13 @@ def _render_device_database_tab():
                 f"{entity_options.get(row['entity_type'], row['entity_type'])} · "
                 f"{t('admin.active', lang)}: {t('admin.yes', lang) if row['is_active'] else t('admin.no', lang)}"
             )
-            payload = _catalog_form_payload(f"admin_catalog_edit_{row['id']}", lang, existing=row)
-            if st.button(
-                t("admin.save_catalog_changes", lang),
-                key=f"admin_catalog_save_{row['id']}",
-                use_container_width=True,
-            ):
+            with st.form(f"admin_catalog_edit_form_{row['id']}", border=False):
+                payload = _catalog_form_payload(f"admin_catalog_edit_{row['id']}", lang, existing=row)
+                edit_submitted = st.form_submit_button(
+                    t("admin.save_catalog_changes", lang),
+                    width="stretch",
+                )
+            if edit_submitted:
                 if not payload["code"]:
                     st.error(t("admin.catalog_code_required", lang))
                 elif device_catalog_code_exists(payload["code"], exclude_id=row["id"]):

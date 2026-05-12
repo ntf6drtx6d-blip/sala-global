@@ -219,6 +219,56 @@ def _supports_intensity_adjustment(device_id):
     return bool(dspec.get("supports_intensity_adjustment", dspec.get("system_type") in {"builtin", "avlite_fixture"}))
 
 
+def _device_catalog_signature(dspec, lamp_variant=None):
+    lamp_variant_power = None
+    if lamp_variant and dspec.get("lamp_variants"):
+        try:
+            lamp_variant_power = float(dspec["lamp_variants"][lamp_variant]["power_w"])
+        except Exception:
+            lamp_variant_power = None
+    supports_intensity = bool(
+        dspec.get("code") in {"PAPI", "A-PAPI"}
+        or dspec.get("supports_intensity_adjustment", dspec.get("system_type") in {"builtin", "avlite_fixture"})
+    )
+
+    return (
+        str(dspec.get("code") or ""),
+        str(dspec.get("name") or ""),
+        str(dspec.get("manufacturer") or ""),
+        str(dspec.get("system_type") or ""),
+        float(_safe_float(dspec.get("default_power", dspec.get("power", dspec.get("default_consumption", 0.0))), 0.0)),
+        supports_intensity,
+        str(dspec.get("default_engine") or ""),
+        tuple(sorted(str(x) for x in (dspec.get("compatible_engines") or []))),
+        float(_safe_float(dspec.get("standby_power_w", 0.0) or 0.0, 0.0)),
+        tuple(sorted(str(x) for x in (dspec.get("tilt_options") or []))),
+        str(dspec.get("default_lamp_variant") or ""),
+        lamp_variant or "",
+        lamp_variant_power,
+    )
+
+
+def _clear_device_widget_state(sim_key, device_id):
+    dynamic_prefixes = [
+        "intensity_mode_",
+        "mixed_share_",
+        "mixed_intensity_a_",
+        "mixed_rest_",
+        "mixed_intensity_b_",
+        "intensity_pct_",
+        "power_",
+        "quantity_",
+        "engine_",
+        "battery_mode_",
+    ]
+    for prefix in dynamic_prefixes:
+        st.session_state.pop(f"{prefix}{sim_key}", None)
+    for key in list(st.session_state.keys()):
+        key_str = str(key)
+        if key_str.startswith(f"variant_enabled_{device_id}_"):
+            st.session_state.pop(key, None)
+
+
 def _effective_intensity_pct(mode, fixed_pct, share_a, intensity_a, intensity_b):
     if mode == "mixed":
         share_a = max(0.0, min(100.0, _safe_float(share_a, 50.0)))
@@ -730,6 +780,15 @@ def render_setup(disabled=False):
                     st.session_state.get("per_device_config", {}).get(sim_key)
                     or st.session_state.get("per_device_config", {}).get(str(did), {})
                 )
+                catalog_signature = _device_catalog_signature(dspec, lamp_variant)
+                if saved_cfg and saved_cfg.get("catalog_signature") != catalog_signature:
+                    saved_cfg = {}
+                    per_device_state = dict(st.session_state.get("per_device_config", {}))
+                    per_device_state.pop(sim_key, None)
+                    if lamp_variant is None:
+                        per_device_state.pop(str(did), None)
+                    st.session_state.per_device_config = per_device_state
+                    _clear_device_widget_state(sim_key, did)
 
                 if lamp_variant and dspec.get("lamp_variants"):
                     base_power = float(dspec["lamp_variants"][lamp_variant]["power_w"])
@@ -917,6 +976,7 @@ def render_setup(disabled=False):
                         "device_id": did,
                         "lamp_variant": lamp_variant,
                         "display_label": display_label,
+                        "catalog_signature": catalog_signature,
                         "power": float(power),
                         "unit_power": float(power),
                         "quantity": int(quantity),

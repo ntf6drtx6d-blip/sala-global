@@ -284,28 +284,7 @@ def _sync_default_device_catalog(cur):
                 %(is_active)s,
                 NOW()
             )
-            ON CONFLICT (code) DO UPDATE SET
-                entity_type = EXCLUDED.entity_type,
-                runtime_id = EXCLUDED.runtime_id,
-                manufacturer = EXCLUDED.manufacturer,
-                name = EXCLUDED.name,
-                system_type = EXCLUDED.system_type,
-                default_power_w = EXCLUDED.default_power_w,
-                battery_type = EXCLUDED.battery_type,
-                battery_wh = EXCLUDED.battery_wh,
-                cutoff_pct = EXCLUDED.cutoff_pct,
-                standby_power_w = EXCLUDED.standby_power_w,
-                supports_intensity_adjustment = EXCLUDED.supports_intensity_adjustment,
-                panel_configuration = EXCLUDED.panel_configuration,
-                panel_wp = EXCLUDED.panel_wp,
-                panel_tilt_options = EXCLUDED.panel_tilt_options,
-                panel_tilt_deg = EXCLUDED.panel_tilt_deg,
-                default_engine_code = EXCLUDED.default_engine_code,
-                compatible_engine_codes = EXCLUDED.compatible_engine_codes,
-                has_external_battery_option = EXCLUDED.has_external_battery_option,
-                metadata = EXCLUDED.metadata,
-                is_active = EXCLUDED.is_active,
-                updated_at = NOW()
+            ON CONFLICT (code) DO NOTHING
             """,
             {
                 **item,
@@ -788,18 +767,21 @@ def update_user_password(user_id, password_hash):
         )
 
 
-def update_user_profile(user_id, email, full_name=None, organization=None):
+def update_user_profile(user_id, email, full_name=None, organization=None, role=None, actor_role=None):
+    if str(actor_role or "").strip().lower() != "admin":
+        raise PermissionError("Only admin users can update profile data.")
     with db_cursor() as (_, cur):
         cur.execute(
             """
             UPDATE users
             SET email = %s,
                 full_name = %s,
-                organization = %s
+                organization = %s,
+                role = COALESCE(%s, role)
             WHERE id = %s
             RETURNING *
             """,
-            (email, full_name, organization, user_id),
+            (email, full_name, organization, role, user_id),
         )
         row = cur.fetchone()
         if not row:

@@ -2,7 +2,7 @@ import math
 import streamlit as st
 import folium
 
-from core.catalog import get_runtime_catalog
+from core.catalog import get_cached_runtime_catalog
 from core.geocoding import search_airport
 from core.i18n import t
 from ui.map_embed import render_folium_map
@@ -10,19 +10,10 @@ from ui.map_embed import render_folium_map
 INTENSITY_PRESETS = [3, 10, 30, 60, 100]
 
 
-@st.cache_data(show_spinner=False)
-def _load_runtime_catalog_cached():
-    return get_runtime_catalog()
-
-
 def _get_runtime_catalog_cached():
-    if "runtime_devices" not in st.session_state or "runtime_solar_engines" not in st.session_state:
-        lang = st.session_state.get("language", "en")
-        with st.spinner(t("ui.loading_device_options", lang)):
-            devices, solar_engines = _load_runtime_catalog_cached()
-        st.session_state.runtime_devices = devices
-        st.session_state.runtime_solar_engines = solar_engines
-    return st.session_state.runtime_devices, st.session_state.runtime_solar_engines
+    lang = st.session_state.get("language", "en")
+    with st.spinner(t("ui.loading_device_options", lang)):
+        return get_cached_runtime_catalog()
 
 
 def _init_setup_defaults():
@@ -35,8 +26,12 @@ def _init_setup_defaults():
             st.session_state.airport_query = ""
         if "selected_ids" not in st.session_state:
             st.session_state.selected_ids = []
+        if "selected_ids_widget" not in st.session_state:
+            st.session_state.selected_ids_widget = list(st.session_state.selected_ids)
         if "selected_manufacturers" not in st.session_state:
             st.session_state.selected_manufacturers = []
+        if "selected_manufacturers_widget" not in st.session_state:
+            st.session_state.selected_manufacturers_widget = list(st.session_state.selected_manufacturers)
         if "selected_simulation_keys" not in st.session_state:
             st.session_state.selected_simulation_keys = []
         if "per_device_config" not in st.session_state:
@@ -219,6 +214,8 @@ def _engine_summary(device_id, engine_key, battery_mode):
 def _supports_intensity_adjustment(device_id):
     DEVICES, _ = _get_runtime_catalog_cached()
     dspec = DEVICES[device_id]
+    if dspec.get("code") in {"PAPI", "A-PAPI"}:
+        return True
     return bool(dspec.get("supports_intensity_adjustment", dspec.get("system_type") in {"builtin", "avlite_fixture"}))
 
 
@@ -557,10 +554,11 @@ def render_setup(disabled=False):
         selected_manufacturers = st.multiselect(
             t("ui.manufacturers_included", lang),
             manufacturer_options,
-            key="selected_manufacturers",
+            key="selected_manufacturers_widget",
             disabled=disabled,
             help=t("ui.manufacturers_included", lang),
         )
+        st.session_state.selected_manufacturers = list(selected_manufacturers)
 
         st.markdown(f"### 4. {t('ui.select_devices', lang)}")
 
@@ -570,10 +568,11 @@ def render_setup(disabled=False):
         ]
         filtered_device_ids.sort(key=lambda did: _device_label(did))
         valid_manufacturer_ids = set(filtered_device_ids)
-        st.session_state.selected_ids = [
+        canonical_selected_ids = [
             did for did in st.session_state.get("selected_ids", [])
             if did in valid_manufacturer_ids
         ]
+        st.session_state.selected_ids = canonical_selected_ids
 
         device_filter_text = st.text_input(
             t("ui.device_search_filter", lang),
@@ -587,7 +586,11 @@ def render_setup(disabled=False):
             did for did in filtered_device_ids
             if not device_filter_norm or device_filter_norm in _device_label(did).lower()
         ]
-        current_selected_ids = st.session_state.get("selected_ids", [])
+        current_selected_ids = [
+            did for did in st.session_state.get("selected_ids_widget", st.session_state.get("selected_ids", []))
+            if did in valid_manufacturer_ids
+        ]
+        st.session_state.selected_ids_widget = current_selected_ids
         options_for_multiselect = sorted(
             set(filtered_device_ids_local) | set(current_selected_ids),
             key=lambda did: _device_label(did),
@@ -596,10 +599,12 @@ def render_setup(disabled=False):
         selected_ids = st.multiselect(
             t("ui.devices_included", lang),
             options_for_multiselect,
-            key="selected_ids",
+            key="selected_ids_widget",
             disabled=disabled,
             format_func=_device_label,
         )
+        st.session_state.selected_ids = [did for did in selected_ids if did in valid_manufacturer_ids]
+        selected_ids = list(st.session_state.selected_ids)
 
     with right:
         st.markdown(f"### {t('ui.study_point', lang)}")

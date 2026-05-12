@@ -11,6 +11,7 @@ from core.i18n import t
 from core.db import (
     create_device_catalog_item,
     device_catalog_code_exists,
+    get_device_catalog_item,
     list_access_requests,
     list_device_catalog,
     list_all_users,
@@ -21,9 +22,12 @@ from core.db import (
     user_exists,
     update_user_active,
     update_user_password,
+    update_user_profile,
 )
 from core.auth import hash_password
-from core.catalog import get_runtime_catalog, runtime_device_label
+from core.catalog import get_runtime_catalog, runtime_device_label, invalidate_runtime_catalog_cache
+from core.person import normalize_person_name, split_person_name
+from psycopg.errors import UniqueViolation
 
 
 def _safe_json_list(raw_value):
@@ -94,6 +98,20 @@ def _result_filter_options(rows, lang):
 def _generate_temp_password(length=12):
     alphabet = string.ascii_letters + string.digits
     return "".join(secrets.choice(alphabet) for _ in range(length))
+
+
+def _refresh_runtime_catalog_after_admin_save(runtime_id=None):
+    invalidate_runtime_catalog_cache()
+    per_device_config = dict(st.session_state.get("per_device_config", {}))
+    if runtime_id is not None and per_device_config:
+        per_device_config = {
+            key: cfg
+            for key, cfg in per_device_config.items()
+            if int(cfg.get("device_id", -1)) != int(runtime_id)
+        }
+        st.session_state.per_device_config = per_device_config
+    st.session_state.pop("runtime_devices", None)
+    st.session_state.pop("runtime_solar_engines", None)
 
 
 def _safe_json_value(raw_value, fallback):
@@ -620,6 +638,77 @@ def _render_users_tab():
                         t("admin.password_reset_for", lang, email=row["email"], password=temp_password)
                     )
 
+            with st.expander(t("admin.edit_user", lang), expanded=False):
+                first_name, last_name = split_person_name(row.get("full_name") or "")
+                edit_email = st.text_input(
+                    t("ui.email", lang),
+                    value=row["email"] or "",
+                    key=f"admin_edit_email_{row['id']}",
+                )
+                edit_first_name = st.text_input(
+                    t("ui.first_name", lang),
+                    value=first_name,
+                    key=f"admin_edit_first_name_{row['id']}",
+                )
+                edit_last_name = st.text_input(
+                    t("ui.last_name", lang),
+                    value=last_name,
+                    key=f"admin_edit_last_name_{row['id']}",
+                )
+                edit_org = st.text_input(
+                    t("ui.organization", lang),
+                    value=row.get("organization") or "",
+                    key=f"admin_edit_org_{row['id']}",
+                )
+                edit_role = st.selectbox(
+                    t("ui.role", lang),
+                    options=["user", "admin"],
+                    index=0 if row.get("role") != "admin" else 1,
+                    key=f"admin_edit_role_{row['id']}",
+                )
+
+                if st.button(
+                    t("admin.save_user_changes", lang),
+                    key=f"admin_save_user_{row['id']}",
+                    use_container_width=True,
+                ):
+                    normalized_first = normalize_person_name(edit_first_name)
+                    normalized_last = normalize_person_name(edit_last_name)
+                    normalized_email = str(edit_email or "").strip().lower()
+                    normalized_org = str(edit_org or "").strip() or None
+
+                    if not normalized_first:
+                        st.error(t("ui.enter_first_name", lang))
+                    elif not normalized_email:
+                        st.error(t("ui.enter_email", lang))
+                    else:
+                        full_name = " ".join(part for part in [normalized_first, normalized_last] if part).strip()
+                        try:
+                            updated_user = update_user_profile(
+                                user_id=row["id"],
+                                email=normalized_email,
+                                full_name=full_name,
+                                organization=normalized_org,
+                                role=edit_role,
+                                actor_role=st.session_state.get("auth_role"),
+                            )
+                        except UniqueViolation:
+                            st.error(t("ui.email_already_in_use", lang))
+                        except PermissionError as exc:
+                            st.error(str(exc))
+                        except Exception as exc:
+                            st.error(str(exc))
+                        else:
+                            if updated_user:
+                                if row["id"] == current_user_id:
+                                    st.session_state.auth_email = updated_user["email"]
+                                    st.session_state.auth_full_name = updated_user.get("full_name")
+                                    st.session_state.auth_organization = updated_user.get("organization")
+                                    st.session_state.auth_role = updated_user.get("role")
+                                    st.session_state.auth_token_refresh_required = True
+                                st.success(t("admin.user_updated", lang, email=updated_user["email"]))
+                                st.rerun()
+
 
 def _render_studies_tab():
     lang = st.session_state.get("language", "en")
@@ -736,7 +825,9 @@ def _render_device_database_tab():
             elif not payload["name"]:
                 st.error(t("admin.catalog_name_required", lang))
             else:
-                create_device_catalog_item(payload)
+                created_id = create_device_catalog_item(payload)
+                created = get_device_catalog_item(created_id) if created_id else None
+                _refresh_runtime_catalog_after_admin_save(created.get("runtime_id") if created else None)
                 st.success(t("admin.catalog_item_created", lang, code=payload["code"]))
                 st.rerun()
 
@@ -767,6 +858,7 @@ def _render_device_database_tab():
                     st.error(t("admin.catalog_name_required", lang))
                 else:
                     update_device_catalog_item(row["id"], payload)
+                    _refresh_runtime_catalog_after_admin_save(row.get("runtime_id"))
                     st.success(t("admin.catalog_item_updated", lang, code=payload["code"]))
                     st.rerun()
 

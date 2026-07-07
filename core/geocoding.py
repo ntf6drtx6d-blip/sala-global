@@ -44,6 +44,15 @@ def _tokenize(value: str) -> set[str]:
     return {token for token in re.findall(r"[a-z0-9]+", (value or "").lower()) if token}
 
 
+def _is_airport_query(normalized_query: str) -> bool:
+    tokens = _tokenize(normalized_query)
+    if tokens.intersection({"airport", "airports", "aerodrome", "airfield", "airstrip"}):
+        return True
+    if _extract_icao_code(normalized_query):
+        return True
+    return any(re.fullmatch(r"[a-z]{3}", token) for token in tokens)
+
+
 def _rate_limit():
     last_ts = st.session_state.get("_nominatim_last_call_ts", 0.0)
     now = time.time()
@@ -227,8 +236,16 @@ def search_airport(query: str):
     if airport_match:
         return airport_match
 
+    if _is_airport_query(normalized_query):
+        return None
+
     _rate_limit()
-    results = _cached_lookup(normalized_query)
+    try:
+        results = _cached_lookup(normalized_query)
+    except requests.HTTPError as exc:
+        if "RATE_LIMIT_429" in str(exc) or "429" in str(exc):
+            return None
+        raise
 
     if not results:
         return None

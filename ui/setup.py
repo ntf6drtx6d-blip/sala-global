@@ -421,6 +421,11 @@ def render_setup(disabled=False):
                 key="airport_query_input",
                 disabled=disabled,
             )
+            manual_airport_name = airport_query.strip()
+            if not disabled:
+                st.session_state.airport_query = airport_query
+                if manual_airport_name:
+                    st.session_state.airport_label = manual_airport_name
 
         with airport_row_2:
             st.write("")
@@ -528,6 +533,10 @@ def render_setup(disabled=False):
             st.session_state.lon = new_lon
 
             if coords_changed:
+                manual_airport_name = st.session_state.get("airport_query_input", "").strip()
+                if manual_airport_name:
+                    st.session_state.airport_query = manual_airport_name
+                    st.session_state.airport_label = manual_airport_name
                 st.session_state.study_point_confirmed = True
                 st.session_state.map_click_info = t("ui.point_selected", lang, lat=new_lat, lon=new_lon)
                 st.session_state.search_message = ""
@@ -814,11 +823,16 @@ def render_setup(disabled=False):
                     if lamp_variant:
                         st.caption(t("ui.selected_lamp_type", lang, lamp_type=lamp_variant))
 
-                    intensity_mode = str(saved_cfg.get("intensity_mode", "fixed"))
+                    is_papi_family = dspec.get("code") in {"PAPI", "A-PAPI"}
+                    default_intensity_mode = "mixed" if is_papi_family else "fixed"
+                    default_share_pct = 60 if is_papi_family else 50
+                    default_intensity_a = 100 if is_papi_family else 30
+                    default_intensity_b = 30 if is_papi_family else 100
+                    intensity_mode = str(saved_cfg.get("intensity_mode", default_intensity_mode))
                     fixed_intensity_pct = int(round(_safe_float(saved_cfg.get("intensity_pct", 100), 100)))
-                    mixed_share_pct = _safe_float(saved_cfg.get("mixed_share_pct", 50), 50)
-                    mixed_intensity_a = int(round(_safe_float(saved_cfg.get("mixed_intensity_a", 30), 30)))
-                    mixed_intensity_b = int(round(_safe_float(saved_cfg.get("mixed_intensity_b", 100), 100)))
+                    mixed_share_pct = _safe_float(saved_cfg.get("mixed_share_pct", default_share_pct), default_share_pct)
+                    mixed_intensity_a = int(round(_safe_float(saved_cfg.get("mixed_intensity_a", default_intensity_a), default_intensity_a)))
+                    mixed_intensity_b = int(round(_safe_float(saved_cfg.get("mixed_intensity_b", default_intensity_b), default_intensity_b)))
                     standby_power_w = _safe_float(saved_cfg.get("standby_power_w", dspec.get("standby_power_w", 0.0) or 0.0), 0.0)
 
                     if supports_intensity:
@@ -837,7 +851,7 @@ def render_setup(disabled=False):
                             c1, c2, c3, c4 = st.columns(4)
                             with c1:
                                 mixed_share_pct = st.number_input(
-                                    t("ui.percent_of_day_a", lang),
+                                    t("ui.day_time_share", lang),
                                     min_value=0.0,
                                     max_value=100.0,
                                     value=float(mixed_share_pct),
@@ -847,7 +861,7 @@ def render_setup(disabled=False):
                                 )
                             with c2:
                                 mixed_intensity_a = st.selectbox(
-                                    t("ui.intensity_a", lang),
+                                    t("ui.day_intensity", lang),
                                     INTENSITY_PRESETS,
                                     index=INTENSITY_PRESETS.index(mixed_intensity_a) if mixed_intensity_a in INTENSITY_PRESETS else len(INTENSITY_PRESETS) - 1,
                                     key=f"mixed_intensity_a_{sim_key}",
@@ -855,7 +869,7 @@ def render_setup(disabled=False):
                                 )
                             with c3:
                                 st.number_input(
-                                    t("ui.rest_of_day_b", lang),
+                                    t("ui.night_time_share", lang),
                                     min_value=0.0,
                                     max_value=100.0,
                                     value=float(max(0.0, 100.0 - mixed_share_pct)),
@@ -865,7 +879,7 @@ def render_setup(disabled=False):
                                 )
                             with c4:
                                 mixed_intensity_b = st.selectbox(
-                                    t("ui.intensity_b", lang),
+                                    t("ui.night_intensity", lang),
                                     INTENSITY_PRESETS,
                                     index=INTENSITY_PRESETS.index(mixed_intensity_b) if mixed_intensity_b in INTENSITY_PRESETS else len(INTENSITY_PRESETS) - 1,
                                     key=f"mixed_intensity_b_{sim_key}",

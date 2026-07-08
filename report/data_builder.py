@@ -463,6 +463,7 @@ def build_report_data(loc, required_hours, results, overall, user_name, user_org
             "total_battery_wh": float(r.get("batt", 0) or 0),
             "cutoff_pct": float(r.get("cutoff_pct", 0) or 0),
             "usable_battery_wh": float(r.get("usable_battery_wh", 0) or 0),
+            "consumption_100_intensity_wh_per_hour": float(r.get("base_power_100", r.get("power", 0)) or 0),
             "required_hours": float(required_hours),
             "worst_blackout_risk": annual_days,
             "weakest_month_idx": weakest_month_idx,

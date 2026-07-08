@@ -63,9 +63,13 @@ def _study_payload(
     worst_blackout_days,
     worst_blackout_pct,
     result_summary,
+    study_version=None,
+    base_airport_label=None,
 ):
     return {
         "airport_label": airport_label,
+        "base_airport_label": base_airport_label or airport_label,
+        "study_version": study_version,
         "lat": lat,
         "lon": lon,
         "required_hours": required_hours,
@@ -95,6 +99,8 @@ def _study_row_to_legacy(row):
         {
             "study_name": row.get("study_name") or payload.get("airport_label"),
             "airport_label": payload.get("airport_label"),
+            "base_airport_label": payload.get("base_airport_label") or payload.get("airport_label"),
+            "study_version": payload.get("study_version"),
             "lat": payload.get("lat"),
             "lon": payload.get("lon"),
             "required_hours": payload.get("required_hours"),
@@ -464,7 +470,8 @@ def list_all_users():
         return rows
 
 
-def _save_study_payload(cur, study_id, user_id, airport_label, payload, pdf_name=None, pdf_bytes=None):
+def _save_study_payload(cur, study_id, user_id, airport_label, payload, pdf_name=None, pdf_bytes=None, study_name=None):
+    display_name = study_name or airport_label or "Unnamed study"
     if study_id is None:
         cur.execute(
             """
@@ -481,7 +488,7 @@ def _save_study_payload(cur, study_id, user_id, airport_label, payload, pdf_name
             """,
             (
                 user_id,
-                airport_label or "Unnamed study",
+                display_name,
                 Jsonb(payload),
                 pdf_name,
                 pdf_bytes,
@@ -500,7 +507,7 @@ def _save_study_payload(cur, study_id, user_id, airport_label, payload, pdf_name
             RETURNING id
             """,
             (
-                airport_label or "Unnamed study",
+                display_name,
                 Jsonb(payload),
                 pdf_name,
                 pdf_bytes,
@@ -527,6 +534,9 @@ def save_study(
     result_summary,
     pdf_name=None,
     pdf_bytes=None,
+    study_name=None,
+    study_version=None,
+    base_airport_label=None,
 ):
     payload = _study_payload(
         airport_label=airport_label,
@@ -540,6 +550,8 @@ def save_study(
         worst_blackout_days=worst_blackout_days,
         worst_blackout_pct=worst_blackout_pct,
         result_summary=result_summary,
+        study_version=study_version,
+        base_airport_label=base_airport_label,
     )
 
     with db_cursor() as (_, cur):
@@ -551,6 +563,7 @@ def save_study(
             payload,
             pdf_name=pdf_name,
             pdf_bytes=pdf_bytes,
+            study_name=study_name,
         )
 
 
@@ -570,6 +583,9 @@ def update_study(
     result_summary,
     pdf_name=None,
     pdf_bytes=None,
+    study_name=None,
+    study_version=None,
+    base_airport_label=None,
 ):
     payload = _study_payload(
         airport_label=airport_label,
@@ -583,6 +599,8 @@ def update_study(
         worst_blackout_days=worst_blackout_days,
         worst_blackout_pct=worst_blackout_pct,
         result_summary=result_summary,
+        study_version=study_version,
+        base_airport_label=base_airport_label,
     )
 
     with db_cursor() as (_, cur):
@@ -594,6 +612,7 @@ def update_study(
             payload,
             pdf_name=pdf_name,
             pdf_bytes=pdf_bytes,
+            study_name=study_name,
         )
 
 
@@ -609,6 +628,9 @@ def save_running_study_checkpoint(
     per_device_config,
     partial_results,
     simulation_job,
+    study_name=None,
+    study_version=None,
+    base_airport_label=None,
 ):
     return update_study(
         study_id=study_id,
@@ -630,6 +652,9 @@ def save_running_study_checkpoint(
         },
         pdf_name=None,
         pdf_bytes=None,
+        study_name=study_name,
+        study_version=study_version,
+        base_airport_label=base_airport_label,
     )
 
 

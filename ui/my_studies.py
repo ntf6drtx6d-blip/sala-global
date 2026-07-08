@@ -109,7 +109,7 @@ def render_my_studies(user_id):
         return
 
     for idx, row in enumerate(rows):
-        study_name = _row_value(row, "airport_label", t("ui.unnamed_study", lang))
+        study_name = _row_value(row, "study_name", None) or _row_value(row, "airport_label", t("ui.unnamed_study", lang))
         created_at = _format_created_at(_row_value(row, "created_at", "—"))
         operating_profile_mode = _format_operating_mode(_row_value(row, "operating_profile_mode", "—"), lang)
         overall_result = _row_value(row, "overall_result", "UNKNOWN")
@@ -181,12 +181,33 @@ def render_my_studies(user_id):
                 st.markdown(f"**{t('ui.worst_blackout_pct', lang)}**")
                 st.write(blackout_pct_text)
 
-            if pdf_bytes:
-                st.download_button(
-                    t("ui.download_pdf", lang),
-                    data=pdf_bytes,
-                    file_name=pdf_name or "SALA_report.pdf",
-                    mime="application/pdf",
-                    key=f"user_pdf_{row_id}",
-                    use_container_width=True,
-                )
+            action_cols = st.columns(2)
+            with action_cols[0]:
+                if st.button(t("ui.open_study", lang), key=f"user_open_{row_id}", use_container_width=True):
+                    st.query_params["study"] = str(row_id)
+                    for key in [
+                        "results",
+                        "overall",
+                        "partial_results",
+                        "partial_overall",
+                        "pdf_bytes",
+                        "pdf_name",
+                        "pdf_error",
+                        "active_simulation_job",
+                        "simulation_resume_required",
+                        "simulation_auto_continue",
+                        "study_saved_for_current_result",
+                    ]:
+                        if key in st.session_state:
+                            del st.session_state[key]
+                    st.rerun()
+            with action_cols[1]:
+                if pdf_bytes:
+                    st.download_button(
+                        t("ui.download_pdf", lang),
+                        data=pdf_bytes,
+                        file_name=pdf_name or "SALA_report.pdf",
+                        mime="application/pdf",
+                        key=f"user_pdf_{row_id}",
+                        use_container_width=True,
+                    )

@@ -20,9 +20,9 @@ def format_intensity_summary(
 
     if mode == "mixed":
         options = {
-            "en": f"{share_a:.0f}% of day at {a:.0f}% + {share_b:.0f}% at {b:.0f}% (avg {avg:.1f}%)",
-            "es": f"{share_a:.0f}% del día al {a:.0f}% + {share_b:.0f}% al {b:.0f}% (prom. {avg:.1f}%)",
-            "fr": f"{share_a:.0f}% de la journée à {a:.0f}% + {share_b:.0f}% à {b:.0f}% (moy. {avg:.1f}%)",
+            "en": f"Operating time split: {share_a:.0f}% at {a:.0f}% intensity, {share_b:.0f}% at {b:.0f}% intensity.",
+            "es": f"Distribución del tiempo operativo: {share_a:.0f}% al {a:.0f}% de intensidad, {share_b:.0f}% al {b:.0f}% de intensidad.",
+            "fr": f"Répartition du temps de fonctionnement : {share_a:.0f}% à {a:.0f}% d’intensité, {share_b:.0f}% à {b:.0f}% d’intensité.",
         }
         return options.get(language, options["en"])
 

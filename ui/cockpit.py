@@ -201,6 +201,9 @@ def reset_study():
         "energy_design_requested_all": False,
         "energy_design_requested_devices": [],
         "active_study_id": None,
+        "active_study_name": None,
+        "active_study_version": None,
+        "active_study_base_label": None,
         "partial_results": None,
         "partial_overall": None,
         "active_simulation_job": None,
@@ -383,6 +386,9 @@ def _run_simulation(progress_callback=None):
             per_device_config=st.session_state.get("per_device_config", {}),
             partial_results=partial_results,
             simulation_job=active_job,
+            study_name=st.session_state.get("active_study_name"),
+            study_version=st.session_state.get("active_study_version"),
+            base_airport_label=st.session_state.get("active_study_base_label") or st.session_state.get("airport_label", ""),
         )
         push_progress(int((next_index / total_devices) * 100), t("ui.stage_calculating_feasibility", lang))
         add_log({

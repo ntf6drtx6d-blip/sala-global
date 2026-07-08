@@ -10,7 +10,7 @@ from streamlit.errors import StreamlitSecretNotFoundError
 
 from core.i18n import AVAILABLE_LANGUAGES, month_label, month_labels, t
 
-from core.db import init_db, upsert_user, save_study, update_study, get_study, get_user_by_email, save_running_study_checkpoint
+from core.db import init_db, upsert_user, save_study, update_study, get_study, get_user_by_email, save_running_study_checkpoint, list_user_studies
 from core.person import normalize_person_name
 from core.auth import hash_password, init_auth_state, is_logged_in, is_admin, logout
 
@@ -259,6 +259,7 @@ def restore_study_from_query_id():
         per_device_config = {}
 
     st.session_state.airport_label = row.get("airport_label") or ""
+    st.session_state.airport_query = row.get("airport_label") or ""
     st.session_state.lat = float(row.get("lat", 0) or 0)
     st.session_state.lon = float(row.get("lon", 0) or 0)
     st.session_state.required_hours = float(row.get("required_hours", 0) or 0)
@@ -267,6 +268,9 @@ def restore_study_from_query_id():
     st.session_state.selected_ids = [item for item in selected_devices if "||" not in str(item)]
     st.session_state.per_device_config = per_device_config
     st.session_state.active_study_id = study_id
+    st.session_state.active_study_name = row.get("study_name")
+    st.session_state.active_study_version = row.get("study_version")
+    st.session_state.active_study_base_label = row.get("base_airport_label") or row.get("airport_label")
     st.session_state.study_point_confirmed = True
     st.session_state.active_simulation_job = simulation_job
     if results:
@@ -326,6 +330,29 @@ def _format_duration(seconds):
     if mins:
         return f"{mins}m {secs:02d}s"
     return f"{secs}s"
+
+
+def _base_study_label() -> str:
+    return (st.session_state.get("airport_label") or st.session_state.get("airport_query") or "Unnamed study").strip()
+
+
+def _next_study_version(user_id, base_label: str) -> tuple[int, str]:
+    normalized = " ".join(str(base_label or "Unnamed study").lower().split())
+    max_version = 0
+    try:
+        rows = list_user_studies(user_id)
+    except Exception:
+        rows = []
+    for row in rows:
+        row_base = row.get("base_airport_label") or row.get("airport_label") or row.get("study_name") or ""
+        if " ".join(str(row_base).lower().split()) != normalized:
+            continue
+        try:
+            max_version = max(max_version, int(row.get("study_version") or 0))
+        except Exception:
+            max_version += 1
+    version = max_version + 1
+    return version, f"{base_label or 'Unnamed study'} v{version:02d}"
 
 
 def _mark_run_failed(message: str):
@@ -406,6 +433,9 @@ def init_state():
         "energy_design_requested_all": False,
         "energy_design_requested_devices": [],
         "active_study_id": None,
+        "active_study_name": None,
+        "active_study_version": None,
+        "active_study_base_label": None,
         "partial_results": None,
         "partial_overall": None,
         "active_simulation_job": None,
@@ -688,6 +718,7 @@ def render_header():
 
 def _trigger_simulation():
     now = time.time()
+    st.session_state.active_study_id = None
     st.session_state.results = None
     st.session_state.overall = None
     st.session_state.pdf_bytes = None
@@ -999,6 +1030,27 @@ def render_top_action_bar():
     return action_state
 
 
+def render_top_new_study_control():
+    if st.session_state.get("running") or st.session_state.get("trigger_run"):
+        return
+    lang = st.session_state.get("language", "en")
+    has_any_study_state = any([
+        st.session_state.get("airport_label"),
+        st.session_state.get("airport_query"),
+        st.session_state.get("selected_ids"),
+        st.session_state.get("selected_simulation_keys"),
+        st.session_state.get("results") is not None,
+        st.session_state.get("active_study_id"),
+    ])
+    if not has_any_study_state:
+        return
+    cols = st.columns([1, 2.8])
+    with cols[0]:
+        if st.button(t("ui.start_new_study", lang), key="quick_start_new_study", use_container_width=True):
+            _set_study_query_id(None)
+            reset_study()
+
+
 def ensure_active_study_record():
     if st.session_state.get("active_study_id"):
         return st.session_state.get("active_study_id")
@@ -1007,9 +1059,12 @@ def ensure_active_study_record():
     if not user_id:
         return None
 
+    base_label = _base_study_label()
+    study_version, study_name = _next_study_version(user_id, base_label)
+
     study_id = save_study(
         user_id=user_id,
-        airport_label=st.session_state.get("airport_label", ""),
+        airport_label=base_label,
         lat=float(st.session_state.get("lat", 0)),
         lon=float(st.session_state.get("lon", 0)),
         required_hours=float(st.session_state.get("required_hours", 0)),
@@ -1022,9 +1077,15 @@ def ensure_active_study_record():
         result_summary={"overall_state": "running", "results": None},
         pdf_name=None,
         pdf_bytes=None,
+        study_name=study_name,
+        study_version=study_version,
+        base_airport_label=base_label,
     )
     if study_id:
         st.session_state.active_study_id = study_id
+        st.session_state.active_study_name = study_name
+        st.session_state.active_study_version = study_version
+        st.session_state.active_study_base_label = base_label
         _set_study_query_id(study_id)
     return study_id
 
@@ -1047,6 +1108,9 @@ def _save_running_checkpoint_impl(partial_results=None):
         per_device_config=st.session_state.get("per_device_config", {}),
         partial_results=partial_results if partial_results is not None else st.session_state.get("partial_results"),
         simulation_job=st.session_state.get("active_simulation_job"),
+        study_name=st.session_state.get("active_study_name"),
+        study_version=st.session_state.get("active_study_version"),
+        base_airport_label=st.session_state.get("active_study_base_label") or _base_study_label(),
     )
 
 
@@ -1084,7 +1148,7 @@ def maybe_save_current_study():
     save_fn = update_study if active_study_id else save_study
     save_kwargs = dict(
         user_id=user_id,
-        airport_label=st.session_state.get("airport_label", ""),
+        airport_label=_base_study_label(),
         lat=float(st.session_state.get("lat", 0)),
         lon=float(st.session_state.get("lon", 0)),
         required_hours=float(st.session_state.get("required_hours", 0)),
@@ -1100,6 +1164,9 @@ def maybe_save_current_study():
     )
     if active_study_id:
         save_kwargs["study_id"] = active_study_id
+        save_kwargs["study_name"] = st.session_state.get("active_study_name")
+        save_kwargs["study_version"] = st.session_state.get("active_study_version")
+        save_kwargs["base_airport_label"] = st.session_state.get("active_study_base_label") or _base_study_label()
     study_id = save_fn(**save_kwargs)
 
     st.session_state.study_saved_for_current_result = True
@@ -1277,6 +1344,7 @@ def render_calculator_app():
     ):
         st.session_state.running = True
         st.session_state.trigger_run = True
+    render_top_new_study_control()
     if st.session_state.get("running", False):
         with st.expander(t("ui.show_study_setup", lang), expanded=False):
             st.caption(t("ui.inputs_locked", lang))

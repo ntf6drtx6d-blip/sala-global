@@ -800,6 +800,7 @@ def render_device_capability_cards(results: dict):
                             (t("ui.usable_window", lang), format_energy_wh(result_row.get("usable_battery_wh"))),
                             (t("ui.cutoff", lang), _fmt_pct(result_row.get("cutoff_pct"))),
                             (t("ui.simulation_intensity", lang), _intensity_summary(result_row)),
+                            (t("ui.consumption_100_intensity", lang), f"{_safe_float(result_row.get('base_power_100', result_row.get('power', 0))):.2f} Wh"),
                         ],
                     )
                 with right:

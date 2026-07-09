@@ -1,6 +1,8 @@
 # ui/my_studies.py
 
 import json
+import html
+from urllib.parse import urlencode
 from collections import OrderedDict
 
 import streamlit as st
@@ -95,6 +97,16 @@ def _format_created_at(value):
     return format_timestamp(value, include_seconds=True)
 
 
+def _study_open_url(row_id):
+    params = {"study": str(row_id)}
+    auth_token = st.query_params.get("auth")
+    if isinstance(auth_token, list):
+        auth_token = auth_token[0] if auth_token else None
+    if auth_token:
+        params["auth"] = str(auth_token)
+    return f"?{urlencode(params)}"
+
+
 def render_my_studies(user_id):
     lang = st.session_state.get("language", "en")
     st.markdown(f"## {t('ui.my_studies_heading', lang)}")
@@ -183,24 +195,29 @@ def render_my_studies(user_id):
 
             action_cols = st.columns(2)
             with action_cols[0]:
-                if st.button(t("ui.open_study", lang), key=f"user_open_{row_id}", use_container_width=True):
-                    st.query_params["study"] = str(row_id)
-                    for key in [
-                        "results",
-                        "overall",
-                        "partial_results",
-                        "partial_overall",
-                        "pdf_bytes",
-                        "pdf_name",
-                        "pdf_error",
-                        "active_simulation_job",
-                        "simulation_resume_required",
-                        "simulation_auto_continue",
-                        "study_saved_for_current_result",
-                    ]:
-                        if key in st.session_state:
-                            del st.session_state[key]
-                    st.rerun()
+                open_url = _study_open_url(row_id)
+                open_label = html.escape(t("ui.open_study", lang))
+                st.markdown(
+                    f"""
+                    <a href="{html.escape(open_url)}" target="_blank" rel="noopener noreferrer"
+                       style="
+                         display:block;
+                         width:100%;
+                         box-sizing:border-box;
+                         text-align:center;
+                         text-decoration:none;
+                         border:1px solid #f5c451;
+                         border-radius:14px;
+                         padding:0.72rem 1rem;
+                         font-weight:700;
+                         color:#7a5a00;
+                         background:#fff7dc;
+                       ">
+                        {open_label}
+                    </a>
+                    """,
+                    unsafe_allow_html=True,
+                )
             with action_cols[1]:
                 if pdf_bytes:
                     st.download_button(

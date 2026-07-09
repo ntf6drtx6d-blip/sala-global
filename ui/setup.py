@@ -825,9 +825,9 @@ def render_setup(disabled=False):
 
                     is_papi_family = dspec.get("code") in {"PAPI", "A-PAPI"}
                     default_intensity_mode = "mixed" if is_papi_family else "fixed"
-                    default_share_pct = 60 if is_papi_family else 50
+                    default_share_pct = 70 if is_papi_family else 50
                     default_intensity_a = 100 if is_papi_family else 30
-                    default_intensity_b = 30 if is_papi_family else 100
+                    default_intensity_b = 10 if is_papi_family else 100
                     intensity_mode = str(saved_cfg.get("intensity_mode", default_intensity_mode))
                     fixed_intensity_pct = int(round(_safe_float(saved_cfg.get("intensity_pct", 100), 100)))
                     mixed_share_pct = _safe_float(saved_cfg.get("mixed_share_pct", default_share_pct), default_share_pct)

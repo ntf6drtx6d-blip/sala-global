@@ -11,6 +11,7 @@ from streamlit.errors import StreamlitSecretNotFoundError
 from core.i18n import AVAILABLE_LANGUAGES, month_label, month_labels, t
 
 from core.db import init_db, upsert_user, save_study, update_study, get_study, get_user_by_email, save_running_study_checkpoint, list_user_studies
+from core.catalog import get_runtime_devices
 from core.person import normalize_person_name
 from core.auth import hash_password, init_auth_state, is_logged_in, is_admin, logout
 
@@ -217,9 +218,6 @@ def logout_and_forget():
 
 
 def restore_study_from_query_id():
-    if st.session_state.get("results") is not None:
-        return
-
     if not is_logged_in():
         return
 
@@ -231,6 +229,12 @@ def restore_study_from_query_id():
         study_id = int(str(raw_study_id))
     except Exception:
         _set_study_query_id(None)
+        return
+
+    if (
+        st.session_state.get("results") is not None
+        and str(st.session_state.get("active_study_id") or "") == str(study_id)
+    ):
         return
 
     row = get_study(study_id, user_id=st.session_state.get("auth_user_id"))
@@ -257,15 +261,27 @@ def restore_study_from_query_id():
         per_device_config = json.loads(per_device_config_raw) if per_device_config_raw else {}
     except Exception:
         per_device_config = {}
+    if not selected_devices and isinstance(per_device_config, dict):
+        selected_devices = list(per_device_config.keys())
+
+    base_device_ids, lamp_types_by_device, manufacturers = _restore_selection_state_from_saved_devices(selected_devices)
+    _clear_setup_widget_state_before_study_restore(selected_devices, base_device_ids)
 
     st.session_state.airport_label = row.get("airport_label") or ""
     st.session_state.airport_query = row.get("airport_label") or ""
+    st.session_state.airport_query_input = row.get("airport_label") or ""
     st.session_state.lat = float(row.get("lat", 0) or 0)
     st.session_state.lon = float(row.get("lon", 0) or 0)
     st.session_state.required_hours = float(row.get("required_hours", 0) or 0)
+    st.session_state.required_custom_hours_input = float(row.get("required_hours", 0) or 0)
     st.session_state.operating_profile_mode = row.get("operating_profile_mode") or st.session_state.get("operating_profile_mode")
+    st.session_state.operating_profile_mode_radio = st.session_state.operating_profile_mode
     st.session_state.selected_simulation_keys = selected_devices
-    st.session_state.selected_ids = [item for item in selected_devices if "||" not in str(item)]
+    st.session_state.selected_ids = base_device_ids
+    st.session_state.selected_ids_widget = list(base_device_ids)
+    st.session_state.selected_manufacturers = manufacturers
+    st.session_state.selected_manufacturers_widget = list(manufacturers)
+    st.session_state.selected_lamp_types = lamp_types_by_device
     st.session_state.per_device_config = per_device_config
     st.session_state.active_study_id = study_id
     st.session_state.active_study_name = row.get("study_name")
@@ -317,6 +333,81 @@ def restore_study_from_query_id():
             st.session_state.simulation_resume_required = False
             st.session_state.simulation_auto_continue = False
     refresh_study_ready_from_state()
+
+
+def _restore_selection_state_from_saved_devices(selected_devices):
+    device_ids = []
+    lamp_types_by_device = {}
+    manufacturers = set()
+    runtime_devices = {}
+    try:
+        runtime_devices = get_runtime_devices()
+    except Exception:
+        runtime_devices = {}
+
+    for item in selected_devices or []:
+        raw = str(item)
+        variant = None
+        device_raw = raw
+        if "||" in raw:
+            device_raw, variant = raw.split("||", 1)
+
+        try:
+            device_id = int(device_raw)
+        except Exception:
+            continue
+
+        if device_id not in device_ids:
+            device_ids.append(device_id)
+
+        if variant:
+            lamp_types_by_device.setdefault(device_id, [])
+            if variant not in lamp_types_by_device[device_id]:
+                lamp_types_by_device[device_id].append(variant)
+
+        device_spec = runtime_devices.get(device_id) if runtime_devices else None
+        if device_spec:
+            manufacturers.add(device_spec.get("manufacturer", "Unknown"))
+
+    return device_ids, lamp_types_by_device, sorted(manufacturers)
+
+
+def _clear_setup_widget_state_before_study_restore(selected_devices, base_device_ids):
+    keys_to_pop = {
+        "airport_query_input",
+        "airport_icao_input",
+        "required_custom_hours_input",
+        "operating_profile_mode_radio",
+        "selected_ids_widget",
+        "selected_manufacturers_widget",
+        "device_search_filter",
+    }
+    dynamic_prefixes = (
+        "variant_enabled_",
+        "intensity_mode_",
+        "mixed_share_",
+        "mixed_intensity_a_",
+        "mixed_rest_",
+        "mixed_intensity_b_",
+        "intensity_pct_",
+        "power_",
+        "quantity_",
+        "engine_",
+        "battery_mode_",
+    )
+    saved_keys = {str(item) for item in (selected_devices or [])}
+    saved_keys.update(str(item) for item in (base_device_ids or []))
+
+    for key in list(st.session_state.keys()):
+        key_str = str(key)
+        if key_str in keys_to_pop:
+            st.session_state.pop(key, None)
+            continue
+        if key_str.startswith(dynamic_prefixes):
+            for saved_key in saved_keys:
+                if key_str.endswith(saved_key) or f"_{saved_key}_" in key_str or f"_{saved_key}" in key_str:
+                    st.session_state.pop(key, None)
+                    break
 
 
 def _format_duration(seconds):

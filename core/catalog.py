@@ -1,4 +1,5 @@
 from copy import deepcopy
+from functools import lru_cache
 
 from core.db import list_device_catalog
 from core.devices import DEVICES as STATIC_DEVICES, SOLAR_ENGINES as STATIC_SOLAR_ENGINES
@@ -79,17 +80,22 @@ def get_runtime_catalog():
 
     return devices, engines
 
+@lru_cache(maxsize=1)
+def _cached_runtime_catalog_snapshot():
+    return get_runtime_catalog()
+
+
 def get_cached_runtime_catalog():
-    devices, engines = get_runtime_catalog()
+    devices, engines = _cached_runtime_catalog_snapshot()
     return deepcopy(devices), deepcopy(engines)
 
 
 def invalidate_runtime_catalog_cache():
-    return None
+    _cached_runtime_catalog_snapshot.cache_clear()
 
 
 def get_runtime_devices():
-    devices, _ = get_runtime_catalog()
+    devices, _ = get_cached_runtime_catalog()
     return devices
 
 

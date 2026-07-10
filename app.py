@@ -297,6 +297,14 @@ def restore_study_from_query_id():
     st.session_state.active_study_base_label = row.get("base_airport_label") or row.get("airport_label")
     st.session_state.simulation_timing = simulation_timing if isinstance(simulation_timing, dict) else {}
     st.session_state.study_point_confirmed = True
+    st.session_state.study_location = {
+        "label": st.session_state.airport_label,
+        "query": st.session_state.airport_query,
+        "lat": st.session_state.lat,
+        "lon": st.session_state.lon,
+        "icao": st.session_state.airport_icao,
+        "country": st.session_state.get("airport_country", "-"),
+    }
     st.session_state.active_simulation_job = simulation_job
     if results:
         overall_value = row.get("overall_result") or result_summary.get("overall_state")
@@ -512,6 +520,7 @@ def init_state():
         "selected_lamp_types": {},
         "airport_query_input": "",
         "airport_icao_input": "",
+        "study_location": None,
         "last_airport_query": "",
         "last_map_click": None,
         "map_click_pending_rerender": False,

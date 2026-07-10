@@ -69,10 +69,48 @@ def _init_setup_defaults():
             st.session_state.airport_country = "-"
         if "airport_icao" not in st.session_state:
             st.session_state.airport_icao = ""
-
-    _get_runtime_catalog_cached()
+        if "study_location" not in st.session_state:
+            st.session_state.study_location = None
 
     _refresh_study_ready()
+
+
+def _set_confirmed_location(label=None, lat=None, lon=None, icao=None, country=None):
+    """Keep the selected study point independent from device-selector reruns."""
+    if label is not None:
+        st.session_state.airport_label = str(label or "").strip()
+        st.session_state.airport_query = st.session_state.airport_label
+    if lat is not None:
+        st.session_state.lat = float(lat)
+    if lon is not None:
+        st.session_state.lon = float(lon)
+    if icao is not None:
+        st.session_state.airport_icao = str(icao or "").strip().upper()[:4]
+    if country is not None:
+        st.session_state.airport_country = country or "-"
+    st.session_state.study_point_confirmed = True
+    st.session_state.study_location = {
+        "label": st.session_state.get("airport_label", ""),
+        "query": st.session_state.get("airport_query", ""),
+        "lat": float(st.session_state.get("lat", 0.0)),
+        "lon": float(st.session_state.get("lon", 0.0)),
+        "icao": st.session_state.get("airport_icao", ""),
+        "country": st.session_state.get("airport_country", "-"),
+    }
+
+
+def _restore_confirmed_location_if_needed():
+    location = st.session_state.get("study_location")
+    if not isinstance(location, dict) or not st.session_state.get("study_point_confirmed"):
+        return
+    if not st.session_state.get("airport_label") and location.get("label"):
+        st.session_state.airport_label = location.get("label", "")
+    if not st.session_state.get("airport_query") and location.get("query"):
+        st.session_state.airport_query = location.get("query", "")
+    if location.get("lat") is not None:
+        st.session_state.lat = float(location.get("lat", 0.0))
+    if location.get("lon") is not None:
+        st.session_state.lon = float(location.get("lon", 0.0))
 
 
 def _refresh_study_ready():
@@ -332,6 +370,7 @@ def _apply_operating_profile():
 
 def render_setup(disabled=False):
     _init_setup_defaults()
+    _restore_confirmed_location_if_needed()
     lang = st.session_state.get("language", "en")
     DEVICES, SOLAR_ENGINES = _get_runtime_catalog_cached()
 
@@ -424,9 +463,15 @@ def render_setup(disabled=False):
             )
             manual_airport_name = airport_query.strip()
             if not disabled:
-                st.session_state.airport_query = airport_query
                 if manual_airport_name:
-                    st.session_state.airport_label = manual_airport_name
+                    st.session_state.airport_query = manual_airport_name
+                    if st.session_state.get("study_point_confirmed"):
+                        _set_confirmed_location(label=manual_airport_name)
+                    else:
+                        st.session_state.airport_label = manual_airport_name
+                elif not st.session_state.get("study_point_confirmed"):
+                    st.session_state.airport_query = ""
+                    st.session_state.airport_label = ""
 
         with airport_row_2:
             st.write("")
@@ -458,13 +503,13 @@ def render_setup(disabled=False):
                         )
                         st.rerun()
 
-                    st.session_state.airport_label = query or result["label"]
-                    st.session_state.airport_query = query or result["label"]
-                    st.session_state.lat = result["lat"]
-                    st.session_state.lon = result["lon"]
-                    st.session_state.airport_country = result.get("country", "-")
-                    st.session_state.airport_icao = result.get("icao", "") or ""
-                    st.session_state.study_point_confirmed = True
+                    _set_confirmed_location(
+                        label=query or result["label"],
+                        lat=result["lat"],
+                        lon=result["lon"],
+                        icao=result.get("icao", "") or "",
+                        country=result.get("country", "-"),
+                    )
                     st.session_state.last_airport_query = normalized_query
                     st.session_state.search_message = t("ui.search_found", lang, display_name=result["display_name"])
                     st.session_state.map_click_info = (
@@ -536,9 +581,9 @@ def render_setup(disabled=False):
             if coords_changed:
                 manual_airport_name = st.session_state.get("airport_query_input", "").strip()
                 if manual_airport_name:
-                    st.session_state.airport_query = manual_airport_name
-                    st.session_state.airport_label = manual_airport_name
-                st.session_state.study_point_confirmed = True
+                    _set_confirmed_location(label=manual_airport_name, lat=new_lat, lon=new_lon)
+                else:
+                    _set_confirmed_location(lat=new_lat, lon=new_lon)
                 st.session_state.map_click_info = t("ui.point_selected", lang, lat=new_lat, lon=new_lon)
                 st.session_state.search_message = ""
                 if st.session_state.get("operating_profile_mode") == "Dusk to dawn":
@@ -647,10 +692,9 @@ def render_setup(disabled=False):
             if not device_filter_norm or device_filter_norm in _device_label(did).lower()
         ]
         current_selected_ids = [
-            did for did in st.session_state.get("selected_ids_widget", st.session_state.get("selected_ids", []))
+            did for did in st.session_state.get("selected_ids", [])
             if did in valid_manufacturer_ids
         ]
-        st.session_state.selected_ids_widget = current_selected_ids
         options_for_multiselect = sorted(
             set(filtered_device_ids_local) | set(current_selected_ids),
             key=lambda did: _device_label(did),
@@ -691,9 +735,7 @@ def render_setup(disabled=False):
 
             if click_signature != st.session_state.get("last_map_click"):
                 st.session_state.last_map_click = click_signature
-                st.session_state.lat = clicked_lat
-                st.session_state.lon = clicked_lon
-                st.session_state.study_point_confirmed = True
+                _set_confirmed_location(lat=clicked_lat, lon=clicked_lon)
                 st.session_state.map_click_info = t("ui.point_selected", lang, lat=clicked_lat, lon=clicked_lon)
                 st.session_state.search_message = ""
                 st.session_state.map_click_pending_rerender = True

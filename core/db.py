@@ -65,11 +65,13 @@ def _study_payload(
     result_summary,
     study_version=None,
     base_airport_label=None,
+    language="en",
 ):
     return {
         "airport_label": airport_label,
         "base_airport_label": base_airport_label or airport_label,
         "study_version": study_version,
+        "language": language or "en",
         "lat": lat,
         "lon": lon,
         "required_hours": required_hours,
@@ -101,6 +103,7 @@ def _study_row_to_legacy(row):
             "airport_label": payload.get("airport_label"),
             "base_airport_label": payload.get("base_airport_label") or payload.get("airport_label"),
             "study_version": payload.get("study_version"),
+            "language": payload.get("language") or "en",
             "lat": payload.get("lat"),
             "lon": payload.get("lon"),
             "required_hours": payload.get("required_hours"),
@@ -537,6 +540,7 @@ def save_study(
     study_name=None,
     study_version=None,
     base_airport_label=None,
+    language="en",
 ):
     payload = _study_payload(
         airport_label=airport_label,
@@ -552,6 +556,7 @@ def save_study(
         result_summary=result_summary,
         study_version=study_version,
         base_airport_label=base_airport_label,
+        language=language,
     )
 
     with db_cursor() as (_, cur):
@@ -586,6 +591,7 @@ def update_study(
     study_name=None,
     study_version=None,
     base_airport_label=None,
+    language="en",
 ):
     payload = _study_payload(
         airport_label=airport_label,
@@ -601,6 +607,7 @@ def update_study(
         result_summary=result_summary,
         study_version=study_version,
         base_airport_label=base_airport_label,
+        language=language,
     )
 
     with db_cursor() as (_, cur):
@@ -631,6 +638,7 @@ def save_running_study_checkpoint(
     study_name=None,
     study_version=None,
     base_airport_label=None,
+    language="en",
 ):
     return update_study(
         study_id=study_id,
@@ -655,6 +663,7 @@ def save_running_study_checkpoint(
         study_name=study_name,
         study_version=study_version,
         base_airport_label=base_airport_label,
+        language=language,
     )
 
 

@@ -39,6 +39,9 @@ LANGUAGE_FLAGS = {
     "es": "🇪🇸",
     "fr": "🇫🇷",
 }
+DEFAULT_LAT = 40.416775
+DEFAULT_LON = -3.703790
+DEFAULT_MANUFACTURER = "S4GA"
 
 # ---- Persistent auth via signed URL token ----
 # This survives Streamlit restarts because it is stored in the browser URL.
@@ -270,6 +273,7 @@ def restore_study_from_query_id():
     st.session_state.airport_label = row.get("airport_label") or ""
     st.session_state.airport_query = row.get("airport_label") or ""
     st.session_state.airport_query_input = row.get("airport_label") or ""
+    st.session_state.language = row.get("language") or st.session_state.get("language", "en")
     st.session_state.lat = float(row.get("lat", 0) or 0)
     st.session_state.lon = float(row.get("lon", 0) or 0)
     st.session_state.required_hours = float(row.get("required_hours", 0) or 0)
@@ -378,6 +382,7 @@ def _clear_setup_widget_state_before_study_restore(selected_devices, base_device
         "airport_icao_input",
         "required_custom_hours_input",
         "operating_profile_mode_radio",
+        "ui_language_selector",
         "selected_ids_widget",
         "selected_manufacturers_widget",
         "device_search_filter",
@@ -489,13 +494,22 @@ def init_state():
         "airport_query": "",
         "airport_icao": "",
         "language": "en",
-        "lat": 40.416775,
-        "lon": -3.703790,
+        "lat": DEFAULT_LAT,
+        "lon": DEFAULT_LON,
         "required_hours": 12.0,
         "operating_profile_mode": "Custom hours per day",
         "selected_ids": [],
+        "selected_ids_widget": [],
+        "selected_manufacturers": [DEFAULT_MANUFACTURER],
+        "selected_manufacturers_widget": [DEFAULT_MANUFACTURER],
         "selected_simulation_keys": [],
         "per_device_config": {},
+        "selected_lamp_types": {},
+        "airport_query_input": "",
+        "airport_icao_input": "",
+        "last_airport_query": "",
+        "last_map_click": None,
+        "map_click_pending_rerender": False,
         "results": None,
         "overall": None,
         "pdf_bytes": None,
@@ -1171,6 +1185,7 @@ def ensure_active_study_record():
         study_name=study_name,
         study_version=study_version,
         base_airport_label=base_label,
+        language=st.session_state.get("language", "en"),
     )
     if study_id:
         st.session_state.active_study_id = study_id
@@ -1202,6 +1217,7 @@ def _save_running_checkpoint_impl(partial_results=None):
         study_name=st.session_state.get("active_study_name"),
         study_version=st.session_state.get("active_study_version"),
         base_airport_label=st.session_state.get("active_study_base_label") or _base_study_label(),
+        language=st.session_state.get("language", "en"),
     )
 
 
@@ -1252,6 +1268,7 @@ def maybe_save_current_study():
         result_summary=result_summary,
         pdf_name=st.session_state.get("pdf_name", "SALA_report.pdf"),
         pdf_bytes=st.session_state.get("pdf_bytes"),
+        language=st.session_state.get("language", "en"),
     )
     if active_study_id:
         save_kwargs["study_id"] = active_study_id

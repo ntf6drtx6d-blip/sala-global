@@ -15,6 +15,9 @@ from core.person import normalize_person_name
 from core.time_utils import format_clock_timestamp, now_local
 from report.report import make_pdf
 EU_LOGO_PATH = "logo_en.gif"
+DEFAULT_LAT = 40.416775
+DEFAULT_LON = -3.703790
+DEFAULT_MANUFACTURER = "S4GA"
 
 
 def format_seconds(seconds):
@@ -165,16 +168,26 @@ def reset_study():
         "airport_label": "",
         "airport_query": "",
         "airport_icao": "",
+        "airport_query_input": "",
+        "airport_icao_input": "",
         "language": st.session_state.get("language", "en"),
-        "lat": st.session_state.get("lat", 40.416775),
-        "lon": st.session_state.get("lon", -3.703790),
+        "lat": DEFAULT_LAT,
+        "lon": DEFAULT_LON,
         "required_hours": 12.0,
         "operating_profile_mode": t("ui.mode_custom", lang),
         "selected_ids": [],
+        "selected_ids_widget": [],
+        "selected_manufacturers": [DEFAULT_MANUFACTURER],
+        "selected_manufacturers_widget": [DEFAULT_MANUFACTURER],
         "selected_simulation_keys": [],
         "per_device_config": {},
+        "selected_lamp_types": {},
+        "device_search_filter": "",
         "search_message": "",
         "map_click_info": "",
+        "last_airport_query": "",
+        "last_map_click": None,
+        "map_click_pending_rerender": False,
         "study_point_confirmed": False,
         "study_ready": False,
         "results": None,
@@ -389,6 +402,7 @@ def _run_simulation(progress_callback=None):
             study_name=st.session_state.get("active_study_name"),
             study_version=st.session_state.get("active_study_version"),
             base_airport_label=st.session_state.get("active_study_base_label") or st.session_state.get("airport_label", ""),
+            language=st.session_state.get("language", "en"),
         )
         push_progress(int((next_index / total_devices) * 100), t("ui.stage_calculating_feasibility", lang))
         add_log({

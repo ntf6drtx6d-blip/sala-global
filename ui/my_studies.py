@@ -9,7 +9,7 @@ import streamlit as st
 
 from core.db import list_user_studies
 from core.catalog import runtime_device_label, runtime_device_variant_label
-from core.i18n import t
+from core.i18n import AVAILABLE_LANGUAGES, t
 from core.time_utils import format_timestamp
 
 
@@ -97,6 +97,11 @@ def _format_created_at(value):
     return format_timestamp(value, include_seconds=True)
 
 
+def _format_language(value):
+    code = str(value or "en").strip().lower()
+    return AVAILABLE_LANGUAGES.get(code, code.upper() if code else "—")
+
+
 def _study_open_url(row_id):
     params = {"study": str(row_id)}
     auth_token = st.query_params.get("auth")
@@ -122,6 +127,8 @@ def render_my_studies(user_id):
 
     for idx, row in enumerate(rows):
         study_name = _row_value(row, "study_name", None) or _row_value(row, "airport_label", t("ui.unnamed_study", lang))
+        airport_name = _row_value(row, "airport_label", None) or "—"
+        study_language = _format_language(_row_value(row, "language", "en"))
         created_at = _format_created_at(_row_value(row, "created_at", "—"))
         operating_profile_mode = _format_operating_mode(_row_value(row, "operating_profile_mode", "—"), lang)
         overall_result = _row_value(row, "overall_result", "UNKNOWN")
@@ -181,6 +188,10 @@ def render_my_studies(user_id):
 
             left, right = st.columns(2)
             with left:
+                st.markdown(f"**{t('ui.airport_name', lang)}**")
+                st.write(airport_name)
+                st.markdown(f"**{t('ui.language', lang)}**")
+                st.write(study_language)
                 st.markdown(f"**{t('ui.mode', lang)}**")
                 st.write(operating_profile_mode or "—")
                 st.markdown(f"**{t('ui.devices', lang)}**")

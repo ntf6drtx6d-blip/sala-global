@@ -8,6 +8,7 @@ from core.i18n import t
 from ui.map_embed import render_folium_map
 
 INTENSITY_PRESETS = [3, 10, 30, 60, 100]
+DEFAULT_MANUFACTURER = "S4GA"
 
 
 def _get_runtime_catalog_cached():
@@ -29,7 +30,7 @@ def _init_setup_defaults():
         if "selected_ids_widget" not in st.session_state:
             st.session_state.selected_ids_widget = list(st.session_state.selected_ids)
         if "selected_manufacturers" not in st.session_state:
-            st.session_state.selected_manufacturers = []
+            st.session_state.selected_manufacturers = [DEFAULT_MANUFACTURER]
         if "selected_manufacturers_widget" not in st.session_state:
             st.session_state.selected_manufacturers_widget = list(st.session_state.selected_manufacturers)
         if "selected_simulation_keys" not in st.session_state:
@@ -868,11 +869,13 @@ def render_setup(disabled=False):
                                     disabled=disabled,
                                 )
                             with c3:
+                                night_share_pct = float(max(0.0, 100.0 - mixed_share_pct))
+                                st.session_state[f"mixed_rest_{sim_key}"] = night_share_pct
                                 st.number_input(
                                     t("ui.night_time_share", lang),
                                     min_value=0.0,
                                     max_value=100.0,
-                                    value=float(max(0.0, 100.0 - mixed_share_pct)),
+                                    value=night_share_pct,
                                     step=5.0,
                                     key=f"mixed_rest_{sim_key}",
                                     disabled=True,

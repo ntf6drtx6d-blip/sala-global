@@ -249,6 +249,7 @@ def reset_study():
         "last_airport_query": "",
         "last_map_click": None,
         "map_click_pending_rerender": False,
+        "show_map_picker": False,
         "study_point_confirmed": False,
         "study_ready": False,
         "results": None,

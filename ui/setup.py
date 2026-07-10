@@ -63,6 +63,8 @@ def _init_setup_defaults():
             st.session_state.last_map_click = None
         if "map_click_pending_rerender" not in st.session_state:
             st.session_state.map_click_pending_rerender = False
+        if "show_map_picker" not in st.session_state:
+            st.session_state.show_map_picker = False
         if "last_airport_query" not in st.session_state:
             st.session_state.last_airport_query = ""
         if "airport_country" not in st.session_state:
@@ -111,6 +113,23 @@ def _restore_confirmed_location_if_needed():
         st.session_state.lat = float(location.get("lat", 0.0))
     if location.get("lon") is not None:
         st.session_state.lon = float(location.get("lon", 0.0))
+
+
+def _ensure_default_manufacturer_selection(manufacturer_options):
+    current = [
+        item
+        for item in st.session_state.get("selected_manufacturers_widget", [])
+        if item in manufacturer_options
+    ]
+    if current:
+        st.session_state.selected_manufacturers_widget = current
+        return
+    if DEFAULT_MANUFACTURER in manufacturer_options:
+        st.session_state.selected_manufacturers_widget = [DEFAULT_MANUFACTURER]
+    elif manufacturer_options:
+        st.session_state.selected_manufacturers_widget = [manufacturer_options[0]]
+    else:
+        st.session_state.selected_manufacturers_widget = []
 
 
 def _refresh_study_ready():
@@ -656,13 +675,19 @@ def render_setup(disabled=False):
         st.markdown(f"### 3. {t('ui.manufacturer', lang)}")
 
         manufacturer_options = sorted({d.get("manufacturer", "Unknown") for d in DEVICES.values()})
+        _ensure_default_manufacturer_selection(manufacturer_options)
         selected_manufacturers = st.multiselect(
             t("ui.manufacturers_included", lang),
             manufacturer_options,
             key="selected_manufacturers_widget",
             disabled=disabled,
             help=t("ui.manufacturers_included", lang),
+            on_change=_ensure_default_manufacturer_selection,
+            args=(manufacturer_options,),
         )
+        if not selected_manufacturers:
+            _ensure_default_manufacturer_selection(manufacturer_options)
+            selected_manufacturers = list(st.session_state.get("selected_manufacturers_widget", []))
         st.session_state.selected_manufacturers = list(selected_manufacturers)
 
         st.markdown(f"### 4. {t('ui.select_devices', lang)}")
@@ -713,36 +738,6 @@ def render_setup(disabled=False):
     with right:
         st.markdown(f"### {t('ui.study_point', lang)}")
 
-        fmap = create_map(
-            st.session_state.lat,
-            st.session_state.lon,
-            st.session_state.airport_label or "Selected study point",
-        )
-
-        map_data = render_folium_map(
-            fmap,
-            height=360,
-            returned_objects=["last_clicked"],
-            key="study_map_modular",
-            interactive=True,
-        )
-
-        clicked = map_data.get("last_clicked") if isinstance(map_data, dict) else None
-        if clicked and not disabled:
-            clicked_lat = float(clicked["lat"])
-            clicked_lon = float(clicked["lng"])
-            click_signature = (round(clicked_lat, 6), round(clicked_lon, 6))
-
-            if click_signature != st.session_state.get("last_map_click"):
-                st.session_state.last_map_click = click_signature
-                _set_confirmed_location(lat=clicked_lat, lon=clicked_lon)
-                st.session_state.map_click_info = t("ui.point_selected", lang, lat=clicked_lat, lon=clicked_lon)
-                st.session_state.search_message = ""
-                st.session_state.map_click_pending_rerender = True
-                if st.session_state.get("operating_profile_mode") == "Dusk to dawn":
-                    _apply_operating_profile()
-                _refresh_study_ready()
-
         if st.session_state.map_click_info:
             st.success(st.session_state.map_click_info)
 
@@ -753,9 +748,55 @@ def render_setup(disabled=False):
         else:
             st.caption(t("ui.select_airport_or_click", lang))
 
-        if st.session_state.get("map_click_pending_rerender"):
-            st.session_state.map_click_pending_rerender = False
-            st.rerun()
+        picker_cols = st.columns([1, 1])
+        with picker_cols[0]:
+            if st.button("Edit point on map", disabled=disabled, width="stretch"):
+                st.session_state.show_map_picker = True
+                st.rerun()
+        with picker_cols[1]:
+            if st.session_state.get("show_map_picker") and st.button("Hide map", disabled=disabled, width="stretch"):
+                st.session_state.show_map_picker = False
+                st.rerun()
+
+        if st.session_state.get("show_map_picker"):
+            fmap = create_map(
+                st.session_state.lat,
+                st.session_state.lon,
+                st.session_state.airport_label or "Selected study point",
+            )
+
+            map_data = render_folium_map(
+                fmap,
+                height=360,
+                returned_objects=["last_clicked"],
+                key="study_map_modular",
+                interactive=True,
+            )
+
+            clicked = map_data.get("last_clicked") if isinstance(map_data, dict) else None
+            if clicked and not disabled:
+                clicked_lat = float(clicked["lat"])
+                clicked_lon = float(clicked["lng"])
+                click_signature = (round(clicked_lat, 6), round(clicked_lon, 6))
+
+                if click_signature != st.session_state.get("last_map_click"):
+                    st.session_state.last_map_click = click_signature
+                    _set_confirmed_location(lat=clicked_lat, lon=clicked_lon)
+                    st.session_state.map_click_info = t("ui.point_selected", lang, lat=clicked_lat, lon=clicked_lon)
+                    st.session_state.search_message = ""
+                    st.session_state.map_click_pending_rerender = True
+                    if st.session_state.get("operating_profile_mode") == "Dusk to dawn":
+                        _apply_operating_profile()
+                    _refresh_study_ready()
+
+            if st.session_state.get("map_click_pending_rerender"):
+                st.session_state.map_click_pending_rerender = False
+                st.session_state.show_map_picker = False
+                st.rerun()
+        elif st.session_state.get("study_point_confirmed"):
+            st.info(f"{st.session_state.airport_label or 'Selected study point'} · {st.session_state.lat:.6f}, {st.session_state.lon:.6f}")
+        else:
+            st.info("Use airport search or Advanced coordinates. Open the map only if you need manual point selection.")
 
 
     st.markdown(f"### 5. {t('ui.configure_devices', lang)}")

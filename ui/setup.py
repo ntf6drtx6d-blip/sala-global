@@ -228,14 +228,14 @@ def longest_night_hours(lat_deg: float) -> float:
     return max(0.0, min(24.0, night))
 
 
-def _device_label(device_id):
-    DEVICES, _ = _get_runtime_catalog_cached()
+def _device_label(device_id, devices=None):
+    DEVICES = devices if devices is not None else _get_runtime_catalog_cached()[0]
     d = DEVICES[device_id]
     return d["name"]
 
 
-def _device_manufacturer(device_id):
-    DEVICES, _ = _get_runtime_catalog_cached()
+def _device_manufacturer(device_id, devices=None):
+    DEVICES = devices if devices is not None else _get_runtime_catalog_cached()[0]
     d = DEVICES[device_id]
     return d.get("manufacturer", "S4GA")
 
@@ -247,9 +247,8 @@ def _safe_float(value, default=0.0):
         return float(default)
 
 
-def _engine_summary(device_id, engine_key, battery_mode):
-    DEVICES, SOLAR_ENGINES = _get_runtime_catalog_cached()
-    dspec = DEVICES[device_id]
+def _engine_summary(dspec, solar_engines, engine_key, battery_mode):
+    SOLAR_ENGINES = solar_engines
     system_type = dspec.get("system_type", "builtin")
 
     if system_type in ["builtin", "avlite_fixture"]:
@@ -288,9 +287,7 @@ def _engine_summary(device_id, engine_key, battery_mode):
     }
 
 
-def _supports_intensity_adjustment(device_id):
-    DEVICES, _ = _get_runtime_catalog_cached()
-    dspec = DEVICES[device_id]
+def _supports_intensity_adjustment(dspec):
     if dspec.get("code") in {"PAPI", "A-PAPI"}:
         return True
     return bool(dspec.get("supports_intensity_adjustment", dspec.get("system_type") in {"builtin", "avlite_fixture"}))
@@ -380,8 +377,8 @@ def _simulation_key(device_id, lamp_variant=None):
     return f"{device_id}||{lamp_variant}" if lamp_variant else str(device_id)
 
 
-def _simulation_label(device_id, lamp_variant=None):
-    base = _device_label(device_id)
+def _simulation_label(device_id, lamp_variant=None, devices=None):
+    base = _device_label(device_id, devices)
     return f"{base} / {_variant_short_label(lamp_variant)}" if lamp_variant else base
 
 
@@ -727,7 +724,8 @@ def render_setup(disabled=False):
             did for did, spec in DEVICES.items()
             if spec.get("manufacturer", "Unknown") in selected_manufacturers
         ]
-        filtered_device_ids.sort(key=lambda did: _device_label(did))
+        device_labels = {did: spec.get("name", did) for did, spec in DEVICES.items()}
+        filtered_device_ids.sort(key=lambda did: device_labels.get(did, did))
         valid_manufacturer_ids = set(filtered_device_ids)
         canonical_selected_ids = [
             did for did in st.session_state.get("selected_ids", [])
@@ -745,7 +743,7 @@ def render_setup(disabled=False):
 
         filtered_device_ids_local = [
             did for did in filtered_device_ids
-            if not device_filter_norm or device_filter_norm in _device_label(did).lower()
+            if not device_filter_norm or device_filter_norm in device_labels.get(did, did).lower()
         ]
         current_selected_ids = [
             did for did in st.session_state.get("selected_ids", [])
@@ -753,7 +751,7 @@ def render_setup(disabled=False):
         ]
         options_for_multiselect = sorted(
             set(filtered_device_ids_local) | set(current_selected_ids),
-            key=lambda did: _device_label(did),
+            key=lambda did: device_labels.get(did, did),
         )
 
         selected_ids = st.multiselect(
@@ -761,7 +759,7 @@ def render_setup(disabled=False):
             options_for_multiselect,
             key="selected_ids_widget",
             disabled=disabled,
-            format_func=_device_label,
+            format_func=lambda did: device_labels.get(did, did),
         )
         st.session_state.selected_ids = [did for did in selected_ids if did in valid_manufacturer_ids]
         selected_ids = list(st.session_state.selected_ids)
@@ -859,7 +857,7 @@ def render_setup(disabled=False):
 
             if variants:
                 has_variant_devices = True
-                with st.expander(f"{_device_label(did)} — {t('ui.lamp_type_selection', lang)}", expanded=False):
+                with st.expander(f"{device_labels.get(did, did)} — {t('ui.lamp_type_selection', lang)}", expanded=False):
                     st.markdown(
                         f"""
                         <div class="lamp-type-shell">
@@ -920,11 +918,11 @@ def render_setup(disabled=False):
                 else:
                     base_power = _safe_float(dspec.get("default_power", dspec.get("power", dspec.get("default_consumption", 0.0))), 0.0)
 
-                supports_intensity = _supports_intensity_adjustment(did)
+                supports_intensity = _supports_intensity_adjustment(dspec)
                 default_power = float(saved_cfg.get("unit_power", saved_cfg.get("power", base_power)))
                 engine_key = saved_cfg.get("engine_key", dspec.get("default_engine"))
                 battery_mode = saved_cfg.get("battery_mode", "Std")
-                display_label = _simulation_label(did, lamp_variant)
+                display_label = _simulation_label(did, lamp_variant, DEVICES)
                 quantity = max(1, int(saved_cfg.get("quantity", 1) or 1))
                 quantity_enabled = system_type == "external_engine" and dspec.get("code") == "SP-200"
 
@@ -1075,7 +1073,7 @@ def render_setup(disabled=False):
                         battery_mode = "Built-in"
                         st.caption(t("ui.built_in_source", lang))
 
-                    summary = _engine_summary(did, engine_key, battery_mode)
+                    summary = _engine_summary(dspec, SOLAR_ENGINES, engine_key, battery_mode)
                     total_power = float(power) * float(quantity) if system_type == "external_engine" else float(power)
 
                     m1, m2, m3, m4 = st.columns(4)

@@ -1,5 +1,6 @@
 import math
 import streamlit as st
+import streamlit.components.v1 as components
 import folium
 
 from core.catalog import get_cached_runtime_catalog
@@ -473,9 +474,10 @@ def render_setup(disabled=False):
         airport_row_1, airport_row_2 = st.columns([3.2, 1.1])
 
         with airport_row_1:
+            if not st.session_state.get("airport_query_input") and st.session_state.get("airport_query"):
+                st.session_state.airport_query_input = st.session_state.get("airport_query", "")
             airport_query = st.text_input(
                 t("ui.airport_name", lang),
-                value=st.session_state.get("airport_query", ""),
                 placeholder=t("ui.airport_placeholder", lang),
                 key="airport_query_input",
                 disabled=disabled,
@@ -495,7 +497,7 @@ def render_setup(disabled=False):
         with airport_row_2:
             st.write("")
             st.write("")
-            if st.button(t("ui.find_airport", lang), use_container_width=True, disabled=disabled):
+            if st.button(t("ui.find_airport", lang), width="stretch", disabled=disabled):
                 query = airport_query.strip()
 
                 if not query:
@@ -556,9 +558,10 @@ def render_setup(disabled=False):
             else:
                 st.warning(st.session_state.search_message)
 
+        if st.session_state.get("airport_icao") and not st.session_state.get("airport_icao_input"):
+            st.session_state.airport_icao_input = st.session_state.get("airport_icao", "")
         airport_icao_value = st.text_input(
             t("ui.icao_optional", lang),
-            value=st.session_state.get("airport_icao", ""),
             placeholder=t("ui.icao_placeholder", lang),
             max_chars=4,
             disabled=disabled,
@@ -795,6 +798,12 @@ def render_setup(disabled=False):
                 st.rerun()
         elif st.session_state.get("study_point_confirmed"):
             st.info(f"{st.session_state.airport_label or 'Selected study point'} · {st.session_state.lat:.6f}, {st.session_state.lon:.6f}")
+            preview_map = create_map(
+                st.session_state.lat,
+                st.session_state.lon,
+                st.session_state.airport_label or "Selected study point",
+            )
+            components.html(preview_map._repr_html_(), height=300, scrolling=False)
         else:
             st.info("Use airport search or Advanced coordinates. Open the map only if you need manual point selection.")
 

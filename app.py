@@ -253,6 +253,10 @@ def restore_study_from_query_id():
 
     results = result_summary.get("results")
     simulation_job = result_summary.get("simulation_job") or None
+    try:
+        simulation_timing = json.loads(row.get("simulation_timing_json") or "{}")
+    except Exception:
+        simulation_timing = result_summary.get("simulation_timing") or {}
 
     selected_devices_raw = row.get("selected_devices_json")
     per_device_config_raw = row.get("per_device_config_json")
@@ -291,6 +295,7 @@ def restore_study_from_query_id():
     st.session_state.active_study_name = row.get("study_name")
     st.session_state.active_study_version = row.get("study_version")
     st.session_state.active_study_base_label = row.get("base_airport_label") or row.get("airport_label")
+    st.session_state.simulation_timing = simulation_timing if isinstance(simulation_timing, dict) else {}
     st.session_state.study_point_confirmed = True
     st.session_state.active_simulation_job = simulation_job
     if results:
@@ -535,8 +540,7 @@ def init_state():
         "simulation_cache_results": None,
         "simulation_cache_overall": None,
         "simulation_cache_pdf_context": None,
-        "energy_design_requested_all": False,
-        "energy_design_requested_devices": [],
+        "simulation_timing": {},
         "active_study_id": None,
         "active_study_name": None,
         "active_study_version": None,
@@ -839,8 +843,7 @@ def _trigger_simulation():
     st.session_state.trigger_run = True
     st.session_state.study_saved_for_current_result = False
     st.session_state.pdf_error = None
-    st.session_state.energy_design_requested_all = False
-    st.session_state.energy_design_requested_devices = []
+    st.session_state.simulation_timing = {}
     st.session_state.partial_results = {}
     st.session_state.partial_overall = "RUNNING"
     selected_devices = list(st.session_state.get("selected_simulation_keys") or st.session_state.get("selected_ids", []))
@@ -1186,6 +1189,7 @@ def ensure_active_study_record():
         study_version=study_version,
         base_airport_label=base_label,
         language=st.session_state.get("language", "en"),
+        simulation_timing=st.session_state.get("simulation_timing") or {},
     )
     if study_id:
         st.session_state.active_study_id = study_id
@@ -1218,6 +1222,7 @@ def _save_running_checkpoint_impl(partial_results=None):
         study_version=st.session_state.get("active_study_version"),
         base_airport_label=st.session_state.get("active_study_base_label") or _base_study_label(),
         language=st.session_state.get("language", "en"),
+        simulation_timing=st.session_state.get("simulation_timing") or {},
     )
 
 
@@ -1249,6 +1254,7 @@ def maybe_save_current_study():
         "worst_blackout_pct": pct,
         "results": results,
         "simulation_job": None,
+        "simulation_timing": st.session_state.get("simulation_timing") or {},
     }
 
     active_study_id = st.session_state.get("active_study_id")
@@ -1269,6 +1275,7 @@ def maybe_save_current_study():
         pdf_name=st.session_state.get("pdf_name", "SALA_report.pdf"),
         pdf_bytes=st.session_state.get("pdf_bytes"),
         language=st.session_state.get("language", "en"),
+        simulation_timing=st.session_state.get("simulation_timing") or {},
     )
     if active_study_id:
         save_kwargs["study_id"] = active_study_id
@@ -1559,14 +1566,9 @@ def render_calculator_app():
         if STABILITY_ROLLBACK_MODE:
             st.info("Advanced result sections are temporarily disabled in stability mode.")
         else:
-            from ui.result import render_device_capability_cards, render_energy_design_overview
+            from ui.result import render_device_capability_cards
             from ui.weather_basis import render_weather_basis
             from ui.graph import render_graph
-
-            try:
-                render_energy_design_overview(results)
-            except Exception as exc:
-                st.error(f"Energy Design Analysis render failed: {exc}")
 
             try:
                 render_device_capability_cards(results)

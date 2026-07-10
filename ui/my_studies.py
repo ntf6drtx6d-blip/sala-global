@@ -39,6 +39,39 @@ def _safe_json_list(raw_value):
         return []
 
 
+def _safe_json_dict(raw_value):
+    if raw_value is None or raw_value == "":
+        return {}
+    if isinstance(raw_value, dict):
+        return raw_value
+    try:
+        value = json.loads(raw_value)
+        return value if isinstance(value, dict) else {}
+    except Exception:
+        return {}
+
+
+def _format_seconds(seconds):
+    try:
+        seconds = max(0, int(round(float(seconds or 0))))
+    except Exception:
+        seconds = 0
+    mins, secs = divmod(seconds, 60)
+    hrs, mins = divmod(mins, 60)
+    if hrs:
+        return f"{hrs}h {mins}m {secs}s"
+    if mins:
+        return f"{mins}m {secs}s"
+    return f"{secs}s"
+
+
+def _timing_value(totals, key):
+    try:
+        return float((totals or {}).get(key, 0.0) or 0.0)
+    except Exception:
+        return 0.0
+
+
 def _normalize_result(result):
     value = (result or "").strip().upper()
     if value in {"ALL_PASS", "PASS"}:
@@ -157,6 +190,10 @@ def render_my_studies(user_id):
         except Exception:
             blackout_pct_text = str(worst_blackout_pct)
 
+        simulation_timing = _safe_json_dict(_row_value(row, "simulation_timing_json"))
+        timing_totals = simulation_timing.get("totals") or {}
+        timing_chunks = list(simulation_timing.get("chunks") or [])
+
         badge_text, badge_fg, badge_bg, badge_border = _result_badge_config(overall_result)
 
         with st.container(border=True):
@@ -203,6 +240,36 @@ def render_my_studies(user_id):
                 st.write(blackout_days_text)
                 st.markdown(f"**{t('ui.worst_blackout_pct', lang)}**")
                 st.write(blackout_pct_text)
+
+            if timing_totals or timing_chunks:
+                with st.expander("Simulation timing log", expanded=False):
+                    total_seconds = _timing_value(timing_totals, "total_elapsed_seconds") or _timing_value(timing_totals, "elapsed_seconds")
+                    st.markdown(f"**Total elapsed:** {_format_seconds(total_seconds)}")
+                    timing_cols = st.columns(5)
+                    timing_metrics = [
+                        ("Monthly PVGIS search", "monthly_search_seconds"),
+                        ("Blackout stats", "blackout_stats_seconds"),
+                        ("PVGIS/report metadata", "pvgis_meta_seconds"),
+                        ("Battery behavior/UI", "battery_behavior_seconds"),
+                        ("PDF generation", "pdf_generation_seconds"),
+                    ]
+                    for col, (label, key) in zip(timing_cols, timing_metrics):
+                        col.metric(label, _format_seconds(_timing_value(timing_totals, key)))
+
+                    if timing_chunks:
+                        rows = []
+                        for idx_chunk, chunk in enumerate(timing_chunks, start=1):
+                            rows.append(
+                                {
+                                    "Device": chunk.get("device_name") or chunk.get("device_key") or f"Device {idx_chunk}",
+                                    "Elapsed": _format_seconds(chunk.get("elapsed_seconds")),
+                                    "Monthly search": _format_seconds(chunk.get("monthly_search_seconds")),
+                                    "Blackout stats": _format_seconds(chunk.get("blackout_stats_seconds")),
+                                    "Metadata": _format_seconds(chunk.get("pvgis_meta_seconds")),
+                                    "Battery/UI": _format_seconds(chunk.get("battery_behavior_seconds")),
+                                }
+                            )
+                        st.dataframe(rows, hide_index=True, use_container_width=True)
 
             action_cols = st.columns(2)
             with action_cols[0]:

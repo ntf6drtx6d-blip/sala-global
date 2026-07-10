@@ -66,6 +66,7 @@ def _study_payload(
     study_version=None,
     base_airport_label=None,
     language="en",
+    simulation_timing=None,
 ):
     return {
         "airport_label": airport_label,
@@ -82,6 +83,7 @@ def _study_payload(
         "worst_blackout_days": worst_blackout_days,
         "worst_blackout_pct": worst_blackout_pct,
         "result_summary": result_summary,
+        "simulation_timing": simulation_timing or {},
     }
 
 
@@ -114,6 +116,7 @@ def _study_row_to_legacy(row):
             "worst_blackout_days": payload.get("worst_blackout_days"),
             "worst_blackout_pct": payload.get("worst_blackout_pct"),
             "result_summary_json": json.dumps(payload.get("result_summary") or {}),
+            "simulation_timing_json": json.dumps(payload.get("simulation_timing") or {}),
             "created_at": _dt_to_text(row.get("created_at")),
             "updated_at": _dt_to_text(row.get("updated_at")),
         }
@@ -541,6 +544,7 @@ def save_study(
     study_version=None,
     base_airport_label=None,
     language="en",
+    simulation_timing=None,
 ):
     payload = _study_payload(
         airport_label=airport_label,
@@ -557,6 +561,7 @@ def save_study(
         study_version=study_version,
         base_airport_label=base_airport_label,
         language=language,
+        simulation_timing=simulation_timing,
     )
 
     with db_cursor() as (_, cur):
@@ -592,6 +597,7 @@ def update_study(
     study_version=None,
     base_airport_label=None,
     language="en",
+    simulation_timing=None,
 ):
     payload = _study_payload(
         airport_label=airport_label,
@@ -608,6 +614,7 @@ def update_study(
         study_version=study_version,
         base_airport_label=base_airport_label,
         language=language,
+        simulation_timing=simulation_timing,
     )
 
     with db_cursor() as (_, cur):
@@ -639,6 +646,7 @@ def save_running_study_checkpoint(
     study_version=None,
     base_airport_label=None,
     language="en",
+    simulation_timing=None,
 ):
     return update_study(
         study_id=study_id,
@@ -657,6 +665,7 @@ def save_running_study_checkpoint(
             "overall_state": "running",
             "results": partial_results,
             "simulation_job": simulation_job,
+            "simulation_timing": simulation_timing or {},
         },
         pdf_name=None,
         pdf_bytes=None,
@@ -664,6 +673,7 @@ def save_running_study_checkpoint(
         study_version=study_version,
         base_airport_label=base_airport_label,
         language=language,
+        simulation_timing=simulation_timing,
     )
 
 

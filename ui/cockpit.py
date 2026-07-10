@@ -55,6 +55,66 @@ def _profiling_summary(profile):
     return lines
 
 
+def _timing_round(value):
+    try:
+        return round(float(value or 0.0), 3)
+    except Exception:
+        return 0.0
+
+
+def _normalize_timing_profile(profile, elapsed_seconds, device_key):
+    profile = dict(profile or {})
+    device_items = list(profile.get("device_breakdown") or [])
+    device_profile = dict(device_items[0]) if device_items else {}
+    return {
+        "device_key": str(device_key),
+        "device_name": device_profile.get("device_name") or str(device_key),
+        "source_type": device_profile.get("source_type"),
+        "elapsed_seconds": _timing_round(elapsed_seconds),
+        "simulation_core_seconds": _timing_round(profile.get("total_seconds", elapsed_seconds)),
+        "monthly_search_seconds": _timing_round(profile.get("monthly_search_total_seconds")),
+        "blackout_stats_seconds": _timing_round(profile.get("blackout_stats_total_seconds")),
+        "pvgis_meta_seconds": _timing_round(profile.get("meta_total_seconds")),
+        "battery_behavior_seconds": _timing_round(profile.get("behavior_total_seconds")),
+        "device_breakdown": [
+            {
+                "device_name": item.get("device_name"),
+                "source_type": item.get("source_type"),
+                "monthly_search_seconds": _timing_round(item.get("monthly_search_seconds")),
+                "blackout_stats_seconds": _timing_round(item.get("blackout_stats_seconds")),
+                "pvgis_meta_seconds": _timing_round(item.get("meta_seconds")),
+                "battery_behavior_seconds": _timing_round(item.get("behavior_seconds")),
+            }
+            for item in device_items
+        ],
+    }
+
+
+def _append_timing_profile(profile, elapsed_seconds, device_key):
+    timing = dict(st.session_state.get("simulation_timing") or {})
+    chunks = list(timing.get("chunks") or [])
+    chunk = _normalize_timing_profile(profile, elapsed_seconds, device_key)
+    chunks.append(chunk)
+    totals = {
+        "elapsed_seconds": sum(_timing_round(item.get("elapsed_seconds")) for item in chunks),
+        "simulation_core_seconds": sum(_timing_round(item.get("simulation_core_seconds")) for item in chunks),
+        "monthly_search_seconds": sum(_timing_round(item.get("monthly_search_seconds")) for item in chunks),
+        "blackout_stats_seconds": sum(_timing_round(item.get("blackout_stats_seconds")) for item in chunks),
+        "pvgis_meta_seconds": sum(_timing_round(item.get("pvgis_meta_seconds")) for item in chunks),
+        "battery_behavior_seconds": sum(_timing_round(item.get("battery_behavior_seconds")) for item in chunks),
+    }
+    timing.update(
+        {
+            "chunks": chunks,
+            "totals": {k: _timing_round(v) for k, v in totals.items()},
+            "completed_devices": len(chunks),
+            "last_device_name": chunk.get("device_name"),
+        }
+    )
+    st.session_state.simulation_timing = timing
+    return timing
+
+
 def now_ts():
     return format_clock_timestamp(with_timezone=True)
 
@@ -211,8 +271,7 @@ def reset_study():
         "simulation_cache_results": None,
         "simulation_cache_overall": None,
         "simulation_cache_pdf_context": None,
-        "energy_design_requested_all": False,
-        "energy_design_requested_devices": [],
+        "simulation_timing": {},
         "active_study_id": None,
         "active_study_name": None,
         "active_study_version": None,
@@ -365,6 +424,7 @@ def _run_simulation(progress_callback=None):
         profiling=simulation_profile,
     )
     elapsed = time.time() - started
+    simulation_timing = _append_timing_profile(simulation_profile, elapsed, current_device_key)
     for line in _profiling_summary(simulation_profile):
         add_log(line)
 
@@ -403,6 +463,7 @@ def _run_simulation(progress_callback=None):
             study_version=st.session_state.get("active_study_version"),
             base_airport_label=st.session_state.get("active_study_base_label") or st.session_state.get("airport_label", ""),
             language=st.session_state.get("language", "en"),
+            simulation_timing=simulation_timing,
         )
         push_progress(int((next_index / total_devices) * 100), t("ui.stage_calculating_feasibility", lang))
         add_log({
@@ -427,15 +488,25 @@ def _run_simulation(progress_callback=None):
     pdf_name = "SALA_report.pdf"
     pdf_bytes = None
     pdf_error = None
+    pdf_started = time.time()
     try:
         pdf_name, pdf_bytes = _build_pdf(results, overall, lang)
     except Exception as exc:
         pdf_error = str(exc)
         add_log(t("ui.pdf_generation_failed", lang, error=str(exc)))
+    pdf_seconds = time.time() - pdf_started
+    timing = dict(st.session_state.get("simulation_timing") or {})
+    totals = dict(timing.get("totals") or {})
+    totals["pdf_generation_seconds"] = _timing_round(pdf_seconds)
+    totals["total_elapsed_seconds"] = _timing_round(sum(_timing_round(item.get("elapsed_seconds")) for item in timing.get("chunks", [])) + pdf_seconds)
+    timing["totals"] = totals
+    timing["pdf_generation_seconds"] = _timing_round(pdf_seconds)
+    st.session_state.simulation_timing = timing
 
     push_progress(100, t("ui.stage_generating_results", lang))
     add_log(t("ui.log_simulation_complete", lang))
-    add_log(t("ui.log_total_elapsed", lang, elapsed=format_seconds(elapsed)))
+    add_log(f"PDF generation: {format_seconds(pdf_seconds)}")
+    add_log(t("ui.log_total_elapsed", lang, elapsed=format_seconds(totals.get("total_elapsed_seconds", elapsed))))
 
     st.session_state.results = results
     st.session_state.overall = overall

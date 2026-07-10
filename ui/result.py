@@ -19,7 +19,7 @@ from ui.result_helpers import (
     overall_state,
     result_device_display_name,
 )
-from ui.result_devices import render_device_capability_cards, render_energy_design_overview
+from ui.result_devices import render_device_capability_cards
 
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -453,4 +453,4 @@ def render_result():
         render_device_summary_line(results)
 
 
-__all__ = ["render_result", "render_device_capability_cards", "render_energy_design_overview"]
+__all__ = ["render_result", "render_device_capability_cards"]

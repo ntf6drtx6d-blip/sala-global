@@ -1,6 +1,7 @@
 import math
+from urllib.parse import urlencode
+
 import streamlit as st
-import streamlit.components.v1 as components
 import folium
 
 from core.catalog import get_cached_runtime_catalog
@@ -182,6 +183,23 @@ def create_map(lat, lon, label):
     ).add_to(fmap)
 
     return fmap
+
+
+def render_static_map_preview(lat, lon):
+    lat = float(lat)
+    lon = float(lon)
+    params = urlencode(
+        {
+            "bbox": f"{lon - 0.16},{lat - 0.12},{lon + 0.16},{lat + 0.12}",
+            "layer": "mapnik",
+            "marker": f"{lat},{lon}",
+        }
+    )
+    st.iframe(
+        f"https://www.openstreetmap.org/export/embed.html?{params}",
+        height=300,
+        width="stretch",
+    )
 
 
 def _day_length_hours(lat_deg: float, decl_deg: float) -> float:
@@ -458,6 +476,16 @@ def render_setup(disabled=False):
             font-size: 0.9rem;
             margin-top: 6px;
             line-height: 1.4;
+        }
+        .readonly-number {
+            min-height: 2.9rem;
+            border-radius: 0.7rem;
+            background: #eef2f6;
+            color: #667085;
+            display: flex;
+            align-items: center;
+            padding: 0 0.85rem;
+            font-weight: 700;
         }
         </style>
         """,
@@ -798,12 +826,7 @@ def render_setup(disabled=False):
                 st.rerun()
         elif st.session_state.get("study_point_confirmed"):
             st.info(f"{st.session_state.airport_label or 'Selected study point'} · {st.session_state.lat:.6f}, {st.session_state.lon:.6f}")
-            preview_map = create_map(
-                st.session_state.lat,
-                st.session_state.lon,
-                st.session_state.airport_label or "Selected study point",
-            )
-            components.html(preview_map._repr_html_(), height=300, scrolling=False)
+            render_static_map_preview(st.session_state.lat, st.session_state.lon)
         else:
             st.info("Use airport search or Advanced coordinates. Open the map only if you need manual point selection.")
 
@@ -962,15 +985,10 @@ def render_setup(disabled=False):
                                 )
                             with c3:
                                 night_share_pct = float(max(0.0, 100.0 - mixed_share_pct))
-                                st.session_state[f"mixed_rest_{sim_key}"] = night_share_pct
-                                st.number_input(
-                                    t("ui.night_time_share", lang),
-                                    min_value=0.0,
-                                    max_value=100.0,
-                                    value=night_share_pct,
-                                    step=5.0,
-                                    key=f"mixed_rest_{sim_key}",
-                                    disabled=True,
+                                st.markdown(f"**{t('ui.night_time_share', lang)}**")
+                                st.markdown(
+                                    f"<div class='readonly-number'>{night_share_pct:.2f}</div>",
+                                    unsafe_allow_html=True,
                                 )
                             with c4:
                                 mixed_intensity_b = st.selectbox(

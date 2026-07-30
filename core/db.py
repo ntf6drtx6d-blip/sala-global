@@ -99,6 +99,8 @@ def _study_row_to_legacy(row):
             payload = {}
 
     legacy = dict(row)
+    legacy.setdefault("pdf_bytes", None)
+    legacy.setdefault("pdf_name", None)
     legacy.update(
         {
             "study_name": row.get("study_name") or payload.get("airport_label"),
@@ -715,17 +717,46 @@ def get_studies(user_id=None, email=None):
     return []
 
 
-def list_all_studies():
+def list_all_studies(limit=300):
+    # Deliberately excludes pdf_bytes (BYTEA, can be several MB each) and strips
+    # study_data.result_summary (the heaviest JSON field) from the listing query.
+    # Loading those for every study on every admin-panel rerun was crashing the
+    # service with an out-of-memory restart. Use get_study_pdf() to fetch a single
+    # study's PDF on demand instead.
     with db_cursor() as (_, cur):
         cur.execute(
             """
-            SELECT s.*, u.email
+            SELECT
+                s.id,
+                s.user_id,
+                s.study_name,
+                (s.study_data - 'result_summary') AS study_data,
+                s.created_at,
+                s.updated_at,
+                u.email
             FROM studies s
             JOIN users u ON s.user_id = u.id
             ORDER BY s.created_at DESC
-            """
+            LIMIT %s
+            """,
+            (limit,),
         )
         return [_study_row_to_legacy(row) for row in cur.fetchall()]
+
+
+def get_study_pdf(study_id, user_id=None):
+    with db_cursor() as (_, cur):
+        if user_id is None:
+            cur.execute("SELECT pdf_name, pdf_bytes FROM studies WHERE id = %s", (study_id,))
+        else:
+            cur.execute(
+                "SELECT pdf_name, pdf_bytes FROM studies WHERE id = %s AND user_id = %s",
+                (study_id, user_id),
+            )
+        row = cur.fetchone()
+        if not row:
+            return None, None
+        return row.get("pdf_name"), row.get("pdf_bytes")
 
 
 def delete_study(study_id, user_id):

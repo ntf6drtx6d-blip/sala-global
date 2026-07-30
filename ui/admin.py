@@ -12,6 +12,7 @@ from core.db import (
     create_device_catalog_item,
     device_catalog_code_exists,
     get_device_catalog_item,
+    get_study_pdf,
     list_access_requests,
     list_device_catalog,
     list_all_users,
@@ -757,11 +758,15 @@ def _render_studies_tab():
     lang = st.session_state.get("language", "en")
     st.markdown(f"### {t('admin.studies', lang)}")
 
-    rows = list_all_studies()
+    studies_limit = 300
+    rows = list_all_studies(limit=studies_limit)
 
     if not rows:
         st.info(t("admin.no_studies_recorded", lang))
         return
+
+    if len(rows) >= studies_limit:
+        st.caption(f"Showing the {studies_limit} most recent studies.")
 
     # collect filter options
     user_options = sorted({row["email"] for row in rows if row["email"]})
@@ -823,15 +828,29 @@ def _render_studies_tab():
                 pct_text = f"{pct:.2f}%" if pct is not None else "-"
                 st.write(f"**{t('admin.worst_blackout_pct', lang)}:** {pct_text}")
 
-                if row["pdf_bytes"]:
-                    st.download_button(
+                # PDF bytes are intentionally not part of the listing query (see
+                # list_all_studies) — fetch a single study's PDF only once the
+                # admin actually asks for it, and only for that one row.
+                reveal_key = f"admin_pdf_reveal_{row['id']}"
+                if not st.session_state.get(reveal_key):
+                    if st.button(
                         t("admin.download_pdf", lang),
-                        data=row["pdf_bytes"],
-                        file_name=row["pdf_name"] or "SALA_report.pdf",
-                        mime="application/pdf",
-                        key=f"admin_pdf_{row['id']}",
+                        key=f"admin_pdf_prepare_{row['id']}",
                         use_container_width=True,
-                    )
+                    ):
+                        st.session_state[reveal_key] = True
+                        st.rerun()
+                else:
+                    pdf_name, pdf_bytes = get_study_pdf(row["id"])
+                    if pdf_bytes:
+                        st.download_button(
+                            t("admin.download_pdf", lang),
+                            data=pdf_bytes,
+                            file_name=pdf_name or "SALA_report.pdf",
+                            mime="application/pdf",
+                            key=f"admin_pdf_{row['id']}",
+                            use_container_width=True,
+                        )
 
 
 def _render_device_database_tab():

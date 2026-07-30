@@ -163,7 +163,7 @@ def _monthly_balance_chart(months: List[str], generated: List[float], demand: Li
         height=340,
         margin={"l": 20, "r": 20, "t": 50, "b": 20},
         xaxis_title=t("ui.month", lang),
-        yaxis_title="Wh / month",
+        yaxis_title="Wh / day",
         plot_bgcolor="white",
         paper_bgcolor="white",
         barmode="group",

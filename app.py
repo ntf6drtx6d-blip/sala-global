@@ -1323,9 +1323,11 @@ def _extract_energy_flow_payload(results, required_hours, overall, selected_ids)
     lowest_reserve_pct = 0
     worst_month = "N/A"
 
-    reserve_pct = [48, 44, 58, 73, 86, 91, 94, 88, 71, 49, 24, 12]
-    generated_monthly_wh = [280, 300, 410, 520, 610, 690, 720, 670, 520, 390, 260, 210]
-    demand_monthly_wh = [420, 380, 420, 410, 420, 410, 420, 420, 410, 420, 410, 420]
+    # No fake placeholder data: until a real result row is available, the
+    # charts show a flat/empty state rather than fabricated-looking curves.
+    reserve_pct = [0.0] * 12
+    generated_monthly_wh = [0.0] * 12
+    demand_monthly_wh = [0.0] * 12
 
     if not results:
         return {
@@ -1359,69 +1361,38 @@ def _extract_energy_flow_payload(results, required_hours, overall, selected_ids)
         worst_days = round(365 * worst_pct / 100.0)
         worst_blackout_risk = f"{worst_days} {t('ui.days_per_year_unit', lang)}"
 
-    monthly_reserve_candidates = [
-        first_result.get("monthly_reserve_pct"),
-        first_result.get("reserve_pct_by_month"),
-        first_result.get("battery_reserve_pct_by_month"),
-        first_result.get("monthly_battery_reserve_pct"),
-    ]
+    # Battery reserve (%) by month — actual simulation output from
+    # core/simulate.py's _battery_behavior_metrics(), not a guessed key name.
+    reserve_candidate = first_result.get("soc_monthly_avg")
+    if isinstance(reserve_candidate, (list, tuple)) and len(reserve_candidate) == 12:
+        try:
+            reserve_pct = [float(x) for x in reserve_candidate]
+        except Exception:
+            pass
 
-    for candidate in monthly_reserve_candidates:
-        if isinstance(candidate, (list, tuple)) and len(candidate) == 12:
-            try:
-                reserve_pct = [float(x) for x in candidate]
-                break
-            except Exception:
-                pass
+    # Generation (Wh/day) by month — same monthly generation basis used to
+    # drive the feasibility calculation itself.
+    generation_candidate = first_result.get("monthly_generation_wh_day")
+    if isinstance(generation_candidate, (list, tuple)) and len(generation_candidate) == 12:
+        try:
+            generated_monthly_wh = [float(x) for x in generation_candidate]
+        except Exception:
+            pass
 
-    monthly_generation_candidates = [
-        first_result.get("monthly_generated_wh"),
-        first_result.get("generated_wh_by_month"),
-        first_result.get("monthly_generation_wh"),
-        first_result.get("pv_output_wh_by_month"),
-    ]
-
-    for candidate in monthly_generation_candidates:
-        if isinstance(candidate, (list, tuple)) and len(candidate) == 12:
-            try:
-                generated_monthly_wh = [float(x) for x in candidate]
-                break
-            except Exception:
-                pass
-
-    monthly_demand_candidates = [
-        first_result.get("monthly_required_wh"),
-        first_result.get("required_wh_by_month"),
-        first_result.get("monthly_load_wh"),
-        first_result.get("load_wh_by_month"),
-    ]
-
-    demand_found = False
-    for candidate in monthly_demand_candidates:
-        if isinstance(candidate, (list, tuple)) and len(candidate) == 12:
-            try:
-                demand_monthly_wh = [float(x) for x in candidate]
-                demand_found = True
-                break
-            except Exception:
-                pass
-
-    if not demand_found:
-        daily_wh = first_result.get("daily_consumption_wh")
-        if daily_wh is None:
-            hourly_wh = first_result.get("hourly_consumption_wh")
-            if hourly_wh is not None:
-                try:
-                    daily_wh = float(hourly_wh) * float(required_hours or 12)
-                except Exception:
-                    daily_wh = None
-
-        if daily_wh is not None:
-            month_days = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-            try:
-                demand_monthly_wh = [float(daily_wh) * d for d in month_days]
-            except Exception:
-                pass
+    # Demand (Wh/day) is constant across months — the operating profile's
+    # required hours don't vary seasonally — so use the precomputed daily
+    # discharge, falling back to power * required_hours if it's missing.
+    daily_demand_wh = first_result.get("avg_daily_energy_out_wh")
+    if daily_demand_wh is None:
+        try:
+            daily_demand_wh = float(first_result.get("power", 0) or 0) * float(required_hours or 0)
+        except Exception:
+            daily_demand_wh = None
+    if daily_demand_wh is not None:
+        try:
+            demand_monthly_wh = [float(daily_demand_wh)] * 12
+        except Exception:
+            pass
 
     if reserve_pct:
         lowest_reserve_pct = min(reserve_pct)
@@ -1429,9 +1400,8 @@ def _extract_energy_flow_payload(results, required_hours, overall, selected_ids)
         worst_month = month_label(raw_months[worst_idx], lang)
 
     device_name_candidates = [
-        first_result.get("device_name"),
-        first_result.get("label"),
-        first_result.get("code"),
+        first_result.get("name"),
+        first_result.get("device_code"),
     ]
     for c in device_name_candidates:
         if c:

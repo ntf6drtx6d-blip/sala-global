@@ -1,0 +1,90 @@
+<section class="report-page aging-page">
+  {% include 'partials/_header.html' %}
+  <div class="page-title-wrap compact">
+    <div>
+      <div class="eyebrow">LONG-TERM RELIABILITY</div>
+      <h2 class="page-title">Battery Aging (Estimate)</h2>
+    </div>
+  </div>
+
+  <div class="section-stack">
+    <article class="card page-break-avoid">
+      <div class="section-title">Why this matters</div>
+      <p class="body-copy">
+        Battery capacity fades over time from two combined effects: ambient temperature at the site, and how
+        deeply the battery is cycled each day. This page projects each device's expected capacity and
+        feasibility result forward using published, rule-of-thumb degradation figures. This is a
+        <strong>SALA Estimate</strong>, not a manufacturer-certified prediction - see Methodology &amp;
+        Assumptions below.
+      </p>
+      <div class="info-row">
+        <span>Site average annual temperature</span>
+        <strong>{{ '%.1f'|format(aging.avg_site_temp_c) }} °C</strong>
+      </div>
+    </article>
+
+    <article class="card page-break-avoid">
+      <div class="section-title">Aging summary by device</div>
+      <div class="table-caption">
+        Status pills show the classification at each age; the numbers underneath are capacity retained and
+        blackout days/year at that point, so the trend is visible even when the classification bucket doesn't
+        change.
+      </div>
+      <table class="report-table">
+        <thead>
+          <tr>
+            <th>Device</th>
+            <th>Chemistry</th>
+            <th>Dominant fade driver</th>
+            <th>Year 0 (as-new)</th>
+            <th>Year 5</th>
+            <th>Year 10</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in aging.summary_rows %}
+          <tr>
+            <td>{{ row.name }}</td>
+            <td>{{ row.battery_type }}</td>
+            <td>{{ row.dominant_fade_mechanism | capitalize }}</td>
+            <td>
+              <span class="status-pill status-{{ row.year0_status | lower | replace(' ', '-') }}">{{ row.year0_status }}</span>
+              <div class="cell-sub">{{ '%.0f'|format(row.year0_capacity_pct) }}% cap. · {{ '%.1f'|format(row.year0_blackout_days) }} days/yr</div>
+            </td>
+            <td>
+              <span class="status-pill status-{{ row.year5_status | lower | replace(' ', '-') }}">{{ row.year5_status }}</span>
+              <div class="cell-sub">{{ '%.0f'|format(row.year5_capacity_pct) }}% cap. · {{ '%.1f'|format(row.year5_blackout_days) }} days/yr</div>
+            </td>
+            <td>
+              <span class="status-pill status-{{ row.year10_status | lower | replace(' ', '-') }}">{{ row.year10_status }}</span>
+              <div class="cell-sub">{{ '%.0f'|format(row.year10_capacity_pct) }}% cap. · {{ '%.1f'|format(row.year10_blackout_days) }} days/yr</div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </article>
+
+    <article class="card chart-block page-break-avoid">
+      <div class="section-title">As-new vs. projected end-of-life blackout exposure</div>
+      <div class="plotly-chart">{{ aging.comparison_chart_html | safe }}</div>
+      <div class="chart-explainer">
+        Grouped bars compare each device's blackout days/year today (Year 0) against the Year 10 projection,
+        after estimated capacity fade.
+      </div>
+    </article>
+
+    <article class="card page-break-avoid">
+      <div class="section-title">Methodology &amp; assumptions</div>
+      <p class="body-copy">
+        Capacity fade combines two published, rule-of-thumb mechanisms: calendar aging (temperature-driven,
+        using this site's PVGIS-derived average annual temperature) and cycle aging (depth-of-discharge-derated,
+        using this study's simulated daily battery cycling). Figures are sourced from general battery-industry
+        literature per chemistry, not manufacturer-specific test data - treat as an estimate for planning
+        purposes, not a certified warranty prediction.
+      </p>
+    </article>
+  </div>
+
+  <div class="page-footer"><span>{{ report.footer_note }}</span></div>
+</section>

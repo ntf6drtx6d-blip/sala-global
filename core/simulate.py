@@ -1006,3 +1006,154 @@ def summarize_simulation_results(results):
     if worst_name is None:
         worst_gap = 0.0
     return overall, worst_name, worst_gap
+
+
+# ---------------------------------------------------------------------------
+# Battery aging (Phase 1) - NOT called by simulate_for_devices() or wired
+# into any report/UI path. This is a standalone, opt-in add-on to be
+# invoked explicitly (e.g. from a future "include aging analysis" step)
+# once the presentation layer is ready. See core/battery_aging.py for the
+# underlying model and its published rule-of-thumb sourcing.
+
+DEFAULT_AGING_CHECKPOINT_YEARS = (0, 3, 5, 8, 10)
+
+
+def _classify_from_blackout_days(annual_blackout_days):
+    if annual_blackout_days <= 0:
+        return "PASS"
+    if annual_blackout_days <= 3:
+        return "NEAR THRESHOLD"
+    return "FAIL"
+
+
+def estimate_battery_aging_for_device(
+    lat,
+    lon,
+    resolved,
+    required_hrs,
+    tilt,
+    aspect,
+    battery_type,
+    cutoff_pct,
+    discharge_pct_per_day,
+    avg_site_temp_c,
+    checkpoint_years=DEFAULT_AGING_CHECKPOINT_YEARS,
+    shs_eval_cache=None,
+):
+    """
+    Phase-1 battery aging projection for a single already-resolved device.
+
+    Re-runs the existing blackout-days engine
+    (get_empty_battery_stats_for_required_mode) at each age checkpoint with
+    a degraded battery capacity, rather than redoing the full monthly
+    hours-margin binary search (max_wh_for_month_fast). That keeps the
+    added PVGIS cost to one extra SHScalc call per checkpoint per device,
+    instead of multiplying the much more expensive binary search by the
+    number of checkpoints - deliberately, given PVGIS call volume has
+    already caused real production slowdowns for heavy multi-device
+    studies. The classification threshold (<=3 blackout days/year =
+    NEAR THRESHOLD) matches the one used for the as-new result, for
+    consistency.
+    """
+    from core.battery_aging import (
+        dod_fraction_and_cycles_per_year,
+        project_capacity_retention_pct,
+        dominant_fade_mechanism,
+    )
+
+    nameplate_batt_wh = float(resolved["batt"])
+    dod_fraction, cycles_per_year = dod_fraction_and_cycles_per_year(discharge_pct_per_day, cutoff_pct)
+
+    checkpoints = []
+    for age_years in checkpoint_years:
+        retention_pct = project_capacity_retention_pct(
+            battery_type, avg_site_temp_c, dod_fraction, cycles_per_year, age_years
+        )
+        aged_batt_wh = nameplate_batt_wh * retention_pct / 100.0
+        aged_resolved = dict(resolved)
+        aged_resolved["batt"] = aged_batt_wh
+
+        _, _, empty_days_by_month, overall_empty_pct = get_empty_battery_stats_for_required_mode(
+            lat=lat,
+            lon=lon,
+            resolved=aged_resolved,
+            required_hrs=required_hrs,
+            tilt=tilt,
+            aspect=aspect,
+            shs_eval_cache=shs_eval_cache,
+            cutoff_pct=cutoff_pct,
+        )
+        annual_blackout_days = (
+            sum(empty_days_by_month) if empty_days_by_month else round(365 * overall_empty_pct / 100.0)
+        )
+
+        checkpoints.append({
+            "age_years": age_years,
+            "capacity_retention_pct": retention_pct,
+            "aged_batt_wh": aged_batt_wh,
+            "annual_blackout_days": annual_blackout_days,
+            "overall_empty_battery_pct": overall_empty_pct,
+            "status": _classify_from_blackout_days(annual_blackout_days),
+        })
+
+    return {
+        "battery_type": battery_type,
+        "avg_site_temp_c": avg_site_temp_c,
+        "dod_fraction_per_cycle": dod_fraction,
+        "cycles_per_year": cycles_per_year,
+        "dominant_fade_mechanism": dominant_fade_mechanism(
+            battery_type, avg_site_temp_c, dod_fraction, cycles_per_year
+        ),
+        "checkpoints": checkpoints,
+        "methodology_note": (
+            "Phase 1 rule-of-thumb estimate combining published temperature-driven "
+            "calendar aging and depth-of-discharge-derated cycle aging. Not a "
+            "manufacturer-certified prediction - see core/battery_aging.py for sourcing."
+        ),
+    }
+
+
+def estimate_battery_aging_for_results(loc, required_hrs, results, checkpoint_years=DEFAULT_AGING_CHECKPOINT_YEARS):
+    """
+    Convenience wrapper: computes the Phase-1 aging projection for every
+    device in an already-simulated `results` dict (as produced by
+    simulate_for_devices), reusing the fields already present on each row.
+    Fetches the site's average temperature once via PVGIS MRcalc, shared
+    across all devices in the study rather than refetched per device.
+
+    NOT called automatically anywhere - must be invoked explicitly once
+    the report/UI presentation for it exists.
+    """
+    from pvgis_client import annual_avg_temperature_c
+
+    lat, lon = loc["lat"], loc["lon"]
+    avg_site_temp_c = annual_avg_temperature_c(lat, lon)
+    shs_eval_cache = {}
+
+    aging_by_device = {}
+    for name, row in results.items():
+        resolved = {
+            "batt": row["batt"],
+            "pv": row["pv"],
+            "power": row["power"],
+            "standby_power_w": row.get("standby_power_w", 0.0),
+        }
+        aging_by_device[name] = estimate_battery_aging_for_device(
+            lat=lat,
+            lon=lon,
+            resolved=resolved,
+            required_hrs=required_hrs,
+            tilt=row["tilt"],
+            aspect=row["azim"],
+            battery_type=row.get("battery_type", "Lead Acid"),
+            cutoff_pct=row.get("cutoff_pct", 30.0),
+            discharge_pct_per_day=row.get("discharge_pct_per_day", 0.0),
+            avg_site_temp_c=avg_site_temp_c,
+            checkpoint_years=checkpoint_years,
+            shs_eval_cache=shs_eval_cache,
+        )
+
+    return {
+        "avg_site_temp_c": avg_site_temp_c,
+        "devices": aging_by_device,
+    }

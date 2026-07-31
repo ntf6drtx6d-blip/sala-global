@@ -266,3 +266,58 @@ def shs_monthly(lat, lon, pv_wp, batt_wh, cons_wh_day, tilt_deg, aspect_deg, cut
             last_err = e
             continue
     raise RuntimeError(f"PVGIS SHScalc failed for datasets {order}. Last error: {last_err}")
+
+
+# ---------- MRcalc (avtemp=1): monthly average temperature for a location ----------
+def _parse_monthly_avg_temp_from_mrcalc(data: dict) -> list:
+    """
+    Parse MRcalc JSON (called with avtemp=1) into 12 monthly average
+    temperatures (deg C), averaged across every year PVGIS returns
+    (matches core/avlite_fs.py's existing MRcalc-averaging pattern for
+    irradiance). Field is 'T2m' per PVGIS's documented multi-year monthly
+    output.
+    """
+    try:
+        rows = data["outputs"]["monthly"]
+    except Exception:
+        raise ValueError("Unexpected MRcalc JSON: monthly array missing")
+
+    by_month = {m: [] for m in range(1, 13)}
+    for row in rows:
+        month = int(row.get("month", 0))
+        temp = row.get("T2m")
+        if temp is not None and 1 <= month <= 12:
+            by_month[month].append(float(temp))
+
+    out = []
+    for m in range(1, 13):
+        vals = by_month[m]
+        if not vals:
+            raise ValueError(f"No MRcalc T2m values for month {m}")
+        out.append(sum(vals) / len(vals))
+    return out
+
+
+def monthly_avg_temperature_c(lat, lon) -> list:
+    """
+    Returns 12 floats: average ambient temperature (deg C) by calendar
+    month for this location, via PVGIS MRcalc (avtemp=1). This is a
+    location-only property (independent of device/tilt/aspect), cached on
+    disk like the other PVGIS calls, so it costs one extra network call
+    per study location, not per device.
+    """
+    base_url = "https://re.jrc.ec.europa.eu/api/v5_3/MRcalc"
+    params = dict(
+        lat=float(lat), lon=float(lon),
+        horirrad=1, avtemp=1,
+        outputformat="json",
+    )
+    data = _cached_get_json(base_url, params, ttl_hours=720)
+    return _parse_monthly_avg_temp_from_mrcalc(data)
+
+
+def annual_avg_temperature_c(lat, lon) -> float:
+    """Simple annual mean of the 12 monthly averages - the input the
+    calendar-aging model uses."""
+    monthly = monthly_avg_temperature_c(lat, lon)
+    return sum(monthly) / len(monthly)

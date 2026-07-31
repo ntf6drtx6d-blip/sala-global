@@ -9,9 +9,39 @@
       white-space: nowrap;
       max-width: none;
       margin-left: 0;
+      font-size: 9px;
+      padding: 3px 7px;
     }
-    .aging-summary-table td {
+    .aging-summary-table td,
+    .aging-summary-table th {
       vertical-align: top;
+      padding: 5px 8px;
+    }
+    .aging-summary-table .cell-sub {
+      font-size: 8px;
+      margin-top: 2px;
+    }
+    .aging-page .card {
+      padding: 10px 12px;
+    }
+    .aging-page .section-title {
+      font-size: 11px;
+      margin-bottom: 4px;
+    }
+    .aging-page .body-copy,
+    .aging-page .chart-explainer,
+    .aging-page .table-caption {
+      font-size: 8.5px;
+      line-height: 1.35;
+    }
+    .aging-page .info-row {
+      font-size: 9px;
+    }
+    .aging-page .section-stack {
+      gap: 8px;
+    }
+    .aging-page .grid.two-col {
+      gap: 8px;
     }
   </style>
   {% include 'partials/_header.html' %}
@@ -23,44 +53,37 @@
   </div>
 
   <div class="section-stack">
-    <article class="card page-break-avoid">
-      <div class="section-title">Why this matters</div>
-      <p class="body-copy">
-        Battery capacity fades over time from two combined effects: ambient temperature at the site, and how
-        deeply the battery is cycled each day. This page projects each device's expected capacity and
-        feasibility result forward using published, rule-of-thumb degradation figures. This is a
-        <strong>SALA Estimate</strong>, not a manufacturer-certified prediction - see Methodology &amp;
-        Assumptions below.
-      </p>
-      <div class="info-row">
-        <span>Site average annual temperature</span>
-        <strong>{{ '%.1f'|format(aging.avg_site_temp_c) }} °C</strong>
-      </div>
-    </article>
+    <div class="grid two-col page-break-avoid">
+      <article class="card">
+        <div class="section-title">Why this matters</div>
+        <p class="body-copy">
+          Capacity fades over time from ambient temperature and daily cycling depth. This page projects each
+          device's capacity and result forward using published, rule-of-thumb figures. This is a
+          <strong>SALA Estimate</strong>, not a manufacturer-certified prediction.
+        </p>
+        <div class="info-row">
+          <span>Site average annual temperature</span>
+          <strong>{{ '%.1f'|format(aging.avg_site_temp_c) }} °C</strong>
+        </div>
+      </article>
 
-    <article class="card chart-block page-break-avoid">
-      <div class="section-title">Site temperature profile</div>
-      <div class="plotly-chart">{{ aging.temperature_chart_html | safe }}</div>
-      <div class="chart-explainer">
-        Monthly average ambient temperature at this location (PVGIS). The calendar-aging estimate uses the
-        annual average shown above; this chart shows the seasonal swing behind that single number.
-      </div>
-    </article>
+      <article class="card chart-block">
+        <div class="section-title">Site temperature profile</div>
+        <div class="plotly-chart">{{ aging.temperature_chart_html | safe }}</div>
+      </article>
+    </div>
 
     <article class="card page-break-avoid">
       <div class="section-title">Aging summary by device</div>
       <div class="table-caption">
-        Status pills show the classification at each age; the numbers underneath are capacity retained and
-        blackout days/year at that point, so the trend is visible even when the classification bucket doesn't
-        change.
+        Numbers under each status are capacity retained and blackout days/year at that age.
       </div>
       <table class="report-table aging-summary-table">
         <thead>
           <tr>
             <th>Device</th>
             <th>Chemistry</th>
-            <th>Dominant fade driver</th>
-            <th>Year 0 (as-new)</th>
+            <th>Year 0</th>
             <th>Year 5</th>
             <th>Year 10</th>
           </tr>
@@ -70,18 +93,17 @@
           <tr>
             <td>{{ row.name }}</td>
             <td>{{ row.battery_type }}</td>
-            <td>{{ row.dominant_fade_mechanism | capitalize }}</td>
             <td>
               <span class="status-pill status-{{ row.year0_status | lower | replace(' ', '-') }}">{{ row.year0_status }}</span>
-              <div class="cell-sub">{{ '%.0f'|format(row.year0_capacity_pct) }}% cap. · {{ '%.1f'|format(row.year0_blackout_days) }} days/yr</div>
+              <div class="cell-sub">{{ '%.0f'|format(row.year0_capacity_pct) }}% cap. · {{ '%.1f'|format(row.year0_blackout_days) }} d/yr</div>
             </td>
             <td>
               <span class="status-pill status-{{ row.year5_status | lower | replace(' ', '-') }}">{{ row.year5_status }}</span>
-              <div class="cell-sub">{{ '%.0f'|format(row.year5_capacity_pct) }}% cap. · {{ '%.1f'|format(row.year5_blackout_days) }} days/yr</div>
+              <div class="cell-sub">{{ '%.0f'|format(row.year5_capacity_pct) }}% cap. · {{ '%.1f'|format(row.year5_blackout_days) }} d/yr</div>
             </td>
             <td>
               <span class="status-pill status-{{ row.year10_status | lower | replace(' ', '-') }}">{{ row.year10_status }}</span>
-              <div class="cell-sub">{{ '%.0f'|format(row.year10_capacity_pct) }}% cap. · {{ '%.1f'|format(row.year10_blackout_days) }} days/yr</div>
+              <div class="cell-sub">{{ '%.0f'|format(row.year10_capacity_pct) }}% cap. · {{ '%.1f'|format(row.year10_blackout_days) }} d/yr</div>
             </td>
           </tr>
           {% endfor %}
@@ -89,35 +111,27 @@
       </table>
     </article>
 
-    <article class="card chart-block page-break-avoid">
-      <div class="section-title">Projected battery capacity by age</div>
-      <div class="plotly-chart">{{ aging.capacity_chart_html | safe }}</div>
-      <div class="chart-explainer">
-        Each line is one device's estimated capacity retained (% of nameplate) as it ages. Blackout-day figures
-        aren't charted here since they vary hugely in scale between devices - see the exact numbers in the
-        table above.
-      </div>
-    </article>
+    <div class="grid two-col page-break-avoid">
+      <article class="card chart-block">
+        <div class="section-title">Projected capacity by age</div>
+        <div class="plotly-chart">{{ aging.capacity_chart_html | safe }}</div>
+      </article>
 
-    <article class="card chart-block page-break-avoid">
-      <div class="section-title">What's driving battery aging</div>
-      <div class="plotly-chart">{{ aging.fade_driver_chart_html | safe }}</div>
-      <div class="chart-explainer">
-        Each device's estimated annual capacity loss split between the two modeled causes: ambient temperature
-        (calendar aging, constant regardless of use) and daily charge/discharge cycling (depth-of-discharge-derated).
-        A device dominated by temperature would benefit most from a cooler mounting location; one dominated by
-        cycling would benefit most from a larger battery relative to its load.
-      </div>
-    </article>
+      <article class="card chart-block">
+        <div class="section-title">What's driving the aging</div>
+        <div class="plotly-chart">{{ aging.fade_driver_chart_html | safe }}</div>
+        <p class="chart-explainer">
+          Temperature-dominated devices benefit most from a cooler mounting location; cycling-dominated devices
+          benefit most from a larger battery relative to load.
+        </p>
+      </article>
+    </div>
 
     <article class="card page-break-avoid">
-      <div class="section-title">Methodology &amp; assumptions</div>
-      <p class="body-copy">
-        Capacity fade combines two published, rule-of-thumb mechanisms: calendar aging (temperature-driven,
-        using this site's PVGIS-derived average annual temperature) and cycle aging (depth-of-discharge-derated,
-        using this study's simulated daily battery cycling). Figures are sourced from general battery-industry
-        literature per chemistry, not manufacturer-specific test data - treat as an estimate for planning
-        purposes, not a certified warranty prediction.
+      <p class="chart-explainer">
+        <strong>Methodology:</strong> calendar aging uses this site's PVGIS-derived average temperature; cycle
+        aging is derated by depth-of-discharge from this study's simulated daily cycling. Figures are sourced
+        from published battery-industry literature per chemistry, not manufacturer-specific test data.
       </p>
     </article>
   </div>

@@ -90,25 +90,23 @@ def build_aging_page_data(loc, required_hrs, results, device_short_names: dict) 
 def _monthly_temperature_chart(monthly_temps_c) -> str:
     """Monthly average ambient temperature (PVGIS MRcalc, avtemp=1) across
     the year - gives the reader the seasonal context behind the single
-    annual-average figure the calendar-aging formula actually uses."""
-    fig, ax = plt.subplots(figsize=(7.4, 2.8))
+    annual-average figure the calendar-aging formula actually uses.
+    Sized for a half-width column so the page fits on one A4 sheet."""
+    fig, ax = plt.subplots(figsize=(3.5, 2.05))
     x = list(range(12))
 
-    ax.plot(x, monthly_temps_c, color="#f97316", linewidth=2.6, marker="o", markersize=6, solid_capstyle="round")
-    for xi, t in zip(x, monthly_temps_c):
-        ax.annotate(f"{t:.0f}°", (xi, t), textcoords="offset points", xytext=(0, 9),
-                    ha="center", fontsize=9, color="#7c2d12")
+    ax.plot(x, monthly_temps_c, color="#f97316", linewidth=1.8, marker="o", markersize=3.2, solid_capstyle="round")
 
     avg = sum(monthly_temps_c) / len(monthly_temps_c)
-    ax.axhline(avg, color="#94a3b8", linestyle=(0, (3, 2)), linewidth=1.3)
-    ax.annotate(f"Annual average: {avg:.1f}°C", (11, avg), textcoords="offset points", xytext=(-4, -16),
-                ha="right", fontsize=9, color="#475467")
+    ax.axhline(avg, color="#94a3b8", linestyle=(0, (3, 2)), linewidth=1.0)
+    ax.annotate(f"avg {avg:.1f}°C", (11, avg), textcoords="offset points", xytext=(-2, 4),
+                ha="right", fontsize=7, color="#475467")
 
     ax.set_xticks(x)
-    ax.set_xticklabels(MONTH_LABELS, fontsize=10)
-    ax.set_ylabel("Avg. temperature (°C)", fontsize=10)
-    ax.tick_params(axis="y", labelsize=10)
-    ax.grid(axis="y", color="#dbe3ef", linewidth=0.8)
+    ax.set_xticklabels(MONTH_LABELS, fontsize=6.5, rotation=0)
+    ax.set_ylabel("Avg. temp (°C)", fontsize=7.5)
+    ax.tick_params(axis="y", labelsize=7)
+    ax.grid(axis="y", color="#dbe3ef", linewidth=0.6)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     margin = max(3.0, (max(monthly_temps_c) - min(monthly_temps_c)) * 0.25)
@@ -123,8 +121,9 @@ def _capacity_trajectory_chart(trajectories) -> str:
     shared, naturally bounded 0-100% axis deliberately - unlike blackout
     days/year, capacity retention is always comparable across devices
     regardless of how severely any one of them fails, so this stays
-    readable even when devices differ wildly in severity."""
-    fig, ax = plt.subplots(figsize=(7.4, 3.6))
+    readable even when devices differ wildly in severity. Sized for a
+    half-width column so the page fits on one A4 sheet."""
+    fig, ax = plt.subplots(figsize=(3.5, 2.5))
 
     for idx, traj in enumerate(trajectories):
         color = DEVICE_LINE_COLORS[idx % len(DEVICE_LINE_COLORS)]
@@ -132,29 +131,29 @@ def _capacity_trajectory_chart(trajectories) -> str:
         ax.plot(
             traj["ages"], traj["capacities"],
             label=traj["name"], color=color, linestyle=style,
-            linewidth=2.6, marker="o", markersize=6, solid_capstyle="round",
+            linewidth=1.8, marker="o", markersize=3.2, solid_capstyle="round",
         )
         last_age, last_cap = traj["ages"][-1], traj["capacities"][-1]
         ax.annotate(
             f"{last_cap:.0f}%", (last_age, last_cap),
-            textcoords="offset points", xytext=(8, 0),
-            va="center", fontsize=9, fontweight="bold", color=color,
+            textcoords="offset points", xytext=(5, 0),
+            va="center", fontsize=7, fontweight="bold", color=color,
         )
 
-    ax.axhline(80, color="#94a3b8", linestyle=(0, (3, 2)), linewidth=1.3)
-    ax.annotate("80% - conventional end-of-life", (0.1, 81), fontsize=8.5, color="#667085")
+    ax.axhline(80, color="#94a3b8", linestyle=(0, (3, 2)), linewidth=1.0)
+    ax.annotate("80% EOL", (0.1, 82), fontsize=6.5, color="#667085")
 
-    ax.set_xlabel("Age (years)", fontsize=10)
-    ax.set_ylabel("Capacity retained (%)", fontsize=10)
-    ax.set_yticks(range(0, 101, 20))
-    ax.tick_params(labelsize=10)
+    ax.set_xlabel("Age (years)", fontsize=7.5)
+    ax.set_ylabel("Capacity (%)", fontsize=7.5)
+    ax.set_yticks(range(0, 101, 25))
+    ax.tick_params(labelsize=7)
     ax.set_ylim(0, 108)
-    ax.set_xlim(-0.3, max((traj["ages"][-1] for traj in trajectories), default=10) + 1.2)
-    ax.grid(axis="y", color="#dbe3ef", linewidth=0.8)
+    ax.set_xlim(-0.3, max((traj["ages"][-1] for traj in trajectories), default=10) + 1.6)
+    ax.grid(axis="y", color="#dbe3ef", linewidth=0.6)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-    ax.legend(loc="lower left", frameon=False, fontsize=9.5, ncol=1, bbox_to_anchor=(0, 1.02))
-    fig.tight_layout(rect=[0, 0, 1, 0.82])
+    ax.legend(loc="lower left", frameon=False, fontsize=6.5, ncol=1, bbox_to_anchor=(0, 1.03))
+    fig.tight_layout(rect=[0, 0, 1, 0.80])
 
     return _chart_html_from_figure(fig)
 
@@ -164,9 +163,9 @@ def _fade_driver_pie_charts(fade_breakdowns) -> str:
     comes from temperature (calendar aging) vs. daily cycling (cycle
     aging). A 2-slice pie is a natural fit for a single whole split into
     exactly two named causes, and small multiples keep it readable even
-    with several devices."""
+    with several devices. Sized for a half-width column."""
     n = max(1, len(fade_breakdowns))
-    fig, axes = plt.subplots(1, n, figsize=(2.4 * n, 2.6))
+    fig, axes = plt.subplots(1, n, figsize=(1.15 * n, 1.5))
     if n == 1:
         axes = [axes]
 
@@ -176,19 +175,20 @@ def _fade_driver_pie_charts(fade_breakdowns) -> str:
         ax.pie(
             values,
             colors=colors,
-            autopct=lambda p: f"{p:.0f}%" if p >= 8 else "",
+            autopct=lambda p: f"{p:.0f}" if p >= 12 else "",
             startangle=90,
-            textprops={"fontsize": 9, "color": "white", "fontweight": "bold"},
-            wedgeprops={"linewidth": 1.5, "edgecolor": "white"},
+            textprops={"fontsize": 6.5, "color": "white", "fontweight": "bold"},
+            wedgeprops={"linewidth": 1.0, "edgecolor": "white"},
         )
-        ax.set_title(breakdown["name"], fontsize=8.5, wrap=True, pad=6)
+        short_name = breakdown["name"] if len(breakdown["name"]) <= 16 else breakdown["name"][:14] + "…"
+        ax.set_title(short_name, fontsize=6.5, pad=3)
 
     fig.legend(
-        ["Temperature (calendar aging)", "Cycling (depth-of-discharge)"],
-        loc="lower center", ncol=2, frameon=False, fontsize=9,
-        bbox_to_anchor=(0.5, -0.04),
+        ["Temperature", "Cycling"],
+        loc="lower center", ncol=2, frameon=False, fontsize=6.5,
+        bbox_to_anchor=(0.5, -0.06),
     )
-    fig.tight_layout(rect=[0, 0.06, 1, 1])
+    fig.tight_layout(rect=[0, 0.1, 1, 1])
 
     return _chart_html_from_figure(fig)
 

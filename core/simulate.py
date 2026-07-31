@@ -1059,10 +1059,17 @@ def estimate_battery_aging_for_device(
         dod_fraction_and_cycles_per_year,
         project_capacity_retention_pct,
         dominant_fade_mechanism,
+        calendar_fade_pct_per_year,
+        cycle_fade_pct_per_year,
     )
 
     nameplate_batt_wh = float(resolved["batt"])
     dod_fraction, cycles_per_year = dod_fraction_and_cycles_per_year(discharge_pct_per_day, cutoff_pct)
+    calendar_fade = calendar_fade_pct_per_year(battery_type, avg_site_temp_c)
+    cycle_fade = cycle_fade_pct_per_year(battery_type, dod_fraction, cycles_per_year)
+    total_fade = calendar_fade + cycle_fade
+    calendar_fade_share_pct = (calendar_fade / total_fade * 100.0) if total_fade > 0 else 50.0
+    cycle_fade_share_pct = 100.0 - calendar_fade_share_pct
 
     checkpoints = []
     for age_years in checkpoint_years:
@@ -1104,6 +1111,10 @@ def estimate_battery_aging_for_device(
         "dominant_fade_mechanism": dominant_fade_mechanism(
             battery_type, avg_site_temp_c, dod_fraction, cycles_per_year
         ),
+        "calendar_fade_pct_per_year": calendar_fade,
+        "cycle_fade_pct_per_year": cycle_fade,
+        "calendar_fade_share_pct": calendar_fade_share_pct,
+        "cycle_fade_share_pct": cycle_fade_share_pct,
         "checkpoints": checkpoints,
         "methodology_note": (
             "Phase 1 rule-of-thumb estimate combining published temperature-driven "
@@ -1124,10 +1135,11 @@ def estimate_battery_aging_for_results(loc, required_hrs, results, checkpoint_ye
     NOT called automatically anywhere - must be invoked explicitly once
     the report/UI presentation for it exists.
     """
-    from pvgis_client import annual_avg_temperature_c
+    from pvgis_client import monthly_avg_temperature_c
 
     lat, lon = loc["lat"], loc["lon"]
-    avg_site_temp_c = annual_avg_temperature_c(lat, lon)
+    monthly_temps_c = monthly_avg_temperature_c(lat, lon)
+    avg_site_temp_c = sum(monthly_temps_c) / len(monthly_temps_c)
     shs_eval_cache = {}
 
     aging_by_device = {}
@@ -1155,5 +1167,6 @@ def estimate_battery_aging_for_results(loc, required_hrs, results, checkpoint_ye
 
     return {
         "avg_site_temp_c": avg_site_temp_c,
+        "monthly_temps_c": monthly_temps_c,
         "devices": aging_by_device,
     }

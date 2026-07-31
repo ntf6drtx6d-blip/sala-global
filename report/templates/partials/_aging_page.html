@@ -38,6 +38,15 @@
       </div>
     </article>
 
+    <article class="card chart-block page-break-avoid">
+      <div class="section-title">Site temperature profile</div>
+      <div class="plotly-chart">{{ aging.temperature_chart_html | safe }}</div>
+      <div class="chart-explainer">
+        Monthly average ambient temperature at this location (PVGIS). The calendar-aging estimate uses the
+        annual average shown above; this chart shows the seasonal swing behind that single number.
+      </div>
+    </article>
+
     <article class="card page-break-avoid">
       <div class="section-title">Aging summary by device</div>
       <div class="table-caption">
@@ -82,11 +91,22 @@
 
     <article class="card chart-block page-break-avoid">
       <div class="section-title">Projected battery capacity by age</div>
-      <div class="plotly-chart">{{ aging.comparison_chart_html | safe }}</div>
+      <div class="plotly-chart">{{ aging.capacity_chart_html | safe }}</div>
       <div class="chart-explainer">
         Each line is one device's estimated capacity retained (% of nameplate) as it ages. Blackout-day figures
         aren't charted here since they vary hugely in scale between devices - see the exact numbers in the
         table above.
+      </div>
+    </article>
+
+    <article class="card chart-block page-break-avoid">
+      <div class="section-title">What's driving battery aging</div>
+      <div class="plotly-chart">{{ aging.fade_driver_chart_html | safe }}</div>
+      <div class="chart-explainer">
+        Each device's estimated annual capacity loss split between the two modeled causes: ambient temperature
+        (calendar aging, constant regardless of use) and daily charge/discharge cycling (depth-of-discharge-derated).
+        A device dominated by temperature would benefit most from a cooler mounting location; one dominated by
+        cycling would benefit most from a larger battery relative to its load.
       </div>
     </article>
 

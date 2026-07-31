@@ -21,6 +21,8 @@ from report.html_builder import _chart_html_from_figure
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 
+DEVICE_LINE_COLORS = ["#0ea5e9", "#ef4444", "#22c55e", "#f59e0b", "#8b5cf6", "#14b8a6", "#ec4899", "#84cc16"]
+
 
 def _checkpoint(checkpoints, age_years):
     for cp in checkpoints:
@@ -39,14 +41,16 @@ def build_aging_page_data(loc, required_hrs, results, device_short_names: dict) 
     aging = estimate_battery_aging_for_results(loc, required_hrs, results)
 
     summary_rows = []
+    trajectories = []
     for result_key, device_aging in aging["devices"].items():
         checkpoints = device_aging["checkpoints"]
         year0 = _checkpoint(checkpoints, 0)
         year5 = _checkpoint(checkpoints, 5)
         year10 = _checkpoint(checkpoints, 10)
+        name = device_short_names.get(result_key, result_key)
 
         summary_rows.append({
-            "name": device_short_names.get(result_key, result_key),
+            "name": name,
             "battery_type": device_aging["battery_type"],
             "dominant_fade_mechanism": device_aging["dominant_fade_mechanism"],
             "year0_status": year0["status"] if year0 else "N/A",
@@ -59,35 +63,46 @@ def build_aging_page_data(loc, required_hrs, results, device_short_names: dict) 
             "year5_capacity_pct": year5["capacity_retention_pct"] if year5 else 100.0,
             "year10_capacity_pct": year10["capacity_retention_pct"] if year10 else 100.0,
         })
+        trajectories.append({
+            "name": name,
+            "ages": [cp["age_years"] for cp in checkpoints],
+            "capacities": [cp["capacity_retention_pct"] for cp in checkpoints],
+        })
 
     return {
         "avg_site_temp_c": aging["avg_site_temp_c"],
         "summary_rows": summary_rows,
-        "comparison_chart_html": _aging_comparison_chart(summary_rows),
+        "comparison_chart_html": _capacity_trajectory_chart(trajectories),
     }
 
 
-def _aging_comparison_chart(summary_rows) -> str:
-    fig, ax = plt.subplots(figsize=(6.8, 2.6))
-    names = [row["name"] for row in summary_rows]
-    x = list(range(len(names)))
-    width = 0.35
+def _capacity_trajectory_chart(trajectories) -> str:
+    """Capacity retained (%) vs. age, one line per device. Kept on a
+    shared, naturally bounded 0-100% axis deliberately - unlike blackout
+    days/year, capacity retention is always comparable across devices
+    regardless of how severely any one of them fails, so this stays
+    readable even when devices differ wildly in severity."""
+    fig, ax = plt.subplots(figsize=(6.8, 2.8))
 
-    year0 = [row["year0_blackout_days"] for row in summary_rows]
-    year10 = [row["year10_blackout_days"] for row in summary_rows]
+    for idx, traj in enumerate(trajectories):
+        color = DEVICE_LINE_COLORS[idx % len(DEVICE_LINE_COLORS)]
+        ax.plot(
+            traj["ages"], traj["capacities"],
+            label=traj["name"], color=color,
+            linewidth=2.2, marker="o", markersize=4, solid_capstyle="round",
+        )
 
-    ax.bar([i - width / 2 for i in x], year0, width=width, label="Year 0 (as-new)", color="#16a34a")
-    ax.bar([i + width / 2 for i in x], year10, width=width, label="Year 10 (projected)", color="#dc2626")
+    ax.axhline(80, color="#94a3b8", linestyle=(0, (3, 2)), linewidth=1.3, label="80% (conventional end-of-life)")
 
-    ax.set_xticks(x)
-    ax.set_xticklabels(names, rotation=15, ha="right", fontsize=8)
-    ax.set_ylabel("Blackout days / year")
-    ax.set_ylim(bottom=0)
+    ax.set_xlabel("Age (years)")
+    ax.set_ylabel("Capacity retained (%)")
+    ax.set_ylim(0, 105)
+    ax.set_xlim(left=0)
     ax.grid(axis="y", color="#dbe3ef", linewidth=0.8)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-    ax.legend(loc="upper left", frameon=False, fontsize=8)
-    fig.tight_layout()
+    ax.legend(loc="lower left", frameon=False, fontsize=8, ncol=2, bbox_to_anchor=(0, 1.02))
+    fig.tight_layout(rect=[0, 0, 1, 0.88])
 
     return _chart_html_from_figure(fig)
 

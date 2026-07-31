@@ -1,4 +1,19 @@
 <section class="report-page aging-page">
+  <style>
+    /* The shared .status-pill CSS assumes a wide hero-page context
+       (max-width: 55% of a full-width row) and wraps long labels like
+       "NEAR THRESHOLD" onto two lines. Inside this page's narrow table
+       cells that causes the wrapped lines to visually overlap. Force a
+       single line here instead - the columns are wide enough for it. */
+    .aging-summary-table .status-pill {
+      white-space: nowrap;
+      max-width: none;
+      margin-left: 0;
+    }
+    .aging-summary-table td {
+      vertical-align: top;
+    }
+  </style>
   {% include 'partials/_header.html' %}
   <div class="page-title-wrap compact">
     <div>
@@ -30,7 +45,7 @@
         blackout days/year at that point, so the trend is visible even when the classification bucket doesn't
         change.
       </div>
-      <table class="report-table">
+      <table class="report-table aging-summary-table">
         <thead>
           <tr>
             <th>Device</th>
@@ -66,11 +81,12 @@
     </article>
 
     <article class="card chart-block page-break-avoid">
-      <div class="section-title">As-new vs. projected end-of-life blackout exposure</div>
+      <div class="section-title">Projected battery capacity by age</div>
       <div class="plotly-chart">{{ aging.comparison_chart_html | safe }}</div>
       <div class="chart-explainer">
-        Grouped bars compare each device's blackout days/year today (Year 0) against the Year 10 projection,
-        after estimated capacity fade.
+        Each line is one device's estimated capacity retained (% of nameplate) as it ages. Blackout-day figures
+        aren't charted here since they vary hugely in scale between devices - see the exact numbers in the
+        table above.
       </div>
     </article>
 

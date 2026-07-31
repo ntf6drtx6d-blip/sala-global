@@ -838,19 +838,24 @@ def simulate_for_devices(
         if profiling is not None:
             profiling["blackout_stats_total_seconds"] += blackout_seconds
 
-        # A FAIL that only depletes the battery on a handful of days a year
-        # (<=3) is a materially different situation from one that fails
-        # nearly every month. Sub-classify it as NEAR THRESHOLD so the UI
-        # and PDF report (which already know how to render this label) can
-        # distinguish a close call from a genuine undersized system. This
-        # never turns a real FAIL into a PASS.
+        # A FAIL that depletes the battery on only a handful of days a year
+        # (<=3, including zero) is a materially different situation from one
+        # that fails nearly every month. Sub-classify it as NEAR THRESHOLD so
+        # the UI and PDF report (which already know how to render this label)
+        # can distinguish a close call from a genuine undersized system. This
+        # includes the case of a FAIL with zero actual battery depletion -
+        # by the report's own definition, "operational blackout" means the
+        # battery reaching 0%, so a device that misses the stricter monthly
+        # hours-margin test but never actually depletes its battery is at
+        # least as clear a near-threshold case as one with 1-3 blackout days.
+        # This never turns a real FAIL into a PASS.
         if status == "FAIL":
             annual_blackout_days = (
                 sum(empty_battery_days_by_month)
                 if empty_battery_days_by_month
                 else round(365 * overall_empty_battery_pct / 100.0)
             )
-            if 0 < annual_blackout_days <= 3:
+            if annual_blackout_days <= 3:
                 status = "NEAR THRESHOLD"
 
         meta_started = time.time()

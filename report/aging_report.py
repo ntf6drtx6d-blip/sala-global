@@ -196,7 +196,13 @@ def _fade_driver_pie_charts(fade_breakdowns) -> str:
 def render_aging_page_html_standalone(loc, required_hrs, results, device_short_names, footer_note: str = "") -> str:
     """Render just this page's HTML, for review/testing. Does not touch
     report.html or render_report_html() - loads the same template
-    directory so styling matches, but renders only the aging partial."""
+    directory so styling matches, but renders only the aging partial.
+
+    Wrapped in <main class="report-shell"> to match report.html exactly -
+    .report-shell is what clamps page width to --page-width (186mm, A4's
+    portrait content width) in report.css. Without this wrapper the page
+    has no width constraint and stretches to fill the browser viewport
+    instead, which made an earlier preview look landscape when it isn't."""
     aging_data = build_aging_page_data(loc, required_hrs, results, device_short_names)
     env = jinja2.Environment(
         loader=jinja2.FileSystemLoader(str(TEMPLATES_DIR)),
@@ -205,4 +211,5 @@ def render_aging_page_html_standalone(loc, required_hrs, results, device_short_n
         lstrip_blocks=True,
     )
     template = env.get_template("partials/_aging_page.html")
-    return template.render(aging=aging_data, report={"footer_note": footer_note})
+    page_html = template.render(aging=aging_data, report={"footer_note": footer_note})
+    return f'<main class="report-shell">{page_html}</main>'

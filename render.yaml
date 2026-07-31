@@ -1,26 +1,12 @@
+# NOTE: production traffic (app.sala-global.com) is served by "sala_global_fs",
+# a web service created manually in the Render dashboard before this blueprint
+# existed. It is intentionally NOT declared here, so this blueprint's autoSync
+# does not touch it. This blueprint previously also declared a second, duplicate
+# "sala-streamlit-app" web service with the same startCommand pointed at the
+# same repo/branch - it never had DATABASE_URL or the other required secrets
+# configured, so it could not serve real traffic. It has been removed below and
+# deleted from Render to stop double-billing/redeploying a dead service.
 services:
-  - type: web
-    name: sala-streamlit-app
-    runtime: python
-    rootDir: .
-    buildCommand: |
-      pip install -r requirements.txt
-    startCommand: >
-      streamlit run app.py
-      --server.headless true
-      --server.port $PORT
-      --browser.gatherUsageStats false
-      --server.fileWatcherType none
-    envVars:
-      - key: DATABASE_URL
-        sync: false
-      - key: MAPBOX_STATIC_MAPS_TOKEN
-        sync: false
-      - key: PDF_SERVICE_URL
-        value: http://sala-pdf-service:10000/render
-      - key: AUTH_PERSIST_SECRET
-        sync: false
-
   - type: pserv
     name: sala-pdf-service
     runtime: docker

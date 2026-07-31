@@ -838,6 +838,21 @@ def simulate_for_devices(
         if profiling is not None:
             profiling["blackout_stats_total_seconds"] += blackout_seconds
 
+        # A FAIL that only depletes the battery on a handful of days a year
+        # (<=3) is a materially different situation from one that fails
+        # nearly every month. Sub-classify it as NEAR THRESHOLD so the UI
+        # and PDF report (which already know how to render this label) can
+        # distinguish a close call from a genuine undersized system. This
+        # never turns a real FAIL into a PASS.
+        if status == "FAIL":
+            annual_blackout_days = (
+                sum(empty_battery_days_by_month)
+                if empty_battery_days_by_month
+                else round(365 * overall_empty_battery_pct / 100.0)
+            )
+            if 0 < annual_blackout_days <= 3:
+                status = "NEAR THRESHOLD"
+
         meta_started = time.time()
         pvgis_meta = build_pvgis_meta(lat, lon, resolved, tilt, azim)
         if source_type == "avlite":
@@ -980,7 +995,7 @@ def summarize_simulation_results(results):
         gap = r["min_margin"]
         if gap < worst_gap:
             worst_gap, worst_name = gap, name
-        if r["status"] == "FAIL":
+        if r["status"] != "PASS":
             overall = "FAIL"
 
     if worst_name is None:

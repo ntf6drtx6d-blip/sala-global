@@ -203,16 +203,21 @@
       {% include 'partials/_device_block.html' %}
     {% endfor %}
 
+    {% set aging_offset = 1 if report.aging else 0 %}
+    {% if report.aging %}
+      {% include 'partials/_aging_page.html' %}
+    {% endif %}
+
     <section class="report-page methodology-page">
       {% include 'partials/_header.html' %}
       {% include 'partials/_methodology_block.html' %}
-      <div class="page-footer"><span>{{ report.footer_note }}</span><span>{{ report.i18n['report.page'] }} {{ 4 + report.devices|length }} of {{ report.total_pages }}</span></div>
+      <div class="page-footer"><span>{{ report.footer_note }}</span><span>{{ report.i18n['report.page'] }} {{ 4 + report.devices|length + aging_offset }} of {{ report.total_pages }}</span></div>
     </section>
 
     <section class="report-page methodology-page">
       {% include 'partials/_header.html' %}
       {% include 'partials/_methodology_definitions.html' %}
-      <div class="page-footer"><span>{{ report.footer_note }}</span><span>{{ report.i18n['report.page'] }} {{ 5 + report.devices|length }} of {{ report.total_pages }}</span></div>
+      <div class="page-footer"><span>{{ report.footer_note }}</span><span>{{ report.i18n['report.page'] }} {{ 5 + report.devices|length + aging_offset }} of {{ report.total_pages }}</span></div>
     </section>
   </main>
 </body>

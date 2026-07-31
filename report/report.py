@@ -10,6 +10,10 @@ from core.devices import DEVICES
 from core.person import normalize_person_name
 from core.time_utils import format_timestamp
 
+import logging
+
+_logger = logging.getLogger(__name__)
+
 
 def _coalesce(*values):
     for value in values:
@@ -48,6 +52,22 @@ def _device_list_text(selected_ids=None, results=None):
     if not ordered:
         return "—"
     return ", ".join(f"{count} × {label}" for label, count in ordered.items())
+
+
+def _build_aging_page_data_safe(loc, required_hours, results, data):
+    """Best-effort battery-aging page data. Wrapped defensively so that a
+    PVGIS temperature-fetch failure or any other issue in this newer,
+    less battle-tested code path degrades to "no aging page" rather than
+    failing the whole PDF generation - the report is still useful without
+    it, and it's an opt-in extra, not the core deliverable."""
+    try:
+        from .aging_report import build_aging_page_data
+
+        device_short_names = {d["result_key"]: d["name"] for d in data.get("devices", [])}
+        return build_aging_page_data(loc, required_hours, results, device_short_names)
+    except Exception:
+        _logger.exception("Battery aging page generation failed; continuing without it.")
+        return None
 
 
 def sanitize_airport_name(name: str) -> str:
@@ -208,6 +228,11 @@ def make_pdf(
         user_organization,
         kwargs.get("language", "en"),
     )
+
+    if kwargs.get("include_aging") and results:
+        data["aging"] = _build_aging_page_data_safe(loc, required_hours, results, data)
+        if data["aging"] is not None:
+            data["total_pages"] = data.get("total_pages", 0) + 1
 
     # override generated metadata if explicitly passed by caller
     if kwargs.get("created_at"):

@@ -155,6 +155,7 @@ def _build_pdf(results, overall, lang):
         lat=st.session_state.lat,
         lon=st.session_state.lon,
         selected_ids=st.session_state.get("selected_simulation_keys") or st.session_state.selected_ids,
+        include_aging=st.session_state.get("include_aging_analysis", False),
     )
 
     with open(tmp_path, "rb") as f:

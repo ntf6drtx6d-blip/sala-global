@@ -560,6 +560,7 @@ def init_state():
         "active_simulation_job": None,
         "simulation_resume_required": False,
         "simulation_auto_continue": False,
+        "include_aging_analysis": False,
     }
 
     for k, v in defaults.items():

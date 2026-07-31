@@ -1122,4 +1122,16 @@ def render_setup(disabled=False):
         st.session_state.selected_simulation_keys = selected_simulation_keys
         _refresh_study_ready()
 
+    st.markdown("### 4. Report options")
+    st.session_state.include_aging_analysis = st.checkbox(
+        "Include battery aging analysis (adds an extra page projecting battery capacity and result "
+        "forward over time, based on published rule-of-thumb temperature and cycling figures — not a "
+        "manufacturer-certified prediction)",
+        value=st.session_state.get("include_aging_analysis", False),
+        key="include_aging_analysis_checkbox",
+        disabled=disabled,
+        help="Runs additional PVGIS calls per device (roughly one extra simulation pass), so this adds "
+        "time to the study.",
+    )
+
     _refresh_study_ready()

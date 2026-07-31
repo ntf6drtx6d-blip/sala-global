@@ -63,13 +63,13 @@
         </p>
         <div class="info-row">
           <span>Site average annual temperature</span>
-          <strong>{{ '%.1f'|format(aging.avg_site_temp_c) }} °C</strong>
+          <strong>{{ '%.1f'|format(report.aging.avg_site_temp_c) }} °C</strong>
         </div>
       </article>
 
       <article class="card chart-block">
         <div class="section-title">Site temperature profile</div>
-        <div class="plotly-chart">{{ aging.temperature_chart_html | safe }}</div>
+        <div class="plotly-chart">{{ report.aging.temperature_chart_html | safe }}</div>
       </article>
     </div>
 
@@ -89,7 +89,7 @@
           </tr>
         </thead>
         <tbody>
-          {% for row in aging.summary_rows %}
+          {% for row in report.aging.summary_rows %}
           <tr>
             <td>{{ row.name }}</td>
             <td>{{ row.battery_type }}</td>
@@ -114,12 +114,12 @@
     <div class="grid two-col page-break-avoid">
       <article class="card chart-block">
         <div class="section-title">Projected capacity by age</div>
-        <div class="plotly-chart">{{ aging.capacity_chart_html | safe }}</div>
+        <div class="plotly-chart">{{ report.aging.capacity_chart_html | safe }}</div>
       </article>
 
       <article class="card chart-block">
         <div class="section-title">What's driving the aging</div>
-        <div class="plotly-chart">{{ aging.fade_driver_chart_html | safe }}</div>
+        <div class="plotly-chart">{{ report.aging.fade_driver_chart_html | safe }}</div>
         <p class="chart-explainer">
           Temperature-dominated devices benefit most from a cooler mounting location; cycling-dominated devices
           benefit most from a larger battery relative to load.
@@ -136,5 +136,5 @@
     </article>
   </div>
 
-  <div class="page-footer"><span>{{ report.footer_note }}</span></div>
+  <div class="page-footer"><span>{{ report.footer_note }}</span><span>{{ report.i18n['report.page'] }} {{ 4 + report.devices|length }} of {{ report.total_pages }}</span></div>
 </section>

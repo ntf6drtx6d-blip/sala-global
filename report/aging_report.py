@@ -211,5 +211,8 @@ def render_aging_page_html_standalone(loc, required_hrs, results, device_short_n
         lstrip_blocks=True,
     )
     template = env.get_template("partials/_aging_page.html")
-    page_html = template.render(aging=aging_data, report={"footer_note": footer_note})
+    # Template reads report.aging.* (not a bare aging.* variable) so this
+    # standalone harness matches exactly how report.html embeds it via
+    # {% include %}, which shares the parent template's `report` context.
+    page_html = template.render(report={"footer_note": footer_note, "aging": aging_data})
     return f'<main class="report-shell">{page_html}</main>'

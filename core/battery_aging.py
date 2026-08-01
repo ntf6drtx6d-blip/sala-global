@@ -63,24 +63,29 @@ CALENDAR_AGING = {
 END_OF_LIFE_RETENTION_PCT = 80.0
 FADE_BUDGET_PCT = 100.0 - END_OF_LIFE_RETENTION_PCT
 
-# Chemistry-specific age checkpoints for charts/tables. A single 0-10 year
-# axis for every chemistry is misleading: lead-acid's own baseline_life_years
-# above is 5, and real-world cyclic/solar service life is commonly shorter
-# still once heat and daily cycling are added, so charting it out to 10
-# years implies a service life it essentially never reaches in practice.
-# Each set instead spans roughly 0 to ~1x that chemistry's own
-# baseline_life_years (rounded to whole years), so the horizon shown is
-# the one that's actually plausible for that chemistry.
-SUGGESTED_CHECKPOINT_YEARS = {
-    "Lead Acid": (0, 1, 2, 3, 5),
-    "LiFePO4": (0, 3, 5, 8, 10),
-    "NiMH": (0, 1, 2, 4, 6),
-}
+# A single shared age horizon for every chemistry, deliberately, for two
+# reasons. First, comparability: devices of different chemistries need to
+# land on the same x-axis to be visually compared against each other.
+# Second, and more importantly, honesty about how far this model's
+# confidence actually extends: LiFePO4's real-world service life depends
+# heavily on factors this rule-of-thumb model doesn't capture at all (most
+# notably state-of-charge during storage - cells held near-full age
+# calendar-wise much faster than cells held at low charge, and a solar-
+# charged battery spends a lot of its life near-full). A longer,
+# chemistry-specific horizon for LiFePO4 was tried and rolled back because
+# it implied more confidence in that chemistry's multi-year durability
+# than the underlying published data actually supports for this
+# application. Lead-acid's 5-year figure is the best-sourced of the three
+# chemistries (a widely-cited Arrhenius/10C rule for lead-acid calendar
+# life), so it sets the shared horizon for all of them.
+DEFAULT_CHECKPOINT_YEARS = (0, 1, 2, 3, 5)
 
 
 def suggested_checkpoint_years(battery_type: str) -> tuple:
-    chemistry = normalize_chemistry(battery_type)
-    return SUGGESTED_CHECKPOINT_YEARS.get(chemistry, SUGGESTED_CHECKPOINT_YEARS["Lead Acid"])
+    """Kept as a per-chemistry-aware function (rather than a bare
+    constant) so callers don't need to change if a future revision
+    reintroduces chemistry-specific horizons with better-sourced figures."""
+    return DEFAULT_CHECKPOINT_YEARS
 
 # ---------------------------------------------------------------------------
 # Cycle aging: published cycle-life-vs-depth-of-discharge reference points

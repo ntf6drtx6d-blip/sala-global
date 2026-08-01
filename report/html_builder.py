@@ -175,8 +175,8 @@ def _device_aging_chart(checkpoints: list[dict], report_i18n: dict[str, str]) ->
     would sit almost exactly on top of each other, hiding one under the
     other. This chart instead shows capacity retained (%) as the battery
     ages, plus the resulting blackout-day risk at each age, using the
-    same age checkpoints the Battery Aging summary page uses (chemistry-
-    specific horizon, not a fixed one-size-fits-all year range)."""
+    same shared 5-year age horizon every device uses (see
+    core.battery_aging.DEFAULT_CHECKPOINT_YEARS)."""
     ages = [cp["age_years"] for cp in checkpoints]
     capacities = [cp["capacity_retention_pct"] for cp in checkpoints]
     blackout_days = [cp["annual_blackout_days"] for cp in checkpoints]
@@ -188,6 +188,11 @@ def _device_aging_chart(checkpoints: list[dict], report_i18n: dict[str, str]) ->
         ages, capacities, color="#16a34a", linewidth=2.2, marker="o", markersize=4.5,
         solid_capstyle="round", label="Capacity retained",
     )
+    for age, cap in zip(ages, capacities):
+        ax.annotate(
+            f"{cap:.0f}%", (age, cap), textcoords="offset points", xytext=(0, 9),
+            ha="center", fontsize=7.5, fontweight="bold", color="#15803d",
+        )
     ax.axhline(80, color="#94a3b8", linestyle=(0, (3, 2)), linewidth=1.0)
 
     ax2 = None
@@ -198,7 +203,7 @@ def _device_aging_chart(checkpoints: list[dict], report_i18n: dict[str, str]) ->
 
     ax.set_ylabel("Capacity retained (%)")
     ax.set_xlabel("Age (years)")
-    ax.set_ylim(0, 108)
+    ax.set_ylim(0, 116)
     ax.set_xlim(-0.3, max(ages) + 0.5)
     ax.set_xticks(ages)
     ax.grid(axis="y", color="#dbe3ef", linewidth=0.8)
@@ -207,8 +212,14 @@ def _device_aging_chart(checkpoints: list[dict], report_i18n: dict[str, str]) ->
     ax.spines["left"].set_color("#94a3b8")
     ax.spines["bottom"].set_color("#94a3b8")
     if ax2 is not None:
-        ax2.set_ylabel("Blackout days / year", color="#2563eb")
-        ax2.set_ylim(bottom=0)
+        # Fixed 0-365 scale (days in a year), deliberately NOT auto-scaled
+        # to this device's own max value - a chart that auto-scales to its
+        # own data makes every device's worst bar look equally "full",
+        # whether it represents 5 blacked-out days or 300. A shared scale
+        # is what actually makes severity comparable across devices.
+        ax2.set_ylabel("Blackout days / year (of 365)", color="#2563eb")
+        ax2.set_ylim(0, 365)
+        ax2.set_yticks([0, 100, 200, 300, 365])
         ax2.spines["top"].set_visible(False)
         ax2.spines["right"].set_color("#2563eb")
         ax2.tick_params(axis="y", labelsize=8, colors="#2563eb")
@@ -240,7 +251,13 @@ def _blackout_chart(data: dict, include_js: bool, report_i18n: dict[str, str]) -
     ax.set_xlim(-0.6, len(MONTHS) - 0.4)
     ax.set_xticks(positions)
     ax.set_xticklabels(month_ticks)
-    ax.set_ylabel(report_i18n["ui.days"])
+    # Explicit "/ month" here rather than the shared, unqualified "Days"
+    # label - this chart is the only place in the report showing a
+    # monthly breakdown; every other blackout-day figure (KPI cards, the
+    # aging chart) is an annual total, and skimming past just the axis
+    # label without reading the caption made that easy to misread as the
+    # same unit.
+    ax.set_ylabel("Days / month")
     ax.set_xlabel(report_i18n["ui.month"])
     ax.set_title(report_i18n["report.monthly_0_battery_days"], loc="left", fontsize=11, fontweight="bold")
     ax.set_ylim(bottom=0)

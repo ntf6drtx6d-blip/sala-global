@@ -76,16 +76,17 @@
     <article class="card page-break-avoid">
       <div class="section-title">Aging summary by device</div>
       <div class="table-caption">
-        Numbers under each status are capacity retained and blackout days/year at that age.
+        Each chemistry uses its own realistic age horizon (lead-acid degrades faster than LiFePO4), so the
+        exact year shown per column varies by device — it's stated in each cell.
       </div>
       <table class="report-table aging-summary-table">
         <thead>
           <tr>
             <th>Device</th>
             <th>Chemistry</th>
-            <th>Year 0</th>
-            <th>Year 5</th>
-            <th>Year 10</th>
+            <th>As-new</th>
+            <th>Mid-life</th>
+            <th>End of horizon</th>
           </tr>
         </thead>
         <tbody>
@@ -93,18 +94,12 @@
           <tr>
             <td>{{ row.name }}</td>
             <td>{{ row.battery_type }}</td>
+            {% for cell in [row.as_new, row.mid_life, row.end_of_horizon] %}
             <td>
-              <span class="status-pill status-{{ row.year0_status | lower | replace(' ', '-') }}">{{ row.year0_status }}</span>
-              <div class="cell-sub">{{ '%.0f'|format(row.year0_capacity_pct) }}% cap. · {{ '%.1f'|format(row.year0_blackout_days) }} d/yr</div>
+              <span class="status-pill status-{{ cell.status | lower | replace(' ', '-') }}">{{ cell.status }}</span>
+              <div class="cell-sub">Year {{ cell.age_years }} · {{ '%.0f'|format(cell.capacity_pct) }}% cap. · {{ '%.1f'|format(cell.blackout_days) }} d/yr</div>
             </td>
-            <td>
-              <span class="status-pill status-{{ row.year5_status | lower | replace(' ', '-') }}">{{ row.year5_status }}</span>
-              <div class="cell-sub">{{ '%.0f'|format(row.year5_capacity_pct) }}% cap. · {{ '%.1f'|format(row.year5_blackout_days) }} d/yr</div>
-            </td>
-            <td>
-              <span class="status-pill status-{{ row.year10_status | lower | replace(' ', '-') }}">{{ row.year10_status }}</span>
-              <div class="cell-sub">{{ '%.0f'|format(row.year10_capacity_pct) }}% cap. · {{ '%.1f'|format(row.year10_blackout_days) }} d/yr</div>
-            </td>
+            {% endfor %}
           </tr>
           {% endfor %}
         </tbody>

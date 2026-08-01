@@ -1015,9 +1015,6 @@ def summarize_simulation_results(results):
 # once the presentation layer is ready. See core/battery_aging.py for the
 # underlying model and its published rule-of-thumb sourcing.
 
-DEFAULT_AGING_CHECKPOINT_YEARS = (0, 3, 5, 8, 10)
-
-
 def _classify_from_blackout_days(annual_blackout_days):
     if annual_blackout_days <= 0:
         return "PASS"
@@ -1037,11 +1034,18 @@ def estimate_battery_aging_for_device(
     cutoff_pct,
     discharge_pct_per_day,
     avg_site_temp_c,
-    checkpoint_years=DEFAULT_AGING_CHECKPOINT_YEARS,
+    checkpoint_years=None,
     shs_eval_cache=None,
 ):
     """
     Phase-1 battery aging projection for a single already-resolved device.
+
+    checkpoint_years defaults to a chemistry-appropriate horizon (see
+    core.battery_aging.SUGGESTED_CHECKPOINT_YEARS) rather than one fixed
+    set of years for every chemistry - lead-acid's realistic service life
+    is much shorter than LiFePO4's, so charting both out to the same
+    10-year horizon would imply a lifespan lead-acid essentially never
+    reaches in practice.
 
     Re-runs the existing blackout-days engine
     (get_empty_battery_stats_for_required_mode) at each age checkpoint with
@@ -1061,7 +1065,11 @@ def estimate_battery_aging_for_device(
         dominant_fade_mechanism,
         calendar_fade_pct_per_year,
         cycle_fade_pct_per_year,
+        suggested_checkpoint_years,
     )
+
+    if checkpoint_years is None:
+        checkpoint_years = suggested_checkpoint_years(battery_type)
 
     nameplate_batt_wh = float(resolved["batt"])
     dod_fraction, cycles_per_year = dod_fraction_and_cycles_per_year(discharge_pct_per_day, cutoff_pct)
@@ -1124,7 +1132,7 @@ def estimate_battery_aging_for_device(
     }
 
 
-def estimate_battery_aging_for_results(loc, required_hrs, results, checkpoint_years=DEFAULT_AGING_CHECKPOINT_YEARS):
+def estimate_battery_aging_for_results(loc, required_hrs, results, checkpoint_years=None):
     """
     Convenience wrapper: computes the Phase-1 aging projection for every
     device in an already-simulated `results` dict (as produced by
@@ -1132,8 +1140,11 @@ def estimate_battery_aging_for_results(loc, required_hrs, results, checkpoint_ye
     Fetches the site's average temperature once via PVGIS MRcalc, shared
     across all devices in the study rather than refetched per device.
 
-    NOT called automatically anywhere - must be invoked explicitly once
-    the report/UI presentation for it exists.
+    checkpoint_years defaults to None, meaning each device gets its own
+    chemistry-appropriate horizon (a mixed-fleet study can have a lead-acid
+    device on a 5-year axis and a LiFePO4 device on a 10-year axis in the
+    same study) - pass an explicit tuple to force the same years for every
+    device instead (e.g. for a cross-device comparison table).
     """
     from pvgis_client import monthly_avg_temperature_c
 

@@ -168,6 +168,59 @@ def _device_chart(device: dict, include_js: bool, report_i18n: dict[str, str]) -
     return _chart_html_from_figure(fig)
 
 
+def _device_aging_chart(checkpoints: list[dict], report_i18n: dict[str, str]) -> str:
+    """Replaces the old Generated-vs-Consumed device chart, which became
+    visually unreadable whenever a device's daily generation sat close to
+    its daily consumption (a common, even desirable case) - the two lines
+    would sit almost exactly on top of each other, hiding one under the
+    other. This chart instead shows capacity retained (%) as the battery
+    ages, plus the resulting blackout-day risk at each age, using the
+    same age checkpoints the Battery Aging summary page uses (chemistry-
+    specific horizon, not a fixed one-size-fits-all year range)."""
+    ages = [cp["age_years"] for cp in checkpoints]
+    capacities = [cp["capacity_retention_pct"] for cp in checkpoints]
+    blackout_days = [cp["annual_blackout_days"] for cp in checkpoints]
+    show_blackout = any(float(v) > 0 for v in blackout_days)
+
+    fig, ax = plt.subplots(figsize=(6.8, 2.05))
+    ax.set_facecolor("#f8fbff")
+    ax.plot(
+        ages, capacities, color="#16a34a", linewidth=2.2, marker="o", markersize=4.5,
+        solid_capstyle="round", label="Capacity retained",
+    )
+    ax.axhline(80, color="#94a3b8", linestyle=(0, (3, 2)), linewidth=1.0)
+
+    ax2 = None
+    if show_blackout:
+        ax2 = ax.twinx()
+        ax2.bar(ages, blackout_days, width=0.6, color="#93c5fd", alpha=0.7,
+                edgecolor="#2563eb", linewidth=0.7, label="Blackout days/year at that age")
+
+    ax.set_ylabel("Capacity retained (%)")
+    ax.set_xlabel("Age (years)")
+    ax.set_ylim(0, 108)
+    ax.set_xlim(-0.3, max(ages) + 0.5)
+    ax.set_xticks(ages)
+    ax.grid(axis="y", color="#dbe3ef", linewidth=0.8)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_color("#94a3b8")
+    ax.spines["bottom"].set_color("#94a3b8")
+    if ax2 is not None:
+        ax2.set_ylabel("Blackout days / year", color="#2563eb")
+        ax2.set_ylim(bottom=0)
+        ax2.spines["top"].set_visible(False)
+        ax2.spines["right"].set_color("#2563eb")
+        ax2.tick_params(axis="y", labelsize=8, colors="#2563eb")
+    lines, labels = ax.get_legend_handles_labels()
+    lines2, labels2 = (ax2.get_legend_handles_labels() if ax2 is not None else ([], []))
+    ax.legend(lines + lines2, labels + labels2, loc="lower left", frameon=False, ncol=2, fontsize=8, bbox_to_anchor=(0, 1.02))
+    ax.tick_params(axis="x", labelsize=8, colors="#475467")
+    ax.tick_params(axis="y", labelsize=8, colors="#475467")
+    fig.tight_layout(rect=[0, 0, 1, 0.94])
+    return _chart_html_from_figure(fig)
+
+
 def _blackout_chart(data: dict, include_js: bool, report_i18n: dict[str, str]) -> str:
     month_ticks = month_labels(report_i18n.get("report.html_lang", "en"))
     devices = [d for d in data.get("devices", []) if int(d.get("annual_blackout_days", 0) or 0) > 0]
@@ -268,7 +321,17 @@ def build_report_context(data: dict) -> dict:
         device["compact_chart_mode"] = False
         device["annual_result_status"] = _border_status_from_result(device.get("result_class", "FAIL"))
         device["worst_blackout_status"] = _border_status_from_days(int(device.get("worst_blackout_risk", 0) or 0))
-        device["chart_html"] = _device_chart(device, include_js, context["i18n"])
+        aging_checkpoints = device.get("aging_checkpoints")
+        if aging_checkpoints:
+            device["chart_html"] = _device_aging_chart(aging_checkpoints, context["i18n"])
+            device["chart_is_aging"] = True
+        else:
+            # Falls back to the old Generated-vs-Consumed chart only if
+            # aging data wasn't available for this device (e.g. a PVGIS
+            # failure) - aging is computed by default now, so this branch
+            # is the exception, not the norm.
+            device["chart_html"] = _device_chart(device, include_js, context["i18n"])
+            device["chart_is_aging"] = False
         device["page_number"] = 3 + idx
         include_js = False
     return context

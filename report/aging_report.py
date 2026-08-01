@@ -26,45 +26,55 @@ DEVICE_LINE_STYLES = ["-", "--", "-.", ":"]
 MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 
-def _checkpoint(checkpoints, age_years):
-    for cp in checkpoints:
-        if cp["age_years"] == age_years:
-            return cp
-    return None
+def _checkpoint_cell(checkpoints, index):
+    """Pick a checkpoint by relative position (0=as-new, middle, -1=final)
+    rather than an absolute year number. Different chemistries now use
+    different checkpoint horizons (see core.battery_aging.
+    SUGGESTED_CHECKPOINT_YEARS), so a shared "Year 10" column would show
+    N/A for lead-acid devices that don't have one. Each cell states its
+    own actual age instead of relying on a column header to be correct
+    for every row."""
+    cp = checkpoints[index]
+    return {
+        "age_years": cp["age_years"],
+        "status": cp["status"],
+        "capacity_pct": cp["capacity_retention_pct"],
+        "blackout_days": cp["annual_blackout_days"],
+    }
 
 
-def build_aging_page_data(loc, required_hrs, results, device_short_names: dict) -> dict:
+def compute_aging(loc, required_hrs, results) -> dict:
+    """The one place that actually calls estimate_battery_aging_for_results
+    (PVGIS temperature fetch + per-device checkpoint re-runs). Callers
+    should call this ONCE per report and reuse the result for both the
+    summary page (build_aging_page_data) and each device's own chart -
+    calling it twice would double the added PVGIS cost for no reason."""
+    return estimate_battery_aging_for_results(loc, required_hrs, results)
+
+
+def build_aging_page_data(aging: dict, device_short_names: dict) -> dict:
     """
+    aging: the dict returned by compute_aging() - NOT recomputed here.
     device_short_names: {result_key: display_name}, matching the same
     per-device names already shown elsewhere in the report (see
     report/data_builder.py's _short_name), so this page's table is
     consistent with the rest of the document.
     """
-    aging = estimate_battery_aging_for_results(loc, required_hrs, results)
-
     summary_rows = []
     trajectories = []
     fade_breakdowns = []
     for result_key, device_aging in aging["devices"].items():
         checkpoints = device_aging["checkpoints"]
-        year0 = _checkpoint(checkpoints, 0)
-        year5 = _checkpoint(checkpoints, 5)
-        year10 = _checkpoint(checkpoints, 10)
         name = device_short_names.get(result_key, result_key)
+        mid_index = len(checkpoints) // 2
 
         summary_rows.append({
             "name": name,
             "battery_type": device_aging["battery_type"],
             "dominant_fade_mechanism": device_aging["dominant_fade_mechanism"],
-            "year0_status": year0["status"] if year0 else "N/A",
-            "year5_status": year5["status"] if year5 else "N/A",
-            "year10_status": year10["status"] if year10 else "N/A",
-            "year0_blackout_days": year0["annual_blackout_days"] if year0 else 0,
-            "year5_blackout_days": year5["annual_blackout_days"] if year5 else 0,
-            "year10_blackout_days": year10["annual_blackout_days"] if year10 else 0,
-            "year0_capacity_pct": year0["capacity_retention_pct"] if year0 else 100.0,
-            "year5_capacity_pct": year5["capacity_retention_pct"] if year5 else 100.0,
-            "year10_capacity_pct": year10["capacity_retention_pct"] if year10 else 100.0,
+            "as_new": _checkpoint_cell(checkpoints, 0),
+            "mid_life": _checkpoint_cell(checkpoints, mid_index),
+            "end_of_horizon": _checkpoint_cell(checkpoints, -1),
         })
         trajectories.append({
             "name": name,
@@ -203,7 +213,8 @@ def render_aging_page_html_standalone(loc, required_hrs, results, device_short_n
     portrait content width) in report.css. Without this wrapper the page
     has no width constraint and stretches to fill the browser viewport
     instead, which made an earlier preview look landscape when it isn't."""
-    aging_data = build_aging_page_data(loc, required_hrs, results, device_short_names)
+    aging = compute_aging(loc, required_hrs, results)
+    aging_data = build_aging_page_data(aging, device_short_names)
     env = jinja2.Environment(
         loader=jinja2.FileSystemLoader(str(TEMPLATES_DIR)),
         autoescape=True,

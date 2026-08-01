@@ -63,6 +63,25 @@ CALENDAR_AGING = {
 END_OF_LIFE_RETENTION_PCT = 80.0
 FADE_BUDGET_PCT = 100.0 - END_OF_LIFE_RETENTION_PCT
 
+# Chemistry-specific age checkpoints for charts/tables. A single 0-10 year
+# axis for every chemistry is misleading: lead-acid's own baseline_life_years
+# above is 5, and real-world cyclic/solar service life is commonly shorter
+# still once heat and daily cycling are added, so charting it out to 10
+# years implies a service life it essentially never reaches in practice.
+# Each set instead spans roughly 0 to ~1x that chemistry's own
+# baseline_life_years (rounded to whole years), so the horizon shown is
+# the one that's actually plausible for that chemistry.
+SUGGESTED_CHECKPOINT_YEARS = {
+    "Lead Acid": (0, 1, 2, 3, 5),
+    "LiFePO4": (0, 3, 5, 8, 10),
+    "NiMH": (0, 1, 2, 4, 6),
+}
+
+
+def suggested_checkpoint_years(battery_type: str) -> tuple:
+    chemistry = normalize_chemistry(battery_type)
+    return SUGGESTED_CHECKPOINT_YEARS.get(chemistry, SUGGESTED_CHECKPOINT_YEARS["Lead Acid"])
+
 # ---------------------------------------------------------------------------
 # Cycle aging: published cycle-life-vs-depth-of-discharge reference points
 # per chemistry, as (dod_fraction, cycles_to_80pct_retention), DoD expressed

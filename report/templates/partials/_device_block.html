@@ -47,13 +47,23 @@
     </div>
 
     <article class="card chart-block avoid-break">
-      <div class="section-title">{{ report.i18n['report.daily_battery_energy_balance'] }}</div>
-      <div class="plotly-chart">{{ device.chart_html | safe }}</div>
-      <div class="chart-explainer">
-        {{ report.i18n['report.daily_battery_explainer'] }}
-      </div>
-      {% if device.generated_consumed_close %}
-        <div class="chart-note">{{ report.i18n['report.chart_note_close_balance'] }}</div>
+      {% if device.chart_is_aging %}
+        <div class="section-title">Projected battery capacity by age</div>
+        <div class="plotly-chart">{{ device.chart_html | safe }}</div>
+        <div class="chart-explainer">
+          Estimated capacity retained as this battery ages (published rule-of-thumb figures, not a
+          manufacturer-certified prediction — see the Battery Aging page for methodology), and the resulting
+          blackout-day risk at each age.
+        </div>
+      {% else %}
+        <div class="section-title">{{ report.i18n['report.daily_battery_energy_balance'] }}</div>
+        <div class="plotly-chart">{{ device.chart_html | safe }}</div>
+        <div class="chart-explainer">
+          {{ report.i18n['report.daily_battery_explainer'] }}
+        </div>
+        {% if device.generated_consumed_close %}
+          <div class="chart-note">{{ report.i18n['report.chart_note_close_balance'] }}</div>
+        {% endif %}
       {% endif %}
     </article>
   </article>

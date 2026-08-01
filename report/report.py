@@ -54,19 +54,19 @@ def _device_list_text(selected_ids=None, results=None):
     return ", ".join(f"{count} × {label}" for label, count in ordered.items())
 
 
-def _build_aging_page_data_safe(loc, required_hours, results, data):
-    """Best-effort battery-aging page data. Wrapped defensively so that a
-    PVGIS temperature-fetch failure or any other issue in this newer,
-    less battle-tested code path degrades to "no aging page" rather than
-    failing the whole PDF generation - the report is still useful without
-    it, and it's an opt-in extra, not the core deliverable."""
+def _compute_aging_safe(loc, required_hours, results):
+    """Best-effort raw aging computation (PVGIS temperature + per-device
+    checkpoint re-runs), called ONCE and reused for both the summary page
+    and each device's own chart. Wrapped defensively so that a PVGIS
+    failure or any other issue in this newer, less battle-tested code
+    path degrades to "no aging data" rather than failing the whole PDF -
+    the report is still useful without it."""
     try:
-        from .aging_report import build_aging_page_data
+        from .aging_report import compute_aging
 
-        device_short_names = {d["result_key"]: d["name"] for d in data.get("devices", [])}
-        return build_aging_page_data(loc, required_hours, results, device_short_names)
+        return compute_aging(loc, required_hours, results)
     except Exception:
-        _logger.exception("Battery aging page generation failed; continuing without it.")
+        _logger.exception("Battery aging computation failed; continuing without it.")
         return None
 
 
@@ -229,10 +229,18 @@ def make_pdf(
         kwargs.get("language", "en"),
     )
 
-    if kwargs.get("include_aging") and results:
-        data["aging"] = _build_aging_page_data_safe(loc, required_hours, results, data)
-        if data["aging"] is not None:
+    if kwargs.get("include_aging", True) and results:
+        from .aging_report import build_aging_page_data
+
+        aging_raw = _compute_aging_safe(loc, required_hours, results)
+        if aging_raw is not None:
+            device_short_names = {d["result_key"]: d["name"] for d in data.get("devices", [])}
+            data["aging"] = build_aging_page_data(aging_raw, device_short_names)
             data["total_pages"] = data.get("total_pages", 0) + 1
+            for device in data.get("devices", []):
+                device_aging = aging_raw["devices"].get(device["result_key"])
+                if device_aging:
+                    device["aging_checkpoints"] = device_aging["checkpoints"]
 
     # override generated metadata if explicitly passed by caller
     if kwargs.get("created_at"):

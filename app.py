@@ -27,6 +27,10 @@ APP_DIR = Path(__file__).resolve().parent
 FAVICON_PATH = APP_DIR / "sala_favicon.png"
 LOGO_FILE_PATH = APP_DIR / "sala_logo.png"
 
+from core.favicon_patch import apply_sala_favicon
+
+apply_sala_favicon(FAVICON_PATH)
+
 st.set_page_config(
     page_title="SALA Standardized Feasibility Study for Solar AGL",
     page_icon=str(FAVICON_PATH),

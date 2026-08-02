@@ -28,6 +28,7 @@ from core.db import (
 from core.auth import hash_password
 from core.catalog import get_cached_runtime_catalog, runtime_device_label, invalidate_runtime_catalog_cache
 from core.person import normalize_person_name, split_person_name
+from core.notify import notify_user_access_approved
 from psycopg.errors import UniqueViolation
 
 
@@ -573,6 +574,13 @@ def _render_access_requests_tab():
                         st.success(
                             t("admin.user_created_temp_password", lang, email=email, password=temp_password)
                         )
+                        emailed = notify_user_access_approved(
+                            email=email,
+                            full_name=row["full_name"],
+                            temp_password=temp_password,
+                        )
+                        if not emailed:
+                            st.warning(t("admin.approval_email_not_sent", lang))
                         st.rerun()
 
             with btn2:

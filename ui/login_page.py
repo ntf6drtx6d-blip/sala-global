@@ -6,6 +6,7 @@ import streamlit as st
 from core.auth import login_user
 from core.db import create_access_request
 from core.i18n import t
+from core.notify import get_admin_email, notify_admin_new_access_request
 
 
 LOGO_PATH = "sala_logo.png"
@@ -56,22 +57,6 @@ def render_login_page():
             color: #1f4fbf;
             font-size: 0.83rem;
             font-weight: 700;
-        }
-
-        .icao-logo-placeholder {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            height: 60px;
-            border: 1px dashed #b8c2d1;
-            border-radius: 10px;
-            background: #f8fafc;
-            color: #667085;
-            font-size: 0.78rem;
-            font-weight: 700;
-            letter-spacing: 0.03em;
-            text-align: center;
-            padding: 4px 8px;
         }
 
         .sala-login-card {
@@ -136,7 +121,7 @@ def render_login_page():
     st.markdown('<div class="sala-login-head-wrap">', unsafe_allow_html=True)
 
     if Path(LOGO_PATH).exists():
-        col_logo, col_title, col_icao = st.columns([0.16, 0.68, 0.16], gap="small")
+        col_logo, col_title = st.columns([0.16, 0.84], gap="small")
         with col_logo:
             st.image(LOGO_PATH, width=92)
         with col_title:
@@ -144,23 +129,11 @@ def render_login_page():
                 f'<div class="sala-login-title">{t("app.title", st.session_state.get("language", "en"))}</div>',
                 unsafe_allow_html=True,
             )
-        with col_icao:
-            st.markdown(
-                '<div class="icao-logo-placeholder">ICAO logo<br/>placeholder</div>',
-                unsafe_allow_html=True,
-            )
     else:
-        col_title, col_icao = st.columns([0.84, 0.16], gap="small")
-        with col_title:
-            st.markdown(
-                f'<div class="sala-login-title">{t("app.title", st.session_state.get("language", "en"))}</div>',
-                unsafe_allow_html=True,
-            )
-        with col_icao:
-            st.markdown(
-                '<div class="icao-logo-placeholder">ICAO logo<br/>placeholder</div>',
-                unsafe_allow_html=True,
-            )
+        st.markdown(
+            f'<div class="sala-login-title">{t("app.title", st.session_state.get("language", "en"))}</div>',
+            unsafe_allow_html=True,
+        )
 
     lang = st.session_state.get("language", "en")
     st.markdown(
@@ -210,6 +183,13 @@ def render_login_page():
                 st.error(t("ui.enter_email", lang))
             else:
                 create_access_request(
+                    full_name=req_name.strip(),
+                    email=req_email.strip(),
+                    organization=req_org.strip() or None,
+                    message=req_message.strip() or None,
+                )
+                notify_admin_new_access_request(
+                    admin_email=get_admin_email(),
                     full_name=req_name.strip(),
                     email=req_email.strip(),
                     organization=req_org.strip() or None,

@@ -4,6 +4,7 @@ import time
 import hmac
 import base64
 import hashlib
+import logging
 from pathlib import Path
 import streamlit as st
 from streamlit.errors import StreamlitSecretNotFoundError
@@ -20,7 +21,8 @@ from ui.cockpit import _run_simulation, regenerate_pdf_for_current_results, rese
 from ui.result import render_result
 from ui.admin import render_admin_panel
 from ui.my_studies import render_my_studies
-from ui.result_helpers import annual_empty_battery_stats, overall_state
+from ui.result_helpers import annual_empty_battery_stats, overall_state, count_device_statuses
+from core.notify import is_internal_email, notify_fs_completed
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -244,7 +246,8 @@ def restore_study_from_query_id():
     ):
         return
 
-    row = get_study(study_id, user_id=st.session_state.get("auth_user_id"))
+    owner_scope = None if is_admin() else st.session_state.get("auth_user_id")
+    row = get_study(study_id, user_id=owner_scope)
     if not row:
         _set_study_query_id(None)
         return
@@ -1246,6 +1249,39 @@ def save_running_checkpoint(partial_results=None, simulation_job=None):
     return _save_running_checkpoint_impl(partial_results)
 
 
+_FS_STATUS_LABELS = {
+    "all_pass": "PASS",
+    "none_pass": "FAIL",
+    "mixed": "MIXED",
+    "unknown": "UNKNOWN",
+}
+
+
+def _notify_fs_completed_if_external(study_id, state_value, results):
+    author_email = st.session_state.get("auth_email", "")
+    if not author_email or is_internal_email(author_email):
+        return
+
+    total, passed, failed = count_device_statuses(results)
+    status_detail = f"{passed} of {total} device(s) passed" if total else None
+
+    try:
+        notify_fs_completed(
+            study_id=study_id,
+            author_name=normalize_person_name(st.session_state.get("auth_full_name") or author_email),
+            author_email=author_email,
+            author_organization=st.session_state.get("auth_organization", ""),
+            airport_label=_base_study_label(),
+            airport_icao=st.session_state.get("airport_icao", ""),
+            overall_status=_FS_STATUS_LABELS.get(state_value, "UNKNOWN"),
+            status_detail=status_detail,
+            study_version=st.session_state.get("active_study_version"),
+            language_label=AVAILABLE_LANGUAGES.get(st.session_state.get("language", "en"), "English"),
+        )
+    except Exception:
+        logging.getLogger(__name__).exception("Failed to send FS-completed notification for study %s.", study_id)
+
+
 def maybe_save_current_study():
     results = st.session_state.get("results")
     if not results:
@@ -1301,6 +1337,7 @@ def maybe_save_current_study():
     st.session_state.study_saved_for_current_result = True
     if study_id:
         _set_study_query_id(study_id)
+        _notify_fs_completed_if_external(study_id, state_value, results)
 
 
 def _extract_energy_flow_payload(results, required_hours, overall, selected_ids):

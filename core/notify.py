@@ -33,6 +33,8 @@ from streamlit.errors import StreamlitSecretNotFoundError
 _logger = logging.getLogger(__name__)
 
 DEFAULT_APP_URL = "https://app.sala-global.com"
+DEFAULT_SUPPORT_SALES_EMAIL = "supportsales@solutions4ga.com"
+INTERNAL_EMAIL_DOMAINS = {"sala-global.com", "solutions4ga.com"}
 _LOGO_PATH = Path(__file__).resolve().parent.parent / "sala_logo.png"
 _LOGO_CID = "sala_logo"
 
@@ -42,6 +44,12 @@ _MUTED = "#667085"
 _BORDER = "#e6eaf0"
 _PANEL_BG = "#f8fafc"
 _PAGE_BG = "#f4f6fa"
+_GREEN = "#067647"
+_GREEN_BG = "#ecfdf3"
+_RED = "#b42318"
+_RED_BG = "#fef3f2"
+_AMBER = "#b54708"
+_AMBER_BG = "#fffaeb"
 
 
 def _secret_or_env(name: str, default=None):
@@ -56,6 +64,19 @@ def _secret_or_env(name: str, default=None):
 
 def get_admin_email() -> str | None:
     return _secret_or_env("ADMIN_EMAIL")
+
+
+def get_support_sales_email() -> str:
+    return _secret_or_env("SUPPORT_SALES_EMAIL") or DEFAULT_SUPPORT_SALES_EMAIL
+
+
+def get_app_url() -> str:
+    return _app_url()
+
+
+def is_internal_email(email: str) -> bool:
+    domain = str(email or "").rsplit("@", 1)[-1].strip().lower()
+    return domain in INTERNAL_EMAIL_DOMAINS
 
 
 def _smtp_config():
@@ -320,3 +341,82 @@ def notify_user_access_approved(email: str, full_name: str, temp_password: str) 
     ]
 
     return send_email(email, "Your SALA app access has been approved", "\n".join(text_lines), html_out)
+
+
+def notify_fs_completed(
+    study_id,
+    author_name: str,
+    author_email: str,
+    author_organization: str | None,
+    airport_label: str,
+    airport_icao: str | None,
+    overall_status: str,
+    status_detail: str | None,
+    study_version: int | None,
+    language_label: str,
+) -> bool:
+    """Alerts SALA sales/support whenever someone outside the internal
+    domains completes a Feasibility Study, so the team knows a prospect
+    or partner just ran one - who, which airport, and whether it passed."""
+    to_email = get_support_sales_email()
+    if not to_email or not study_id:
+        return False
+
+    status_colors = {
+        "PASS": (_GREEN, _GREEN_BG),
+        "FAIL": (_RED, _RED_BG),
+        "MIXED": (_AMBER, _AMBER_BG),
+    }
+    color, bg = status_colors.get(overall_status, (_MUTED, _PANEL_BG))
+
+    is_recalculation = bool(study_version and study_version > 1)
+    version_suffix = f" (v{study_version})" if is_recalculation else ""
+    subject = f"SALA FS: {author_name} — {airport_label} — {overall_status}{version_suffix}"
+    download_url = f"{_app_url()}/?study={study_id}"
+
+    status_pill = (
+        f'<span style="display:inline-block;padding:4px 12px;border-radius:999px;background:{bg};'
+        f'color:{color};font-size:12px;font-weight:800;letter-spacing:0.02em;">{html.escape(overall_status)}</span>'
+    )
+
+    airport_display = airport_label + (f" ({airport_icao})" if airport_icao else "")
+    rows = [
+        ("Made by", html.escape(f"{author_name} ({author_email})")),
+        ("Organization", html.escape(author_organization or "-")),
+        ("Airport", html.escape(airport_display)),
+        ("Result", status_pill),
+        ("Version", f"v{study_version}" if study_version else "-"),
+        ("Report language", html.escape(language_label)),
+    ]
+
+    intro = f"{html.escape(author_name)} completed a Feasibility Study"
+    intro += " (recalculation)" if is_recalculation else ""
+    intro += "."
+    body_html = (
+        f'<p style="font-size:14px;color:{_NAVY};line-height:1.5;margin:0;">{intro}</p>'
+        f"{_info_table(rows)}"
+    )
+    if status_detail:
+        body_html += f'<div style="margin-top:14px;font-size:13px;color:{_MUTED};">{html.escape(status_detail)}</div>'
+    body_html += _button("View / download study", download_url)
+
+    html_out = _email_shell(
+        preheader=subject,
+        heading="Feasibility Study completed",
+        body_html=body_html,
+        has_logo=True,
+    )
+
+    text_lines = [
+        f"{author_name} ({author_email}) completed a Feasibility Study.",
+        "",
+        f"Organization: {author_organization or '-'}",
+        f"Airport: {airport_display}",
+        f"Result: {overall_status}" + (f" - {status_detail}" if status_detail else ""),
+        f"Version: v{study_version}" if study_version else "Version: -",
+        f"Report language: {language_label}",
+        "",
+        f"View / download: {download_url}",
+    ]
+
+    return send_email(to_email, subject, "\n".join(text_lines), html_out)

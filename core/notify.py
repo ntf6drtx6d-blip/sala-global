@@ -10,13 +10,22 @@
 # the database record (and, for approvals, the created user account) is
 # what actually matters. Callers get a bool back so they can tell the admin
 # in the UI when a notification didn't go out.
+#
+# Emails are sent as branded HTML (with a plain-text fallback part) using a
+# shared "shell" template so the three automated emails - new-request alert
+# to the admin, receipt confirmation to the requester, and the approval
+# email to the new user - look like they come from the same product,
+# matching the login page's palette (navy text, SALA blue accents).
 
 from __future__ import annotations
 
+import html
+import io
 import logging
 import os
 import smtplib
 from email.message import EmailMessage
+from pathlib import Path
 
 import streamlit as st
 from streamlit.errors import StreamlitSecretNotFoundError
@@ -24,6 +33,15 @@ from streamlit.errors import StreamlitSecretNotFoundError
 _logger = logging.getLogger(__name__)
 
 DEFAULT_APP_URL = "https://app.sala-global.com"
+_LOGO_PATH = Path(__file__).resolve().parent.parent / "sala_logo.png"
+_LOGO_CID = "sala_logo"
+
+_NAVY = "#0f172a"
+_BLUE = "#1d4ed8"
+_MUTED = "#667085"
+_BORDER = "#e6eaf0"
+_PANEL_BG = "#f8fafc"
+_PAGE_BG = "#f4f6fa"
 
 
 def _secret_or_env(name: str, default=None):
@@ -55,7 +73,83 @@ def _smtp_config():
     }
 
 
-def send_email(to_email: str, subject: str, body: str) -> bool:
+def _app_url() -> str:
+    return _secret_or_env("APP_URL") or DEFAULT_APP_URL
+
+
+def _logo_png_bytes() -> bytes | None:
+    """sala_logo.png on disk is actually WebP; converted in-memory to a
+    real PNG since Outlook and several other mail clients don't render
+    WebP inline images."""
+    try:
+        from PIL import Image
+
+        with Image.open(_LOGO_PATH) as im:
+            buf = io.BytesIO()
+            im.convert("RGB").save(buf, format="PNG")
+            return buf.getvalue()
+    except Exception:
+        _logger.exception("Could not prepare SALA logo for email embedding.")
+        return None
+
+
+# --- shared HTML shell -----------------------------------------------------
+
+
+def _info_table(rows: list[tuple[str, str]]) -> str:
+    trs = "".join(
+        f'<tr>'
+        f'<td style="padding:7px 0;color:{_MUTED};font-size:13px;vertical-align:top;white-space:nowrap;">{html.escape(label)}</td>'
+        f'<td style="padding:7px 0 7px 14px;color:{_NAVY};font-size:13px;font-weight:700;text-align:right;">{value}</td>'
+        f"</tr>"
+        for label, value in rows
+    )
+    return (
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        f'style="border-top:1px solid {_BORDER};margin-top:14px;">{trs}</table>'
+    )
+
+
+def _button(label: str, url: str) -> str:
+    return (
+        f'<table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:20px;">'
+        f'<tr><td style="border-radius:10px;background:{_BLUE};">'
+        f'<a href="{html.escape(url)}" style="display:inline-block;padding:11px 22px;font-size:14px;'
+        f'font-weight:700;color:#ffffff;text-decoration:none;border-radius:10px;">{html.escape(label)}</a>'
+        f"</td></tr></table>"
+    )
+
+
+def _email_shell(preheader: str, heading: str, body_html: str, has_logo: bool) -> str:
+    logo_block = (
+        f'<img src="cid:{_LOGO_CID}" alt="SALA" width="96" style="display:block;border:0;outline:none;">'
+        if has_logo
+        else f'<div style="font-weight:800;font-size:20px;color:{_NAVY};letter-spacing:0.02em;">SALA</div>'
+    )
+    return f"""<!DOCTYPE html>
+<html>
+  <body style="margin:0;padding:0;background:{_PAGE_BG};font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+    <span style="display:none;font-size:1px;color:{_PAGE_BG};">{html.escape(preheader)}</span>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{_PAGE_BG};padding:32px 12px;">
+      <tr><td align="center">
+        <table role="presentation" width="560" cellpadding="0" cellspacing="0"
+               style="max-width:560px;width:100%;background:#ffffff;border:1px solid {_BORDER};border-radius:18px;overflow:hidden;">
+          <tr><td style="padding:22px 30px;border-bottom:1px solid {_BORDER};">{logo_block}</td></tr>
+          <tr><td style="padding:28px 30px 8px 30px;">
+            <div style="font-size:19px;font-weight:800;color:{_NAVY};margin-bottom:6px;">{html.escape(heading)}</div>
+            {body_html}
+          </td></tr>
+          <tr><td style="padding:18px 30px;background:{_PANEL_BG};color:{_MUTED};font-size:11.5px;text-align:center;">
+            SALA Standardized Feasibility Study for Solar AGL &middot; Automated notification, please do not reply
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>"""
+
+
+def send_email(to_email: str, subject: str, text_body: str, html_body: str | None = None) -> bool:
     """Returns True on success, False if unconfigured or sending failed.
     Never raises - a broken mail server should not break the caller."""
     if not to_email:
@@ -70,7 +164,14 @@ def send_email(to_email: str, subject: str, body: str) -> bool:
     msg["Subject"] = subject
     msg["From"] = config["from_email"] or "no-reply@sala-global.com"
     msg["To"] = to_email
-    msg.set_content(body)
+    msg.set_content(text_body)
+
+    if html_body:
+        msg.add_alternative(html_body, subtype="html")
+        logo_bytes = _logo_png_bytes()
+        if logo_bytes:
+            html_part = msg.get_payload()[1]
+            html_part.add_related(logo_bytes, maintype="image", subtype="png", cid=f"<{_LOGO_CID}>")
 
     try:
         with smtplib.SMTP(config["host"], config["port"], timeout=15) as server:
@@ -85,6 +186,9 @@ def send_email(to_email: str, subject: str, body: str) -> bool:
         return False
 
 
+# --- concrete emails ---------------------------------------------------
+
+
 def notify_admin_new_access_request(
     admin_email: str,
     full_name: str,
@@ -95,7 +199,31 @@ def notify_admin_new_access_request(
     if not admin_email:
         return False
 
-    lines = [
+    rows = [
+        ("Name", html.escape(full_name)),
+        ("Email", html.escape(email)),
+        ("Organization", html.escape(organization or "-")),
+    ]
+    body_html = (
+        f'<p style="font-size:14px;color:{_NAVY};line-height:1.5;margin:0;">'
+        f"A new access request was submitted for the SALA app.</p>"
+        f"{_info_table(rows)}"
+    )
+    if message:
+        body_html += (
+            f'<div style="margin-top:16px;padding:12px 14px;background:{_PANEL_BG};border-radius:10px;'
+            f'font-size:13px;color:{_NAVY};line-height:1.5;">{html.escape(message)}</div>'
+        )
+    body_html += _button("Review in Admin panel", f"{_app_url()}")
+
+    html_out = _email_shell(
+        preheader=f"New access request from {full_name}",
+        heading="New access request",
+        body_html=body_html,
+        has_logo=True,
+    )
+
+    text_lines = [
         "A new access request was submitted for the SALA Standardized Feasibility Study app.",
         "",
         f"Name: {full_name}",
@@ -103,18 +231,83 @@ def notify_admin_new_access_request(
         f"Organization: {organization or '-'}",
     ]
     if message:
-        lines += ["", "Message:", message]
-    lines += ["", "Review it in the app: Admin panel > Access Requests."]
+        text_lines += ["", "Message:", message]
+    text_lines += ["", "Review it in the app: Admin panel > Access Requests."]
 
-    return send_email(admin_email, "SALA app: new access request", "\n".join(lines))
+    return send_email(admin_email, "SALA app: new access request", "\n".join(text_lines), html_out)
+
+
+def notify_requester_received(full_name: str, email: str, organization: str | None = None) -> bool:
+    """Confirms receipt to the person who just submitted a request - so
+    they know it actually reached SALA, before an admin has done anything
+    with it yet."""
+    if not email:
+        return False
+
+    rows = [
+        ("Name", html.escape(full_name)),
+        ("Email", html.escape(email)),
+        ("Organization", html.escape(organization or "-")),
+    ]
+    body_html = (
+        f'<p style="font-size:14px;color:{_NAVY};line-height:1.5;margin:0;">'
+        f"Hi {html.escape(full_name)},</p>"
+        f'<p style="font-size:14px;color:{_NAVY};line-height:1.5;">'
+        f"Thanks for your interest in the SALA Standardized Feasibility Study app. Your access request has "
+        f"been received and forwarded to the SALA team for review. We'll be in touch as soon as it's approved."
+        f"</p>"
+        f"{_info_table(rows)}"
+    )
+
+    html_out = _email_shell(
+        preheader="Your SALA app access request has been received",
+        heading="Request received",
+        body_html=body_html,
+        has_logo=True,
+    )
+
+    text_lines = [
+        f"Hi {full_name},",
+        "",
+        "Thanks for your interest in the SALA Standardized Feasibility Study app. Your access request has "
+        "been received and forwarded to the SALA team for review. We'll be in touch as soon as it's approved.",
+        "",
+        f"Name: {full_name}",
+        f"Email: {email}",
+        f"Organization: {organization or '-'}",
+    ]
+
+    return send_email(email, "We've received your SALA app access request", "\n".join(text_lines), html_out)
 
 
 def notify_user_access_approved(email: str, full_name: str, temp_password: str) -> bool:
     if not email:
         return False
 
-    login_url = _secret_or_env("APP_URL") or DEFAULT_APP_URL
-    lines = [
+    login_url = _app_url()
+    rows = [
+        ("Email", html.escape(email)),
+        ("Temporary password", f'<span style="font-family:monospace;">{html.escape(temp_password)}</span>'),
+    ]
+    body_html = (
+        f'<p style="font-size:14px;color:{_NAVY};line-height:1.5;margin:0;">'
+        f"Hi {html.escape(full_name)},</p>"
+        f'<p style="font-size:14px;color:{_NAVY};line-height:1.5;">'
+        f"Your access request for the SALA Standardized Feasibility Study app has been approved. "
+        f"Use the credentials below to log in, and please keep this password secure."
+        f"</p>"
+        f"{_info_table(rows)}"
+        f"{_button('Log in to SALA', login_url)}"
+    )
+
+    html_out = _email_shell(
+        preheader="Your SALA app access has been approved",
+        heading="Access approved",
+        body_html=body_html,
+        has_logo=True,
+    )
+
+    text_lines = [
         f"Hi {full_name},",
         "",
         "Your access request for the SALA Standardized Feasibility Study app has been approved.",
@@ -126,4 +319,4 @@ def notify_user_access_approved(email: str, full_name: str, temp_password: str) 
         "Please keep this password secure.",
     ]
 
-    return send_email(email, "Your SALA app access has been approved", "\n".join(lines))
+    return send_email(email, "Your SALA app access has been approved", "\n".join(text_lines), html_out)

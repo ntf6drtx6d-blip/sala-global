@@ -4,9 +4,9 @@ from pathlib import Path
 
 import streamlit as st
 from core.auth import login_user
-from core.db import create_access_request
+from core.db import create_access_request, user_exists
 from core.i18n import t
-from core.notify import get_admin_email, notify_admin_new_access_request
+from core.notify import get_admin_email, notify_admin_new_access_request, notify_requester_received
 
 
 LOGO_PATH = "sala_logo.png"
@@ -181,6 +181,8 @@ def render_login_page():
                 st.error(t("ui.enter_full_name", lang))
             elif not req_email.strip():
                 st.error(t("ui.enter_email", lang))
+            elif user_exists(req_email.strip().lower()):
+                st.warning(t("ui.account_already_exists", lang))
             else:
                 create_access_request(
                     full_name=req_name.strip(),
@@ -194,6 +196,11 @@ def render_login_page():
                     email=req_email.strip(),
                     organization=req_org.strip() or None,
                     message=req_message.strip() or None,
+                )
+                notify_requester_received(
+                    full_name=req_name.strip(),
+                    email=req_email.strip(),
+                    organization=req_org.strip() or None,
                 )
                 st.success(t("ui.request_sent", lang))
 

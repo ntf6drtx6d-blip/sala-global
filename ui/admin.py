@@ -1,6 +1,7 @@
 # ui/admin.py
 
 import json
+import math
 import secrets
 import string
 
@@ -30,6 +31,7 @@ from core.catalog import get_cached_runtime_catalog, runtime_device_label, inval
 from core.person import normalize_person_name, split_person_name
 from core.notify import notify_user_access_approved
 from core.stats import compute_admin_stats
+from ui.map_embed import render_folium_map
 from psycopg.errors import UniqueViolation
 
 
@@ -950,6 +952,93 @@ def _format_seconds_stat(seconds):
     return f"{secs}s"
 
 
+def _weekly_fs_chart(weekly_counts, lang):
+    import altair as alt
+
+    internal_label = t("admin.stat_series_internal", lang)
+    external_label = t("admin.stat_series_external", lang)
+    df_long = pd.DataFrame(
+        [
+            {"week_start": row["week_start"], "series": internal_label, "count": row["internal"]}
+            for row in weekly_counts
+        ]
+        + [
+            {"week_start": row["week_start"], "series": external_label, "count": row["external"]}
+            for row in weekly_counts
+        ]
+    )
+    chart = (
+        alt.Chart(df_long)
+        .mark_bar()
+        .encode(
+            x=alt.X("week_start:O", title=None, axis=alt.Axis(labelAngle=-40)),
+            xOffset=alt.XOffset("series:N", sort=[internal_label, external_label]),
+            y=alt.Y("count:Q", title=None),
+            color=alt.Color(
+                "series:N",
+                title=None,
+                sort=[internal_label, external_label],
+                scale=alt.Scale(range=["#1d4ed8", "#93c5fd"]),
+                legend=alt.Legend(orient="top"),
+            ),
+            tooltip=[alt.Tooltip("week_start:O", title="Week"), "series:N", "count:Q"],
+        )
+        .properties(height=320)
+    )
+    return chart
+
+
+def _zoom_for_span(lat_span: float, lon_span: float) -> int:
+    # Deterministic zoom from the data's bounding box, computed server-side
+    # rather than via Leaflet's fitBounds() - fitBounds() needs the map
+    # container's actual pixel size to compute a zoom, and calling it
+    # before the container has been laid out (as happens inside
+    # Streamlit's iframe on first render) produces a garbage result
+    # (observed: zoom 20 centered on the wrong continent for a
+    # near-global bounding box). A world at zoom Z is ~360/2^Z degrees
+    # wide, so picking Z so that width covers the span (with padding)
+    # gives a reasonable "fit" without needing the container size at all.
+    span = max(lat_span, lon_span, 0.01) * 1.4
+    zoom = math.log2(360.0 / span)
+    return max(1, min(9, int(zoom)))
+
+
+def _build_stats_folium_map(map_points):
+    import folium
+
+    lats = [p["lat"] for p in map_points]
+    lons = [p["lon"] for p in map_points]
+    center_lat = sum(lats) / len(lats)
+    center_lon = sum(lons) / len(lons)
+    zoom_start = _zoom_for_span(max(lats) - min(lats), max(lons) - min(lons)) if len(map_points) > 1 else 8
+
+    fmap = folium.Map(
+        location=[center_lat, center_lon],
+        zoom_start=zoom_start,
+        control_scale=True,
+        tiles=None,
+        max_bounds=True,
+        min_zoom=2,
+    )
+    folium.TileLayer("CartoDB positron", no_wrap=True).add_to(fmap)
+
+    max_count = max(p["count"] for p in map_points) or 1
+    for p in map_points:
+        radius = 6 + (p["count"] / max_count) * 14
+        folium.CircleMarker(
+            location=[p["lat"], p["lon"]],
+            radius=radius,
+            color="#1d4ed8",
+            fill=True,
+            fill_color="#1d4ed8",
+            fill_opacity=0.55,
+            weight=1,
+            tooltip=f"{p['label']} — {p['count']} FS",
+        ).add_to(fmap)
+
+    return fmap
+
+
 def _render_statistics_tab():
     lang = st.session_state.get("language", "en")
     st.markdown(f"### {t('admin.statistics', lang)}")
@@ -970,18 +1059,10 @@ def _render_statistics_tab():
 
     st.markdown(f"#### {t('admin.stat_weekly_chart_title', lang)}")
     st.caption(t("admin.stat_weekly_chart_caption", lang))
-    weekly_df = pd.DataFrame(stats["weekly_counts"]).set_index("week_start")
-    if weekly_df.empty or weekly_df[["internal", "external"]].sum().sum() == 0:
+    if not stats["weekly_counts"] or sum(r["total"] for r in stats["weekly_counts"]) == 0:
         st.info(t("admin.stat_no_data", lang))
     else:
-        st.bar_chart(
-            weekly_df[["internal", "external"]].rename(
-                columns={
-                    "internal": t("admin.stat_series_internal", lang),
-                    "external": t("admin.stat_series_external", lang),
-                }
-            )
-        )
+        st.altair_chart(_weekly_fs_chart(stats["weekly_counts"], lang), use_container_width=True)
 
     col_a, col_b = st.columns(2)
     with col_a:
@@ -1018,12 +1099,22 @@ def _render_statistics_tab():
         for name, count in stats["top_devices"]:
             st.write(f"**{name}** — {count}")
 
-    st.markdown(f"#### {t('admin.stat_top_organizations_title', lang)}")
-    if not stats["top_organizations"]:
-        st.info(t("admin.stat_no_data", lang))
-    else:
-        org_df = pd.DataFrame(stats["top_organizations"], columns=["organization", "count"])
-        st.dataframe(org_df, hide_index=True, use_container_width=True)
+    col_c, col_d = st.columns(2)
+    with col_c:
+        st.markdown(f"#### {t('admin.stat_top_organizations_title', lang)}")
+        if not stats["top_organizations"]:
+            st.info(t("admin.stat_no_data", lang))
+        else:
+            org_df = pd.DataFrame(stats["top_organizations"], columns=["organization", "count"])
+            st.dataframe(org_df, hide_index=True, use_container_width=True)
+
+    with col_d:
+        st.markdown(f"#### {t('admin.stat_top_users_title', lang)}")
+        if not stats["top_users"]:
+            st.info(t("admin.stat_no_data", lang))
+        else:
+            users_df = pd.DataFrame(stats["top_users"], columns=["user", "count"])
+            st.dataframe(users_df, hide_index=True, use_container_width=True)
 
     st.markdown(f"#### {t('admin.stat_map_title', lang)}")
     st.caption(t("admin.stat_map_caption", lang))
@@ -1031,13 +1122,37 @@ def _render_statistics_tab():
     if not map_points:
         st.info(t("admin.stat_no_data", lang))
     else:
-        map_df = pd.DataFrame(map_points)
-        st.map(map_df, latitude="lat", longitude="lon", size="count")
+        render_folium_map(_build_stats_folium_map(map_points), height=420, key="admin_stats_map")
         top_points = sorted(map_points, key=lambda p: -p["count"])[:10]
-        table_df = pd.DataFrame(
-            [{"airport": p["label"], "count": p["count"]} for p in top_points]
-        )
+        table_df = pd.DataFrame([{"airport": p["label"], "count": p["count"]} for p in top_points])
         st.dataframe(table_df, hide_index=True, use_container_width=True)
+
+    st.markdown(f"#### {t('admin.stat_fs_listing_title', lang)}")
+    st.caption(t("admin.stat_fs_listing_caption", lang))
+    fs_listing = stats["fs_listing"]
+    if not fs_listing:
+        st.info(t("admin.stat_no_data", lang))
+    else:
+        listing_df = pd.DataFrame(
+            [
+                {
+                    t("admin.stat_col_airport", lang): row["airport"],
+                    t("admin.stat_col_name", lang): row["full_name"],
+                    t("admin.stat_col_organization", lang): row["organization"],
+                    t("admin.stat_col_status", lang): row["status"],
+                    t("admin.stat_col_date", lang): row["date"].strftime("%Y-%m-%d") if row["date"] else "-",
+                    t("admin.stat_col_days_since", lang): row["days_since"],
+                }
+                for row in fs_listing
+            ]
+        )
+        st.dataframe(listing_df, hide_index=True, use_container_width=True)
+        st.download_button(
+            f"📥 {t('admin.stat_download_csv', lang)}",
+            data=listing_df.to_csv(index=False).encode("utf-8"),
+            file_name="sala_fs_listing.csv",
+            mime="text/csv",
+        )
 
 
 def render_admin_panel():

@@ -795,6 +795,7 @@ def list_studies_for_stats(limit=20000):
                 (s.study_data - 'result_summary') AS study_data,
                 s.created_at,
                 u.email,
+                u.full_name,
                 u.organization
             FROM studies s
             JOIN users u ON s.user_id = u.id

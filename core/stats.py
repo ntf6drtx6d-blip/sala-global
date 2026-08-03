@@ -84,6 +84,7 @@ def compute_admin_stats(weeks: int = 8) -> dict:
             {
                 "user_id": row["user_id"],
                 "email": row.get("email"),
+                "full_name": row.get("full_name"),
                 "organization": row.get("organization"),
                 "created_at": _as_utc(row.get("created_at")),
                 "study_data": study_data,
@@ -103,6 +104,7 @@ def compute_admin_stats(weeks: int = 8) -> dict:
             {
                 "user_id": user_id,
                 "email": first["email"],
+                "full_name": first["full_name"] or first["email"],
                 "organization": latest["organization"] or first["organization"],
                 "first_created_at": first["created_at"],
                 "is_internal": is_internal_email(first["email"]),
@@ -182,6 +184,29 @@ def compute_admin_stats(weeks: int = 8) -> dict:
             org_counter[org] += 1
     top_organizations = org_counter.most_common(5)
 
+    user_counter = Counter()
+    user_labels = {}
+    for f in distinct_fs:
+        user_counter[f["user_id"]] += 1
+        user_labels[f["user_id"]] = f["full_name"] or f["email"]
+    top_users = [(user_labels[uid], count) for uid, count in user_counter.most_common(5)]
+
+    fs_listing = [
+        {
+            "airport": f.get("airport_label") or "Unknown",
+            "full_name": f.get("full_name"),
+            "organization": f.get("organization") or "-",
+            "date": f["first_created_at"],
+            "days_since": (now - f["first_created_at"]).days if f["first_created_at"] else None,
+            "status": {
+                "ALL_PASS": "PASS",
+                "NONE_PASS": "FAIL",
+                "MIXED": "MIXED",
+            }.get(f["latest_status"], f["latest_status"] or "UNKNOWN"),
+        }
+        for f in sorted(distinct_fs, key=lambda f: f["first_created_at"] or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+    ]
+
     recalculated_count = sum(1 for f in distinct_fs if f["version_count"] > 1)
     recalculation_rate_pct = (recalculated_count / total_fs * 100.0) if total_fs else 0.0
 
@@ -218,6 +243,8 @@ def compute_admin_stats(weeks: int = 8) -> dict:
         "top_devices": top_devices,
         "map_points": map_points_list,
         "top_organizations": top_organizations,
+        "top_users": top_users,
+        "fs_listing": fs_listing,
         "recalculation_rate_pct": recalculation_rate_pct,
         "recalculated_count": recalculated_count,
         "avg_generation_seconds": avg_generation_seconds,

@@ -29,6 +29,7 @@ from core.auth import hash_password
 from core.catalog import get_cached_runtime_catalog, runtime_device_label, invalidate_runtime_catalog_cache
 from core.person import normalize_person_name, split_person_name
 from core.notify import notify_user_access_approved
+from core.stats import compute_admin_stats
 from psycopg.errors import UniqueViolation
 
 
@@ -939,15 +940,116 @@ def _render_device_database_tab():
                     st.rerun()
 
 
+def _format_seconds_stat(seconds):
+    if seconds is None:
+        return "—"
+    seconds = int(round(seconds))
+    minutes, secs = divmod(seconds, 60)
+    if minutes:
+        return f"{minutes}m {secs}s"
+    return f"{secs}s"
+
+
+def _render_statistics_tab():
+    lang = st.session_state.get("language", "en")
+    st.markdown(f"### {t('admin.statistics', lang)}")
+
+    with st.spinner(t("admin.statistics_loading", lang)):
+        stats = compute_admin_stats(weeks=8)
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric(t("admin.stat_total_fs", lang), stats["total_fs"])
+    c2.metric(t("admin.stat_internal_vs_external", lang), f"{stats['internal_fs']} / {stats['external_fs']}")
+    c3.metric(t("admin.stat_total_users", lang), stats["total_users"])
+    c4.metric(
+        t("admin.stat_active_dormant_users", lang, days=stats["active_window_days"]),
+        f"{stats['active_users']} / {stats['dormant_users']}",
+    )
+
+    st.caption(t("admin.stat_headline_caption", lang))
+
+    st.markdown(f"#### {t('admin.stat_weekly_chart_title', lang)}")
+    st.caption(t("admin.stat_weekly_chart_caption", lang))
+    weekly_df = pd.DataFrame(stats["weekly_counts"]).set_index("week_start")
+    if weekly_df.empty or weekly_df[["internal", "external"]].sum().sum() == 0:
+        st.info(t("admin.stat_no_data", lang))
+    else:
+        st.bar_chart(
+            weekly_df[["internal", "external"]].rename(
+                columns={
+                    "internal": t("admin.stat_series_internal", lang),
+                    "external": t("admin.stat_series_external", lang),
+                }
+            )
+        )
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        st.markdown(f"#### {t('admin.stat_pass_fail_title', lang)}")
+        status_counts = stats["status_counts"]
+        if not status_counts:
+            st.info(t("admin.stat_no_data", lang))
+        else:
+            status_df = pd.DataFrame(
+                {"status": list(status_counts.keys()), "count": list(status_counts.values())}
+            ).set_index("status")
+            st.bar_chart(status_df)
+
+        st.metric(
+            t("admin.stat_recalculation_rate", lang),
+            f"{stats['recalculation_rate_pct']:.0f}%",
+            help=t("admin.stat_recalculation_rate_help", lang, count=stats["recalculated_count"], total=stats["total_fs"]),
+        )
+
+    with col_b:
+        st.markdown(f"#### {t('admin.stat_generation_time_title', lang)}")
+        if stats["generation_time_sample_size"] == 0:
+            st.info(t("admin.stat_no_data", lang))
+        else:
+            g1, g2 = st.columns(2)
+            g1.metric(t("admin.stat_avg_time", lang), _format_seconds_stat(stats["avg_generation_seconds"]))
+            g2.metric(t("admin.stat_median_time", lang), _format_seconds_stat(stats["median_generation_seconds"]))
+            st.caption(t("admin.stat_generation_time_caption", lang, count=stats["generation_time_sample_size"]))
+
+    st.markdown(f"#### {t('admin.stat_top_devices_title', lang)}")
+    if not stats["top_devices"]:
+        st.info(t("admin.stat_no_data", lang))
+    else:
+        for name, count in stats["top_devices"]:
+            st.write(f"**{name}** — {count}")
+
+    st.markdown(f"#### {t('admin.stat_top_organizations_title', lang)}")
+    if not stats["top_organizations"]:
+        st.info(t("admin.stat_no_data", lang))
+    else:
+        org_df = pd.DataFrame(stats["top_organizations"], columns=["organization", "count"])
+        st.dataframe(org_df, hide_index=True, use_container_width=True)
+
+    st.markdown(f"#### {t('admin.stat_map_title', lang)}")
+    st.caption(t("admin.stat_map_caption", lang))
+    map_points = stats["map_points"]
+    if not map_points:
+        st.info(t("admin.stat_no_data", lang))
+    else:
+        map_df = pd.DataFrame(map_points)
+        st.map(map_df, latitude="lat", longitude="lon", size="count")
+        top_points = sorted(map_points, key=lambda p: -p["count"])[:10]
+        table_df = pd.DataFrame(
+            [{"airport": p["label"], "count": p["count"]} for p in top_points]
+        )
+        st.dataframe(table_df, hide_index=True, use_container_width=True)
+
+
 def render_admin_panel():
     lang = st.session_state.get("language", "en")
     st.markdown(f"## {t('admin.panel', lang)}")
 
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         t("admin.access_requests", lang),
         t("admin.users", lang),
         t("admin.studies", lang),
         t("admin.device_database", lang),
+        t("admin.statistics", lang),
     ])
 
     with tab1:
@@ -961,3 +1063,6 @@ def render_admin_panel():
 
     with tab4:
         _render_device_database_tab()
+
+    with tab5:
+        _render_statistics_tab()

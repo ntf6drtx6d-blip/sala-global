@@ -779,6 +779,39 @@ def list_all_studies(limit=300):
         return [_study_row_to_legacy(row) for row in cur.fetchall()]
 
 
+def list_studies_for_stats(limit=20000):
+    # Same OOM-safety exclusions as list_all_studies() (no pdf_bytes, no
+    # study_data.result_summary). Returns raw rows rather than passing
+    # them through _study_row_to_legacy, so created_at stays a real
+    # datetime and study_data stays a real dict - the admin Statistics
+    # dashboard needs to bucket by date and walk the JSON, not display
+    # already-formatted strings.
+    with db_cursor() as (_, cur):
+        cur.execute(
+            """
+            SELECT
+                s.id,
+                s.user_id,
+                (s.study_data - 'result_summary') AS study_data,
+                s.created_at,
+                u.email,
+                u.organization
+            FROM studies s
+            JOIN users u ON s.user_id = u.id
+            ORDER BY s.created_at ASC
+            LIMIT %s
+            """,
+            (limit,),
+        )
+        return cur.fetchall()
+
+
+def list_users_for_stats():
+    with db_cursor() as (_, cur):
+        cur.execute("SELECT id, email, organization, created_at, last_login_at FROM users")
+        return cur.fetchall()
+
+
 def get_study_pdf(study_id, user_id=None):
     with db_cursor() as (_, cur):
         if user_id is None:

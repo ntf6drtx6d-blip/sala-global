@@ -1,5 +1,6 @@
 import json
 import os
+import secrets
 from contextlib import contextmanager
 from datetime import datetime
 
@@ -67,6 +68,7 @@ def _study_payload(
     base_airport_label=None,
     language="en",
     simulation_timing=None,
+    share_token=None,
 ):
     return {
         "airport_label": airport_label,
@@ -84,6 +86,7 @@ def _study_payload(
         "worst_blackout_pct": worst_blackout_pct,
         "result_summary": result_summary,
         "simulation_timing": simulation_timing or {},
+        "share_token": share_token,
     }
 
 
@@ -119,6 +122,7 @@ def _study_row_to_legacy(row):
             "worst_blackout_pct": payload.get("worst_blackout_pct"),
             "result_summary_json": json.dumps(payload.get("result_summary") or {}),
             "simulation_timing_json": json.dumps(payload.get("simulation_timing") or {}),
+            "share_token": payload.get("share_token"),
             "created_at": _dt_to_text(row.get("created_at")),
             "updated_at": _dt_to_text(row.get("updated_at")),
         }
@@ -547,6 +551,7 @@ def save_study(
     base_airport_label=None,
     language="en",
     simulation_timing=None,
+    share_token=None,
 ):
     payload = _study_payload(
         airport_label=airport_label,
@@ -564,6 +569,7 @@ def save_study(
         base_airport_label=base_airport_label,
         language=language,
         simulation_timing=simulation_timing,
+        share_token=share_token or secrets.token_urlsafe(24),
     )
 
     with db_cursor() as (_, cur):
@@ -600,26 +606,39 @@ def update_study(
     base_airport_label=None,
     language="en",
     simulation_timing=None,
+    share_token=None,
 ):
-    payload = _study_payload(
-        airport_label=airport_label,
-        lat=lat,
-        lon=lon,
-        required_hours=required_hours,
-        operating_profile_mode=operating_profile_mode,
-        selected_devices=selected_devices,
-        per_device_config=per_device_config,
-        overall_result=overall_result,
-        worst_blackout_days=worst_blackout_days,
-        worst_blackout_pct=worst_blackout_pct,
-        result_summary=result_summary,
-        study_version=study_version,
-        base_airport_label=base_airport_label,
-        language=language,
-        simulation_timing=simulation_timing,
-    )
-
     with db_cursor() as (_, cur):
+        if not share_token:
+            # study_data is fully replaced on every update, so the token
+            # must be re-included each time or it silently disappears from
+            # previously-shared links. Callers should already be carrying
+            # it forward via session state, but fall back to reading
+            # (or minting, for studies saved before this existed) the
+            # current one so a missed call site can't wipe it.
+            cur.execute("SELECT study_data->>'share_token' AS share_token FROM studies WHERE id = %s", (study_id,))
+            row = cur.fetchone()
+            share_token = (row.get("share_token") if row else None) or secrets.token_urlsafe(24)
+
+        payload = _study_payload(
+            airport_label=airport_label,
+            lat=lat,
+            lon=lon,
+            required_hours=required_hours,
+            operating_profile_mode=operating_profile_mode,
+            selected_devices=selected_devices,
+            per_device_config=per_device_config,
+            overall_result=overall_result,
+            worst_blackout_days=worst_blackout_days,
+            worst_blackout_pct=worst_blackout_pct,
+            result_summary=result_summary,
+            study_version=study_version,
+            base_airport_label=base_airport_label,
+            language=language,
+            simulation_timing=simulation_timing,
+            share_token=share_token,
+        )
+
         return _save_study_payload(
             cur,
             study_id,
@@ -679,8 +698,24 @@ def save_running_study_checkpoint(
     )
 
 
-def get_study(study_id, user_id=None):
+def get_study(study_id, user_id=None, token=None):
     with db_cursor() as (_, cur):
+        if token:
+            # A matching share token authorizes access to this one study
+            # regardless of who owns it - it's what makes the "view /
+            # download study" link in FS-completion emails work for
+            # whoever receives the email, not just admins. Falls through
+            # to the normal ownership check below if the token doesn't
+            # match, so a stray/invalid token param can't lock out someone
+            # who'd otherwise have legitimate access.
+            cur.execute(
+                "SELECT * FROM studies WHERE id = %s AND study_data->>'share_token' = %s",
+                (study_id, token),
+            )
+            row = cur.fetchone()
+            if row:
+                return _study_row_to_legacy(row)
+
         if user_id is None:
             cur.execute("SELECT * FROM studies WHERE id = %s", (study_id,))
         else:

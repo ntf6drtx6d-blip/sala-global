@@ -5,6 +5,7 @@ import hmac
 import base64
 import hashlib
 import logging
+import secrets
 from pathlib import Path
 import streamlit as st
 from streamlit.errors import StreamlitSecretNotFoundError
@@ -21,7 +22,7 @@ from ui.cockpit import _run_simulation, regenerate_pdf_for_current_results, rese
 from ui.result import render_result
 from ui.admin import render_admin_panel
 from ui.my_studies import render_my_studies
-from ui.result_helpers import annual_empty_battery_stats, overall_state, count_device_statuses
+from ui.result_helpers import annual_empty_battery_stats, overall_state, count_device_statuses, result_device_display_name
 from core.notify import is_internal_email, notify_fs_completed
 
 
@@ -54,6 +55,7 @@ DEFAULT_MANUFACTURER = "S4GA"
 # It is not as strong as HttpOnly cookies, but it works without extra packages.
 AUTH_QUERY_PARAM = "auth"
 STUDY_QUERY_PARAM = "study"
+STUDY_TOKEN_QUERY_PARAM = "token"
 AUTH_TOKEN_TTL_DAYS = 30
 RUN_STALL_TIMEOUT_SECONDS = 180
 STABILITY_ROLLBACK_MODE = os.getenv("SALA_STABILITY_ROLLBACK", "1") not in {"0", "false", "False"}
@@ -247,7 +249,8 @@ def restore_study_from_query_id():
         return
 
     owner_scope = None if is_admin() else st.session_state.get("auth_user_id")
-    row = get_study(study_id, user_id=owner_scope)
+    share_token_param = _query_param_value(STUDY_TOKEN_QUERY_PARAM)
+    row = get_study(study_id, user_id=owner_scope, token=share_token_param)
     if not row:
         _set_study_query_id(None)
         return
@@ -302,6 +305,7 @@ def restore_study_from_query_id():
     st.session_state.active_study_name = row.get("study_name")
     st.session_state.active_study_version = row.get("study_version")
     st.session_state.active_study_base_label = row.get("base_airport_label") or row.get("airport_label")
+    st.session_state.active_study_share_token = row.get("share_token")
     st.session_state.simulation_timing = simulation_timing if isinstance(simulation_timing, dict) else {}
     st.session_state.study_point_confirmed = True
     st.session_state.study_location = {
@@ -1202,6 +1206,7 @@ def ensure_active_study_record():
 
     base_label = _base_study_label()
     study_version, study_name = _next_study_version(user_id, base_label)
+    share_token = secrets.token_urlsafe(24)
 
     study_id = save_study(
         user_id=user_id,
@@ -1223,12 +1228,14 @@ def ensure_active_study_record():
         base_airport_label=base_label,
         language=st.session_state.get("language", "en"),
         simulation_timing=st.session_state.get("simulation_timing") or {},
+        share_token=share_token,
     )
     if study_id:
         st.session_state.active_study_id = study_id
         st.session_state.active_study_name = study_name
         st.session_state.active_study_version = study_version
         st.session_state.active_study_base_label = base_label
+        st.session_state.active_study_share_token = share_token
         _set_study_query_id(study_id)
     return study_id
 
@@ -1273,17 +1280,25 @@ _FS_STATUS_LABELS = {
 }
 
 
-def _notify_fs_completed_if_external(study_id, state_value, results):
+def _notify_fs_completed_if_external(study_id, state_value, results, share_token):
     author_email = st.session_state.get("auth_email", "")
     if not author_email or is_internal_email(author_email):
         return
 
     total, passed, failed = count_device_statuses(results)
     status_detail = f"{passed} of {total} device(s) passed" if total else None
+    equipment = [
+        {
+            "name": result_device_display_name(result_key, row),
+            "status": "PASS" if row.get("status") == "PASS" else "FAIL",
+        }
+        for result_key, row in results.items()
+    ]
 
     try:
         notify_fs_completed(
             study_id=study_id,
+            share_token=share_token,
             author_name=normalize_person_name(st.session_state.get("auth_full_name") or author_email),
             author_email=author_email,
             author_organization=st.session_state.get("auth_organization", ""),
@@ -1291,6 +1306,7 @@ def _notify_fs_completed_if_external(study_id, state_value, results):
             airport_icao=st.session_state.get("airport_icao", ""),
             overall_status=_FS_STATUS_LABELS.get(state_value, "UNKNOWN"),
             status_detail=status_detail,
+            equipment=equipment,
             study_version=st.session_state.get("active_study_version"),
             language_label=AVAILABLE_LANGUAGES.get(st.session_state.get("language", "en"), "English"),
         )
@@ -1324,6 +1340,7 @@ def maybe_save_current_study():
     }
 
     active_study_id = st.session_state.get("active_study_id")
+    share_token = st.session_state.get("active_study_share_token") or secrets.token_urlsafe(24)
     save_fn = update_study if active_study_id else save_study
     save_kwargs = dict(
         user_id=user_id,
@@ -1342,6 +1359,7 @@ def maybe_save_current_study():
         pdf_bytes=st.session_state.get("pdf_bytes"),
         language=st.session_state.get("language", "en"),
         simulation_timing=st.session_state.get("simulation_timing") or {},
+        share_token=share_token,
     )
     if active_study_id:
         save_kwargs["study_id"] = active_study_id
@@ -1352,8 +1370,9 @@ def maybe_save_current_study():
 
     st.session_state.study_saved_for_current_result = True
     if study_id:
+        st.session_state.active_study_share_token = share_token
         _set_study_query_id(study_id)
-        _notify_fs_completed_if_external(study_id, state_value, results)
+        _notify_fs_completed_if_external(study_id, state_value, results, share_token)
 
 
 def _extract_energy_flow_payload(results, required_hours, overall, selected_ids):

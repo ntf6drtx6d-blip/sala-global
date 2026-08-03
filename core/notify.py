@@ -343,8 +343,28 @@ def notify_user_access_approved(email: str, full_name: str, temp_password: str) 
     return send_email(email, "Your SALA app access has been approved", "\n".join(text_lines), html_out)
 
 
+def _equipment_list_html(equipment: list[dict]) -> str:
+    rows = "".join(
+        f'<tr>'
+        f'<td style="padding:5px 0;color:{_NAVY};font-size:13px;">{html.escape(str(item.get("name") or ""))}</td>'
+        f'<td style="padding:5px 0;text-align:right;">'
+        f'<span style="font-size:11px;font-weight:800;color:{_GREEN if item.get("status") == "PASS" else _RED};">'
+        f'{"PASS" if item.get("status") == "PASS" else "FAIL"}</span></td>'
+        f"</tr>"
+        for item in equipment
+    )
+    return (
+        f'<div style="margin-top:14px;">'
+        f'<div style="font-size:12px;font-weight:700;color:{_MUTED};text-transform:uppercase;letter-spacing:0.03em;'
+        f'margin-bottom:2px;">Equipment tested</div>'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0">{rows}</table>'
+        f"</div>"
+    )
+
+
 def notify_fs_completed(
     study_id,
+    share_token: str | None,
     author_name: str,
     author_email: str,
     author_organization: str | None,
@@ -352,12 +372,16 @@ def notify_fs_completed(
     airport_icao: str | None,
     overall_status: str,
     status_detail: str | None,
+    equipment: list[dict] | None,
     study_version: int | None,
     language_label: str,
 ) -> bool:
     """Alerts SALA sales/support whenever someone outside the internal
     domains completes a Feasibility Study, so the team knows a prospect
-    or partner just ran one - who, which airport, and whether it passed."""
+    or partner just ran one - who, which airport, whether it passed, and
+    which specific equipment passed/failed. The link carries share_token
+    so whoever gets this email can open/download that exact study without
+    needing an admin account - see core/db.get_study's token match."""
     to_email = get_support_sales_email()
     if not to_email or not study_id:
         return False
@@ -373,6 +397,8 @@ def notify_fs_completed(
     version_suffix = f" (v{study_version})" if is_recalculation else ""
     subject = f"SALA FS: {author_name} — {airport_label} — {overall_status}{version_suffix}"
     download_url = f"{_app_url()}/?study={study_id}"
+    if share_token:
+        download_url += f"&token={share_token}"
 
     status_pill = (
         f'<span style="display:inline-block;padding:4px 12px;border-radius:999px;background:{bg};'
@@ -398,6 +424,8 @@ def notify_fs_completed(
     )
     if status_detail:
         body_html += f'<div style="margin-top:14px;font-size:13px;color:{_MUTED};">{html.escape(status_detail)}</div>'
+    if equipment:
+        body_html += _equipment_list_html(equipment)
     body_html += _button("View / download study", download_url)
 
     html_out = _email_shell(
@@ -415,8 +443,10 @@ def notify_fs_completed(
         f"Result: {overall_status}" + (f" - {status_detail}" if status_detail else ""),
         f"Version: v{study_version}" if study_version else "Version: -",
         f"Report language: {language_label}",
-        "",
-        f"View / download: {download_url}",
     ]
+    if equipment:
+        text_lines += ["", "Equipment tested:"]
+        text_lines += [f"  - {item.get('name')}: {item.get('status')}" for item in equipment]
+    text_lines += ["", f"View / download: {download_url}"]
 
     return send_email(to_email, subject, "\n".join(text_lines), html_out)

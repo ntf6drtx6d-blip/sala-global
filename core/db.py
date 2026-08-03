@@ -69,12 +69,14 @@ def _study_payload(
     language="en",
     simulation_timing=None,
     share_token=None,
+    country=None,
 ):
     return {
         "airport_label": airport_label,
         "base_airport_label": base_airport_label or airport_label,
         "study_version": study_version,
         "language": language or "en",
+        "country": country,
         "lat": lat,
         "lon": lon,
         "required_hours": required_hours,
@@ -552,6 +554,7 @@ def save_study(
     language="en",
     simulation_timing=None,
     share_token=None,
+    country=None,
 ):
     payload = _study_payload(
         airport_label=airport_label,
@@ -570,6 +573,7 @@ def save_study(
         language=language,
         simulation_timing=simulation_timing,
         share_token=share_token or secrets.token_urlsafe(24),
+        country=country,
     )
 
     with db_cursor() as (_, cur):
@@ -607,6 +611,7 @@ def update_study(
     language="en",
     simulation_timing=None,
     share_token=None,
+    country=None,
 ):
     with db_cursor() as (_, cur):
         if not share_token:
@@ -619,6 +624,15 @@ def update_study(
             cur.execute("SELECT study_data->>'share_token' AS share_token FROM studies WHERE id = %s", (study_id,))
             row = cur.fetchone()
             share_token = (row.get("share_token") if row else None) or secrets.token_urlsafe(24)
+
+        if country is None:
+            # Same reasoning as share_token above: study_data is fully
+            # replaced on every update, so a caller that doesn't pass
+            # country (e.g. the running-simulation checkpoint saves)
+            # would otherwise silently null it out.
+            cur.execute("SELECT study_data->>'country' AS country FROM studies WHERE id = %s", (study_id,))
+            row = cur.fetchone()
+            country = row.get("country") if row else None
 
         payload = _study_payload(
             airport_label=airport_label,
@@ -637,6 +651,7 @@ def update_study(
             language=language,
             simulation_timing=simulation_timing,
             share_token=share_token,
+            country=country,
         )
 
         return _save_study_payload(

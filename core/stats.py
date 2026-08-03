@@ -113,6 +113,7 @@ def compute_admin_stats(weeks: int = 8) -> dict:
                 "lat": latest_data.get("lat"),
                 "lon": latest_data.get("lon"),
                 "airport_label": latest_data.get("airport_label") or latest_data.get("base_airport_label"),
+                "country": latest_data.get("country") or "-",
                 "version_count": len(items_sorted),
             }
         )
@@ -194,6 +195,7 @@ def compute_admin_stats(weeks: int = 8) -> dict:
     fs_listing = [
         {
             "airport": f.get("airport_label") or "Unknown",
+            "country": f.get("country") or "-",
             "full_name": f.get("full_name"),
             "organization": f.get("organization") or "-",
             "date": f["first_created_at"],

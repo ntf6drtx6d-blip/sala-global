@@ -1287,6 +1287,7 @@ def ensure_active_study_record():
         language=st.session_state.get("language", "en"),
         simulation_timing=st.session_state.get("simulation_timing") or {},
         share_token=share_token,
+        country=st.session_state.get("airport_country", "-"),
     )
     if study_id:
         st.session_state.active_study_id = study_id
@@ -1418,6 +1419,7 @@ def maybe_save_current_study():
         language=st.session_state.get("language", "en"),
         simulation_timing=st.session_state.get("simulation_timing") or {},
         share_token=share_token,
+        country=st.session_state.get("airport_country", "-"),
     )
     if active_study_id:
         save_kwargs["study_id"] = active_study_id

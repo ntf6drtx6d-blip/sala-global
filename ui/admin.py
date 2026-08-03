@@ -1022,16 +1022,14 @@ def _build_stats_folium_map(map_points):
     )
     folium.TileLayer("CartoDB positron", no_wrap=True).add_to(fmap)
 
-    max_count = max(p["count"] for p in map_points) or 1
     for p in map_points:
-        radius = 6 + (p["count"] / max_count) * 14
         folium.CircleMarker(
             location=[p["lat"], p["lon"]],
-            radius=radius,
+            radius=4,
             color="#1d4ed8",
             fill=True,
             fill_color="#1d4ed8",
-            fill_opacity=0.55,
+            fill_opacity=0.85,
             weight=1,
             tooltip=f"{p['label']} — {p['count']} FS",
         ).add_to(fmap)
@@ -1092,7 +1090,10 @@ def _render_statistics_tab():
             g2.metric(t("admin.stat_median_time", lang), _format_seconds_stat(stats["median_generation_seconds"]))
             st.caption(t("admin.stat_generation_time_caption", lang, count=stats["generation_time_sample_size"]))
 
+    alltime_caption = t("admin.stat_alltime_caption", lang, total=stats["total_fs"])
+
     st.markdown(f"#### {t('admin.stat_top_devices_title', lang)}")
+    st.caption(alltime_caption)
     if not stats["top_devices"]:
         st.info(t("admin.stat_no_data", lang))
     else:
@@ -1102,6 +1103,7 @@ def _render_statistics_tab():
     col_c, col_d = st.columns(2)
     with col_c:
         st.markdown(f"#### {t('admin.stat_top_organizations_title', lang)}")
+        st.caption(alltime_caption)
         if not stats["top_organizations"]:
             st.info(t("admin.stat_no_data", lang))
         else:
@@ -1110,6 +1112,7 @@ def _render_statistics_tab():
 
     with col_d:
         st.markdown(f"#### {t('admin.stat_top_users_title', lang)}")
+        st.caption(alltime_caption)
         if not stats["top_users"]:
             st.info(t("admin.stat_no_data", lang))
         else:
@@ -1137,6 +1140,7 @@ def _render_statistics_tab():
             [
                 {
                     t("admin.stat_col_airport", lang): row["airport"],
+                    t("admin.stat_col_country", lang): row["country"],
                     t("admin.stat_col_name", lang): row["full_name"],
                     t("admin.stat_col_organization", lang): row["organization"],
                     t("admin.stat_col_status", lang): row["status"],

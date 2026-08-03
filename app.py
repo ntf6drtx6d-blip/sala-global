@@ -228,6 +228,64 @@ def logout_and_forget():
     logout()
 
 
+def render_public_shared_study_if_requested():
+    """A study link with a valid share token grants read-only access to
+    that ONE study's PDF without logging in at all - this is what lets
+    anyone who receives an FS-completion email (not just SALA staff with
+    an app account) actually open the link. Only reachable when the
+    visitor isn't already logged in (see call site); an already-logged-in
+    visitor gets the full interactive result page via
+    restore_study_from_query_id's token support instead. No session is
+    created here and nothing else in the app is reachable from this
+    branch - it renders a minimal standalone page and stops."""
+    token = _query_param_value(STUDY_TOKEN_QUERY_PARAM)
+    raw_study_id = _query_param_value(STUDY_QUERY_PARAM)
+    if not token or not raw_study_id:
+        return
+
+    try:
+        study_id = int(str(raw_study_id))
+    except Exception:
+        return
+
+    row = get_study(study_id, user_id=None, token=token)
+    lang = (row.get("language") if row else None) or "en"
+
+    st.markdown(
+        """
+        <style>
+        .block-container { max-width: 620px; padding-top: 4rem; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if Path(LOGO_FILE_PATH).exists():
+        st.image(str(LOGO_FILE_PATH), width=88)
+
+    if not row or row.get("pdf_bytes") is None:
+        st.markdown(f"### {t('ui.shared_link_unavailable_title', lang)}")
+        st.write(t("ui.shared_link_unavailable_body", lang))
+        st.stop()
+
+    airport = row.get("airport_label") or "Feasibility Study"
+    overall = str(row.get("overall_result") or "").upper()
+    status_label = {"ALL_PASS": "PASS", "NONE_PASS": "FAIL", "MIXED": "MIXED"}.get(overall, overall or "—")
+
+    st.markdown(f"### {t('app.title', lang)}")
+    st.markdown(f"**{airport}** &middot; {status_label}")
+    st.write(t("ui.shared_link_intro", lang))
+    st.download_button(
+        f"📄 {t('ui.download_pdf_report', lang)}",
+        data=row.get("pdf_bytes"),
+        file_name=row.get("pdf_name") or "SALA_report.pdf",
+        mime="application/pdf",
+        use_container_width=True,
+        type="primary",
+    )
+    st.stop()
+
+
 def restore_study_from_query_id():
     if not is_logged_in():
         return
@@ -1650,6 +1708,8 @@ init_state()
 init_auth_state()
 bootstrap_admin_user()
 restore_login_from_query_token()
+if not is_logged_in():
+    render_public_shared_study_if_requested()
 restore_study_from_query_id()
 apply_global_styles()
 

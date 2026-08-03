@@ -134,8 +134,27 @@ def _ensure_default_manufacturer_selection(manufacturer_options):
         st.session_state.selected_manufacturers_widget = []
 
 
+def _devices_missing_lamp_variant() -> list[str]:
+    """Device *families* the user has ticked in the top selector but never
+    picked a specific lamp model for (see the per-device 'lamp type
+    selection' expander below). Without a chosen variant that device
+    silently contributes zero simulation keys, so it must block running
+    the study rather than just quietly dropping the device from results."""
+    devices, _ = get_cached_runtime_catalog()
+    selected_ids = st.session_state.get("selected_ids", [])
+    lamp_types = st.session_state.get("selected_lamp_types", {})
+    return [
+        devices[did].get("name", str(did))
+        for did in selected_ids
+        if did in devices and devices[did].get("lamp_variants") and not lamp_types.get(did)
+    ]
+
+
 def _refresh_study_ready():
-    selected_ids = st.session_state.get("selected_simulation_keys") or st.session_state.get("selected_ids", [])
+    missing_variant_devices = _devices_missing_lamp_variant()
+    st.session_state.study_ready_missing_variant_devices = missing_variant_devices
+
+    selected_simulation_keys = st.session_state.get("selected_simulation_keys", [])
     study_point_confirmed = bool(st.session_state.get("study_point_confirmed", False))
     mode = st.session_state.get("operating_profile_mode")
     required_hours = st.session_state.get("required_hours")
@@ -149,7 +168,7 @@ def _refresh_study_ready():
         mode_ready = required_hours is not None and float(required_hours) > 0
 
     st.session_state.study_ready = bool(
-        len(selected_ids) > 0 and study_point_confirmed and mode_ready
+        len(selected_simulation_keys) > 0 and not missing_variant_devices and study_point_confirmed and mode_ready
     )
 
 

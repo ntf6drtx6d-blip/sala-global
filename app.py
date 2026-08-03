@@ -12,7 +12,7 @@ from streamlit.errors import StreamlitSecretNotFoundError
 from core.i18n import AVAILABLE_LANGUAGES, month_label, month_labels, t
 
 from core.db import init_db, upsert_user, save_study, update_study, get_study, get_user_by_email, save_running_study_checkpoint, list_user_studies
-from core.catalog import get_runtime_devices
+from core.catalog import get_runtime_devices, get_cached_runtime_catalog
 from core.person import normalize_person_name
 from core.auth import hash_password, init_auth_state, is_logged_in, is_admin, logout
 
@@ -596,7 +596,17 @@ def bootstrap_admin_user():
 
 
 def refresh_study_ready_from_state():
-    selected_ids = st.session_state.get("selected_simulation_keys") or st.session_state.get("selected_ids", [])
+    devices, _ = get_cached_runtime_catalog()
+    selected_ids = st.session_state.get("selected_ids", [])
+    lamp_types = st.session_state.get("selected_lamp_types", {})
+    missing_variant_devices = [
+        devices[did].get("name", str(did))
+        for did in selected_ids
+        if did in devices and devices[did].get("lamp_variants") and not lamp_types.get(did)
+    ]
+    st.session_state.study_ready_missing_variant_devices = missing_variant_devices
+
+    selected_simulation_keys = st.session_state.get("selected_simulation_keys", [])
     study_point_confirmed = bool(st.session_state.get("study_point_confirmed", False))
     mode = st.session_state.get("operating_profile_mode")
     required_hours = st.session_state.get("required_hours")
@@ -610,7 +620,7 @@ def refresh_study_ready_from_state():
         mode_ready = required_hours is not None and float(required_hours) > 0
 
     st.session_state.study_ready = bool(
-        len(selected_ids) > 0 and study_point_confirmed and mode_ready
+        len(selected_simulation_keys) > 0 and not missing_variant_devices and study_point_confirmed and mode_ready
     )
 
 
@@ -1085,6 +1095,12 @@ def render_top_action_bar():
             elif ready:
                 st.markdown(
                     f'<div class="secondary-note">{t("ui.setup_complete_ready", lang)}</div>',
+                    unsafe_allow_html=True,
+                )
+            elif st.session_state.get("study_ready_missing_variant_devices"):
+                devices_list = ", ".join(st.session_state["study_ready_missing_variant_devices"])
+                st.markdown(
+                    f'<div class="secondary-note">{t("ui.lamp_variant_required_blocking", lang, devices=devices_list)}</div>',
                     unsafe_allow_html=True,
                 )
             else:

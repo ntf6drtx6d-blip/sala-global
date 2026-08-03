@@ -1037,12 +1037,54 @@ def _build_stats_folium_map(map_points):
     return fmap
 
 
-def _render_statistics_tab():
+def render_admin_dashboard():
     lang = st.session_state.get("language", "en")
-    st.markdown(f"### {t('admin.statistics', lang)}")
+    st.markdown(f"### {t('admin.dashboard_title', lang)}")
+
+    if st.button(f"▶ {t('admin.dashboard_run_fs_cta', lang)}", type="primary", key="dashboard_run_fs_cta"):
+        st.session_state.admin_active_page = "feasibility"
+        st.rerun()
 
     with st.spinner(t("admin.statistics_loading", lang)):
         stats = compute_admin_stats(weeks=8)
+
+    pending_requests = sum(1 for r in list_access_requests() if r.get("status") == "new")
+    if pending_requests or stats["dormant_users"]:
+        st.markdown(f"#### {t('admin.dashboard_needs_attention_title', lang)}")
+        att1, att2 = st.columns(2)
+        with att1:
+            if pending_requests:
+                st.warning(t("admin.dashboard_pending_requests", lang, count=pending_requests))
+            else:
+                st.success(t("admin.dashboard_no_pending_requests", lang))
+        with att2:
+            if stats["dormant_users"]:
+                st.info(
+                    t(
+                        "admin.dashboard_dormant_users",
+                        lang,
+                        count=stats["dormant_users"],
+                        days=stats["active_window_days"],
+                    )
+                )
+
+    if stats["fs_listing"]:
+        st.markdown(f"#### {t('admin.dashboard_recent_activity_title', lang)}")
+        recent_df = pd.DataFrame(
+            [
+                {
+                    t("admin.stat_col_airport", lang): row["airport"],
+                    t("admin.stat_col_name", lang): row["full_name"],
+                    t("admin.stat_col_organization", lang): row["organization"],
+                    t("admin.stat_col_status", lang): row["status"],
+                    t("admin.stat_col_days_since", lang): row["days_since"],
+                }
+                for row in stats["fs_listing"][:8]
+            ]
+        )
+        st.dataframe(recent_df, hide_index=True, use_container_width=True)
+
+    st.divider()
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric(t("admin.stat_total_fs", lang), stats["total_fs"])
@@ -1163,12 +1205,11 @@ def render_admin_panel():
     lang = st.session_state.get("language", "en")
     st.markdown(f"## {t('admin.panel', lang)}")
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4 = st.tabs([
         t("admin.access_requests", lang),
         t("admin.users", lang),
         t("admin.studies", lang),
         t("admin.device_database", lang),
-        t("admin.statistics", lang),
     ])
 
     with tab1:
@@ -1182,6 +1223,3 @@ def render_admin_panel():
 
     with tab4:
         _render_device_database_tab()
-
-    with tab5:
-        _render_statistics_tab()

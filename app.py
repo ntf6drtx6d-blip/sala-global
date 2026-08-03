@@ -20,7 +20,7 @@ from core.auth import hash_password, init_auth_state, is_logged_in, is_admin, lo
 from ui.setup import render_setup
 from ui.cockpit import _run_simulation, regenerate_pdf_for_current_results, reset_study
 from ui.result import render_result
-from ui.admin import render_admin_panel
+from ui.admin import render_admin_panel, render_admin_dashboard
 from ui.my_studies import render_my_studies
 from ui.result_helpers import annual_empty_battery_stats, overall_state, count_device_statuses, result_device_display_name
 from core.notify import is_internal_email, notify_fs_completed
@@ -1727,16 +1727,36 @@ user_id = st.session_state.get("auth_user_id")
 
 if is_admin():
     lang = st.session_state.get("language", "en")
-    tab_calc, tab_my, tab_admin = st.tabs([t("tabs.feasibility", lang), t("tabs.my_studies", lang), t("tabs.admin", lang)])
+    if "admin_active_page" not in st.session_state:
+        st.session_state.admin_active_page = "dashboard"
 
-    with tab_calc:
+    nav_items = [
+        ("dashboard", t("tabs.dashboard", lang)),
+        ("feasibility", t("tabs.feasibility", lang)),
+        ("my_studies", t("tabs.my_studies", lang)),
+        ("admin", t("tabs.admin", lang)),
+    ]
+    nav_cols = st.columns(len(nav_items))
+    for col, (page_key, label) in zip(nav_cols, nav_items):
+        with col:
+            if st.button(
+                label,
+                key=f"admin_nav_{page_key}",
+                use_container_width=True,
+                type="primary" if st.session_state.admin_active_page == page_key else "secondary",
+            ):
+                st.session_state.admin_active_page = page_key
+                st.rerun()
+
+    active_page = st.session_state.admin_active_page
+    if active_page == "feasibility":
         render_calculator_app()
-
-    with tab_my:
+    elif active_page == "my_studies":
         render_my_studies(user_id)
-
-    with tab_admin:
+    elif active_page == "admin":
         render_admin_panel()
+    else:
+        render_admin_dashboard()
 else:
     lang = st.session_state.get("language", "en")
     tab_calc, tab_my = st.tabs([t("tabs.feasibility", lang), t("tabs.my_studies", lang)])

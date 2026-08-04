@@ -129,6 +129,7 @@ def compute_device_feasibility() -> dict:
             "tested": 0,
             "passed": 0,
             "points": [],
+            "organizations": Counter(),
             "bands": defaultdict(
                 lambda: {"tested": 0, "passed": 0, "max_pass_hours": None, "min_fail_hours": None}
             ),
@@ -141,6 +142,9 @@ def compute_device_feasibility() -> dict:
         entry = devices[code]
         entry["tested"] += 1
         entry["passed"] += int(passed)
+        org = (row.get("organization") or "").strip()
+        if org:
+            entry["organizations"][org] += 1
         entry["points"].append(
             {
                 "lat": row.get("lat"),
@@ -172,10 +176,36 @@ def compute_device_feasibility() -> dict:
             "tested": data["tested"],
             "passed": data["passed"],
             "points": data["points"],
+            "organizations": dict(data["organizations"]),
             "bands": {band: dict(values) for band, values in data["bands"].items()},
         }
         for code, data in sorted(devices.items(), key=lambda kv: -kv[1]["tested"])
     }
+
+
+def organization_device_matrix(feasibility: dict, max_orgs: int = 8) -> tuple:
+    """Which organisations are evaluating which devices - i.e. who is
+    interested in what. Returns (rows, device_codes) where each row is
+    {"organization": name, <device_code>: count, "Total": n}, ranked by
+    total studies and capped at max_orgs so the grid stays readable.
+    """
+    totals = Counter()
+    per_org = defaultdict(Counter)
+    for code, data in feasibility.items():
+        for org, count in (data.get("organizations") or {}).items():
+            per_org[org][code] += count
+            totals[org] += count
+
+    device_codes = [code for code, _ in sorted(
+        feasibility.items(), key=lambda kv: -kv[1]["tested"]
+    )]
+    rows = []
+    for org, total in totals.most_common(max_orgs):
+        row = {"organization": org, "Total": total}
+        for code in device_codes:
+            row[code] = per_org[org].get(code, 0)
+        rows.append(row)
+    return rows, device_codes
 
 
 def compute_admin_stats(weeks: int = 8) -> dict:
@@ -305,19 +335,39 @@ def compute_admin_stats(weeks: int = 8) -> dict:
 
     map_points_list = sorted(map_points.values(), key=lambda p: -p["count"])
 
-    org_counter = Counter()
-    for f in distinct_fs:
-        org = (f.get("organization") or "").strip()
-        if org:
-            org_counter[org] += 1
-    top_organizations = org_counter.most_common(5)
+    def _ranked_with_outcomes(key_fn, label_fn, limit=5):
+        """Top entities by FS count, each broken down by outcome, so a
+        high total is never mistaken for a good result (or vice versa)."""
+        buckets = defaultdict(lambda: {"total": 0, "PASS": 0, "MIXED": 0, "FAIL": 0, "UNKNOWN": 0})
+        labels = {}
+        for f in distinct_fs:
+            key = key_fn(f)
+            if key is None:
+                continue
+            labels[key] = label_fn(f)
+            entry = buckets[key]
+            entry["total"] += 1
+            entry[_STATUS_LABELS.get(f["latest_status"], "UNKNOWN")] += 1
+        ranked = sorted(buckets.items(), key=lambda kv: -kv[1]["total"])[:limit]
+        return [
+            {
+                "label": labels[key],
+                "total": v["total"],
+                "passed": v["PASS"],
+                "mixed": v["MIXED"],
+                "failed": v["FAIL"] + v["UNKNOWN"],
+            }
+            for key, v in ranked
+        ]
 
-    user_counter = Counter()
-    user_labels = {}
-    for f in distinct_fs:
-        user_counter[f["user_id"]] += 1
-        user_labels[f["user_id"]] = f["full_name"] or f["email"]
-    top_users = [(user_labels[uid], count) for uid, count in user_counter.most_common(5)]
+    top_organizations = _ranked_with_outcomes(
+        lambda f: (f.get("organization") or "").strip() or None,
+        lambda f: (f.get("organization") or "").strip(),
+    )
+    top_users = _ranked_with_outcomes(
+        lambda f: f["user_id"],
+        lambda f: f["full_name"] or f["email"],
+    )
 
     fs_listing = [
         {

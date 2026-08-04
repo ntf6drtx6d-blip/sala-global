@@ -30,7 +30,12 @@ from core.auth import hash_password
 from core.catalog import get_cached_runtime_catalog, runtime_device_label, invalidate_runtime_catalog_cache
 from core.person import normalize_person_name, split_person_name
 from core.notify import notify_user_access_approved
-from core.stats import LATITUDE_BANDS, compute_admin_stats, compute_device_feasibility
+from core.stats import (
+    LATITUDE_BANDS,
+    compute_admin_stats,
+    compute_device_feasibility,
+    organization_device_matrix,
+)
 from ui.map_embed import render_folium_map
 from psycopg.errors import UniqueViolation
 
@@ -952,7 +957,7 @@ def _format_seconds_stat(seconds):
     return f"{secs}s"
 
 
-def _weekly_fs_chart(weekly_counts, lang):
+def _weekly_fs_chart(weekly_counts, lang, stats=None):
     import altair as alt
 
     internal_label = t("admin.stat_series_internal", lang)
@@ -999,7 +1004,28 @@ def _weekly_fs_chart(weekly_counts, lang):
         .mark_text(dy=15, fontSize=12, fontWeight="bold")
         .encode(text="count:Q")
     )
-    return (lines + labels_internal + labels_external).properties(height=340)
+    # Carry the all-time totals in the chart's own title rather than as a
+    # separate metric card, so the 8-week trend and the overall scale are
+    # read together instead of being reconciled across the page.
+    title = alt.TitleParams(
+        text=t("admin.stat_weekly_chart_title", lang),
+        subtitle=(
+            t(
+                "admin.stat_weekly_chart_subtitle",
+                lang,
+                total=stats["total_fs"],
+                internal=stats["internal_fs"],
+                external=stats["external_fs"],
+            )
+            if stats
+            else ""
+        ),
+        anchor="start",
+        fontSize=16,
+        subtitleFontSize=12,
+        subtitleColor="#667085",
+    )
+    return (lines + labels_internal + labels_external).properties(height=340, title=title)
 
 
 _MAP_STATUS_COLOURS = {
@@ -1109,6 +1135,34 @@ def _build_stats_folium_map(map_points):
     return fmap
 
 
+def _status_style(value):
+    """Background tint for a PASS/MIXED/FAIL cell, so outcomes are
+    scannable down a column instead of having to be read word by word."""
+    colour = {
+        "PASS": "#dcfce7",
+        "MIXED": "#fef3c7",
+        "FAIL": "#fee2e2",
+    }.get(str(value).strip().upper())
+    return f"background-color: {colour}" if colour else ""
+
+
+def _outcome_table(entries, label_header, lang):
+    """Ranked table of users/organisations with their outcome split, so a
+    high FS count is never read as a good result on its own."""
+    return pd.DataFrame(
+        [
+            {
+                label_header: e["label"],
+                t("admin.stat_col_fs_total", lang): e["total"],
+                "PASS": e["passed"],
+                "MIXED": e["mixed"],
+                "FAIL": e["failed"],
+            }
+            for e in entries
+        ]
+    )
+
+
 def render_admin_dashboard():
     lang = st.session_state.get("language", "en")
     st.markdown(f"### {t('admin.dashboard_title', lang)}")
@@ -1120,6 +1174,7 @@ def render_admin_dashboard():
     with st.spinner(t("admin.statistics_loading", lang)):
         stats = compute_admin_stats(weeks=8)
 
+    # --- 1. Needs attention -------------------------------------------------
     pending_requests = sum(1 for r in list_access_requests() if r.get("status") == "new")
     if pending_requests or stats["dormant_users"]:
         st.markdown(f"#### {t('admin.dashboard_needs_attention_title', lang)}")
@@ -1140,99 +1195,7 @@ def render_admin_dashboard():
                     )
                 )
 
-    if stats["fs_listing"]:
-        st.markdown(f"#### {t('admin.dashboard_recent_activity_title', lang)}")
-        recent_df = pd.DataFrame(
-            [
-                {
-                    t("admin.stat_col_airport", lang): row["airport"],
-                    t("admin.stat_col_name", lang): row["full_name"],
-                    t("admin.stat_col_organization", lang): row["organization"],
-                    t("admin.stat_col_status", lang): row["status"],
-                    t("admin.stat_col_days_since", lang): row["days_since"],
-                }
-                for row in stats["fs_listing"][:8]
-            ]
-        )
-        st.dataframe(recent_df, hide_index=True, use_container_width=True)
-
-    st.divider()
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric(t("admin.stat_total_fs", lang), stats["total_fs"])
-    c2.metric(t("admin.stat_internal_vs_external", lang), f"{stats['internal_fs']} / {stats['external_fs']}")
-    c3.metric(t("admin.stat_total_users", lang), stats["total_users"])
-    c4.metric(
-        t("admin.stat_active_dormant_users", lang, days=stats["active_window_days"]),
-        f"{stats['active_users']} / {stats['dormant_users']}",
-    )
-
-    st.caption(t("admin.stat_headline_caption", lang))
-
-    st.markdown(f"#### {t('admin.stat_weekly_chart_title', lang)}")
-    st.caption(t("admin.stat_weekly_chart_caption", lang))
-    if not stats["weekly_counts"] or sum(r["total"] for r in stats["weekly_counts"]) == 0:
-        st.info(t("admin.stat_no_data", lang))
-    else:
-        st.altair_chart(_weekly_fs_chart(stats["weekly_counts"], lang), use_container_width=True)
-
-    col_a, col_b = st.columns(2)
-    with col_a:
-        st.markdown(f"#### {t('admin.stat_pass_fail_title', lang)}")
-        status_counts = stats["status_counts"]
-        if not status_counts:
-            st.info(t("admin.stat_no_data", lang))
-        else:
-            status_df = pd.DataFrame(
-                {"status": list(status_counts.keys()), "count": list(status_counts.values())}
-            ).set_index("status")
-            st.bar_chart(status_df)
-
-        st.metric(
-            t("admin.stat_recalculation_rate", lang),
-            f"{stats['recalculation_rate_pct']:.0f}%",
-            help=t("admin.stat_recalculation_rate_help", lang, count=stats["recalculated_count"], total=stats["total_fs"]),
-        )
-
-    with col_b:
-        st.markdown(f"#### {t('admin.stat_generation_time_title', lang)}")
-        if stats["generation_time_sample_size"] == 0:
-            st.info(t("admin.stat_no_data", lang))
-        else:
-            g1, g2 = st.columns(2)
-            g1.metric(t("admin.stat_avg_time", lang), _format_seconds_stat(stats["avg_generation_seconds"]))
-            g2.metric(t("admin.stat_median_time", lang), _format_seconds_stat(stats["median_generation_seconds"]))
-            st.caption(t("admin.stat_generation_time_caption", lang, count=stats["generation_time_sample_size"]))
-
-    alltime_caption = t("admin.stat_alltime_caption", lang, total=stats["total_fs"])
-
-    st.markdown(f"#### {t('admin.stat_top_devices_title', lang)}")
-    st.caption(alltime_caption)
-    if not stats["top_devices"]:
-        st.info(t("admin.stat_no_data", lang))
-    else:
-        for name, count in stats["top_devices"]:
-            st.write(f"**{name}** — {count}")
-
-    col_c, col_d = st.columns(2)
-    with col_c:
-        st.markdown(f"#### {t('admin.stat_top_organizations_title', lang)}")
-        st.caption(alltime_caption)
-        if not stats["top_organizations"]:
-            st.info(t("admin.stat_no_data", lang))
-        else:
-            org_df = pd.DataFrame(stats["top_organizations"], columns=["organization", "count"])
-            st.dataframe(org_df, hide_index=True, use_container_width=True)
-
-    with col_d:
-        st.markdown(f"#### {t('admin.stat_top_users_title', lang)}")
-        st.caption(alltime_caption)
-        if not stats["top_users"]:
-            st.info(t("admin.stat_no_data", lang))
-        else:
-            users_df = pd.DataFrame(stats["top_users"], columns=["user", "count"])
-            st.dataframe(users_df, hide_index=True, use_container_width=True)
-
+    # --- 2. Where the studies are ------------------------------------------
     st.markdown(f"#### {t('admin.stat_map_title', lang)}")
     st.caption(t("admin.stat_map_caption", lang))
     st.caption(t("admin.stat_map_legend", lang))
@@ -1242,24 +1205,135 @@ def render_admin_dashboard():
     else:
         render_folium_map(_build_stats_folium_map(map_points), height=720, key="admin_stats_map")
         top_points = sorted(map_points, key=lambda p: -p["count"])[:10]
-        table_df = pd.DataFrame(
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        t("admin.stat_col_airport", lang): p["label"],
+                        t("admin.stat_col_status", lang): p.get("status", "—"),
+                        t("admin.stat_col_fs_total", lang): p["count"],
+                    }
+                    for p in top_points
+                ]
+            ).style.map(_status_style, subset=[t("admin.stat_col_status", lang)]),
+            hide_index=True,
+            use_container_width=True,
+        )
+
+    # --- 3. Recent activity -------------------------------------------------
+    if stats["fs_listing"]:
+        st.markdown(f"#### {t('admin.dashboard_recent_activity_title', lang)}")
+        status_col = t("admin.stat_col_status", lang)
+        recent_df = pd.DataFrame(
             [
                 {
-                    t("admin.stat_col_airport", lang): p["label"],
-                    t("admin.stat_col_status", lang): p.get("status", "—"),
-                    "FS": p["count"],
+                    t("admin.stat_col_airport", lang): row["airport"],
+                    t("admin.stat_col_country", lang): row["country"],
+                    t("admin.stat_col_name", lang): row["full_name"],
+                    t("admin.stat_col_organization", lang): row["organization"],
+                    status_col: row["status"],
+                    t("admin.stat_col_days_since", lang): row["days_since"],
                 }
-                for p in top_points
+                for row in stats["fs_listing"][:8]
             ]
         )
-        st.dataframe(table_df, hide_index=True, use_container_width=True)
+        st.dataframe(
+            recent_df.style.map(_status_style, subset=[status_col]),
+            hide_index=True,
+            use_container_width=True,
+        )
 
+    # --- 4. Overall statistics ---------------------------------------------
+    st.divider()
+    st.markdown(f"#### {t('admin.stat_overall_title', lang)}")
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric(t("admin.stat_total_users", lang), stats["total_users"])
+    c2.metric(
+        t("admin.stat_active_dormant_users", lang, days=stats["active_window_days"]),
+        f"{stats['active_users']} / {stats['dormant_users']}",
+    )
+    c3.metric(
+        t("admin.stat_recalculation_rate", lang),
+        f"{stats['recalculation_rate_pct']:.0f}%",
+        help=t(
+            "admin.stat_recalculation_rate_help",
+            lang,
+            count=stats["recalculated_count"],
+            total=stats["total_fs"],
+        ),
+    )
+
+    st.caption(t("admin.stat_headline_caption", lang))
+    if not stats["weekly_counts"] or sum(r["total"] for r in stats["weekly_counts"]) == 0:
+        st.info(t("admin.stat_no_data", lang))
+    else:
+        st.altair_chart(
+            _weekly_fs_chart(stats["weekly_counts"], lang, stats),
+            use_container_width=True,
+        )
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        st.markdown(f"##### {t('admin.stat_pass_fail_title', lang)}")
+        status_counts = stats["status_counts"]
+        if not status_counts:
+            st.info(t("admin.stat_no_data", lang))
+        else:
+            st.bar_chart(
+                pd.DataFrame(
+                    {"status": list(status_counts.keys()), "count": list(status_counts.values())}
+                ).set_index("status")
+            )
+    with col_b:
+        st.markdown(f"##### {t('admin.stat_generation_time_title', lang)}")
+        if stats["generation_time_sample_size"] == 0:
+            st.info(t("admin.stat_no_data", lang))
+        else:
+            g1, g2 = st.columns(2)
+            g1.metric(t("admin.stat_avg_time", lang), _format_seconds_stat(stats["avg_generation_seconds"]))
+            g2.metric(t("admin.stat_median_time", lang), _format_seconds_stat(stats["median_generation_seconds"]))
+            st.caption(t("admin.stat_generation_time_caption", lang, count=stats["generation_time_sample_size"]))
+
+    # --- 5. Who is using it -------------------------------------------------
+    st.divider()
+    st.markdown(f"#### {t('admin.stat_who_title', lang)}")
+    st.caption(t("admin.stat_alltime_caption", lang, total=stats["total_fs"]))
+    col_c, col_d = st.columns(2)
+    with col_c:
+        st.markdown(f"##### {t('admin.stat_top_users_title', lang)}")
+        if not stats["top_users"]:
+            st.info(t("admin.stat_no_data", lang))
+        else:
+            st.dataframe(
+                _outcome_table(stats["top_users"], t("admin.stat_col_name", lang), lang),
+                hide_index=True,
+                use_container_width=True,
+            )
+    with col_d:
+        st.markdown(f"##### {t('admin.stat_top_organizations_title', lang)}")
+        if not stats["top_organizations"]:
+            st.info(t("admin.stat_no_data", lang))
+        else:
+            st.dataframe(
+                _outcome_table(stats["top_organizations"], t("admin.stat_col_organization", lang), lang),
+                hide_index=True,
+                use_container_width=True,
+            )
+
+    # --- 6. Devices ---------------------------------------------------------
+    st.divider()
+    _render_device_feasibility_section(lang)
+
+    # --- 7. Full listing ----------------------------------------------------
+    st.divider()
     st.markdown(f"#### {t('admin.stat_fs_listing_title', lang)}")
     st.caption(t("admin.stat_fs_listing_caption", lang))
     fs_listing = stats["fs_listing"]
     if not fs_listing:
         st.info(t("admin.stat_no_data", lang))
     else:
+        status_col = t("admin.stat_col_status", lang)
         listing_df = pd.DataFrame(
             [
                 {
@@ -1267,14 +1341,18 @@ def render_admin_dashboard():
                     t("admin.stat_col_country", lang): row["country"],
                     t("admin.stat_col_name", lang): row["full_name"],
                     t("admin.stat_col_organization", lang): row["organization"],
-                    t("admin.stat_col_status", lang): row["status"],
+                    status_col: row["status"],
                     t("admin.stat_col_date", lang): row["date"].strftime("%Y-%m-%d") if row["date"] else "-",
                     t("admin.stat_col_days_since", lang): row["days_since"],
                 }
                 for row in fs_listing
             ]
         )
-        st.dataframe(listing_df, hide_index=True, use_container_width=True)
+        st.dataframe(
+            listing_df.style.map(_status_style, subset=[status_col]),
+            hide_index=True,
+            use_container_width=True,
+        )
         st.download_button(
             f"📥 {t('admin.stat_download_csv', lang)}",
             data=listing_df.to_csv(index=False).encode("utf-8"),
@@ -1282,30 +1360,8 @@ def render_admin_dashboard():
             mime="text/csv",
         )
 
-    _render_device_feasibility_section(lang)
 
-
-def _render_device_feasibility_section(lang):
-    st.divider()
-    st.markdown(f"#### {t('admin.stat_device_feasibility_title', lang)}")
-    st.caption(t("admin.stat_device_feasibility_caption", lang))
-
-    with st.spinner(t("admin.statistics_loading", lang)):
-        feasibility = compute_device_feasibility()
-
-    if not feasibility:
-        st.info(t("admin.stat_no_data", lang))
-        return
-
-    device_codes = list(feasibility.keys())
-    selected = st.selectbox(
-        t("admin.stat_device_picker", lang),
-        device_codes,
-        format_func=lambda code: f"{code} ({feasibility[code]['tested']})",
-        key="admin_device_feasibility_picker",
-    )
-    data = feasibility[selected]
-
+def _render_device_detail(code, data, lang, key_suffix):
     m1, m2, m3 = st.columns(3)
     m1.metric(t("admin.stat_device_tested", lang), data["tested"])
     m2.metric(t("admin.stat_device_passed", lang), data["passed"])
@@ -1335,12 +1391,9 @@ def _render_device_feasibility_section(lang):
                 ),
             }
         )
-
     if band_rows:
         st.dataframe(pd.DataFrame(band_rows), hide_index=True, use_container_width=True)
         st.caption(t("admin.stat_band_table_caption", lang))
-    else:
-        st.info(t("admin.stat_no_data", lang))
 
     points = [p for p in data["points"] if p.get("lat") is not None and p.get("lon") is not None]
     if points:
@@ -1348,8 +1401,60 @@ def _render_device_feasibility_section(lang):
         render_folium_map(
             _build_stats_folium_map(points),
             height=720,
-            key=f"admin_device_map_{selected}",
+            key=f"admin_device_map_{key_suffix}",
         )
+
+
+def _render_device_feasibility_section(lang):
+    st.markdown(f"#### {t('admin.stat_device_feasibility_title', lang)}")
+    st.caption(t("admin.stat_device_feasibility_caption", lang))
+
+    with st.spinner(t("admin.statistics_loading", lang)):
+        feasibility = compute_device_feasibility()
+
+    if not feasibility:
+        st.info(t("admin.stat_no_data", lang))
+        return
+
+    codes = list(feasibility.keys())
+    top_codes = codes[:3]
+
+    # The three most-tested devices get their own tab with a pass/fail map,
+    # since those are the ones with enough studies behind them to be worth
+    # reading geographically. Everything else stays available below.
+    tabs = st.tabs([f"{code} ({feasibility[code]['tested']})" for code in top_codes])
+    for tab, code in zip(tabs, top_codes):
+        with tab:
+            _render_device_detail(code, feasibility[code], lang, key_suffix=code)
+
+    remaining = codes[3:]
+    if remaining:
+        with st.expander(t("admin.stat_other_devices", lang)):
+            selected = st.selectbox(
+                t("admin.stat_device_picker", lang),
+                remaining,
+                format_func=lambda c: f"{c} ({feasibility[c]['tested']})",
+                key="admin_device_feasibility_picker",
+            )
+            _render_device_detail(selected, feasibility[selected], lang, key_suffix=f"other_{selected}")
+
+    # Which organisation is evaluating which device - i.e. who is
+    # interested in what.
+    rows, device_codes = organization_device_matrix(feasibility)
+    if rows:
+        st.markdown(f"##### {t('admin.stat_org_interest_title', lang)}")
+        st.caption(t("admin.stat_org_interest_caption", lang))
+        matrix_df = pd.DataFrame(rows).rename(
+            columns={
+                "organization": t("admin.stat_col_organization", lang),
+                "Total": t("admin.stat_col_fs_total", lang),
+            }
+        )
+        ordered = (
+            [t("admin.stat_col_organization", lang), t("admin.stat_col_fs_total", lang)]
+            + [c for c in device_codes if c in matrix_df.columns]
+        )
+        st.dataframe(matrix_df[ordered], hide_index=True, use_container_width=True)
 
 
 def render_admin_panel():

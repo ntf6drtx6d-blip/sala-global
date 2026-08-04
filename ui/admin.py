@@ -1020,9 +1020,17 @@ def _zoom_for_span(lat_span: float, lon_span: float) -> int:
     # near-global bounding box). A world at zoom Z is ~360/2^Z degrees
     # wide, so picking Z so that width covers the span (with padding)
     # gives a reasonable "fit" without needing the container size at all.
+    # The lower bound is 2, not 1: tiles don't repeat (no_wrap), so at
+    # zoom 1 the whole world is only 512px wide and a wide dashboard panel
+    # is left with large empty margins either side. Zoom 2 doubles that to
+    # 1024px, which fills the panel while still showing +/-74 degrees of
+    # latitude at the map height used below - i.e. every location a study
+    # is realistically run at. Zoom 3 would fill an even wider panel but
+    # starts clipping northern Europe and New Zealand, so 2 is the ceiling
+    # for a global spread.
     span = max(lat_span, lon_span, 0.01) * 1.4
     zoom = math.log2(360.0 / span)
-    return max(1, min(9, int(zoom)))
+    return max(2, min(9, int(zoom)))
 
 
 def _build_stats_folium_map(map_points):
@@ -1043,6 +1051,16 @@ def _build_stats_folium_map(map_points):
         min_zoom=2,
     )
     folium.TileLayer("CartoDB positron", no_wrap=True).add_to(fmap)
+
+    # Tiles don't repeat (no_wrap), and a whole-world view can't fill a very
+    # wide panel without zooming in far enough to clip northern Europe, so
+    # some horizontal margin is unavoidable. Paint that margin the same
+    # colour as the basemap's water instead of leaving it browser-grey, so
+    # it reads as ocean continuing past the map rather than as a partially
+    # rendered map.
+    fmap.get_root().header.add_child(
+        folium.Element("<style>.folium-map, .leaflet-container { background: #d4dadc !important; }</style>")
+    )
 
     for p in map_points:
         colour = _MAP_STATUS_COLOURS.get(p.get("status"), _MAP_STATUS_COLOURS["UNKNOWN"])
@@ -1191,7 +1209,7 @@ def render_admin_dashboard():
     if not map_points:
         st.info(t("admin.stat_no_data", lang))
     else:
-        render_folium_map(_build_stats_folium_map(map_points), height=420, key="admin_stats_map")
+        render_folium_map(_build_stats_folium_map(map_points), height=640, key="admin_stats_map")
         top_points = sorted(map_points, key=lambda p: -p["count"])[:10]
         table_df = pd.DataFrame(
             [
@@ -1298,7 +1316,7 @@ def _render_device_feasibility_section(lang):
         st.caption(t("admin.stat_map_legend_pass_fail", lang))
         render_folium_map(
             _build_stats_folium_map(points),
-            height=420,
+            height=640,
             key=f"admin_device_map_{selected}",
         )
 

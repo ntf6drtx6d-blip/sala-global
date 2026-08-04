@@ -249,6 +249,68 @@ def _suppress_zero_blackout_worst_month(r: dict) -> bool:
     # blackout, showing a "worst month" is not meaningful to users.
     return min(hours) >= 23.95
 
+CONTINUOUS_HOURS_THRESHOLD = 23.95
+
+
+def _capability_hours(r: dict) -> float | None:
+    """Hours/day this device sustains in its weakest month, i.e. every day
+    of the year, with no battery depletion.
+
+    core/simulate.py derives each month's value by binary-searching the
+    largest daily energy budget at which PVGIS reports zero empty-battery
+    days, so the minimum across the year is a verified figure rather than
+    an extrapolation. Returns None when the simulation produced no monthly
+    hours (e.g. a PVGIS failure), so callers can omit the claim instead of
+    printing a misleading zero.
+    """
+    hours = [float(v) for v in (r.get("hours") or [])]
+    if not hours:
+        return None
+    return min(hours)
+
+
+def _capability_summary(devices: list, required_hours: float, language: str) -> dict:
+    """Fleet-level capability for the report's headline.
+
+    Uses the weakest device, because the installation as a whole is only
+    sustainable to the point where its least capable device still is -
+    the same basis as the fleet PASS/FAIL. Per-device figures are shown on
+    each device's own page so a strong device isn't judged by this number.
+    """
+    values = [d["capability_hours"] for d in devices if d.get("capability_hours") is not None]
+    capability = min(values) if values else None
+
+    if capability is None:
+        return {
+            "fleet_capability_hours": None,
+            "fleet_capability_display": None,
+            "fleet_capability_is_continuous": False,
+            "fleet_capability_margin_ratio": None,
+            "fleet_capability_show_margin": False,
+        }
+
+    # hours/day is capped at 24 in the simulation, so a system that
+    # comfortably runs around the clock reports a margin of exactly zero.
+    # Presenting that as "1.0x margin" would read as barely scraping by -
+    # the opposite of the truth - so continuous operation is labelled
+    # instead of given a multiplier.
+    is_continuous = capability >= CONTINUOUS_HOURS_THRESHOLD
+    ratio = (capability / required_hours) if required_hours > 0 else None
+
+    return {
+        "fleet_capability_hours": capability,
+        "fleet_capability_display": f"{capability:.1f} {t('ui.hours_per_day_unit', language)}",
+        "fleet_capability_is_continuous": is_continuous,
+        "fleet_capability_margin_ratio": ratio,
+        # Below ~1.2x the multiplier adds nothing and risks looking
+        # precarious; the PASS verdict and zero blackout days carry the
+        # page in that case.
+        "fleet_capability_show_margin": bool(
+            not is_continuous and ratio is not None and ratio >= 1.2
+        ),
+    }
+
+
 def _weakest_month_metrics(r: dict) -> tuple[int, float | None, float | None]:
     solar_resource = _row_solar_resource_wh_day(r)
     hours = list(r.get("hours") or [])[:12]
@@ -453,6 +515,13 @@ def build_report_data(loc, required_hours, results, overall, user_name, user_org
             "cover_result_label": "SYSTEM IS FULLY ENERGY-SUSTAINABLE" if cls == "PASS" else cls,
             "monthly_blackout_days": list(r.get("empty_battery_days_by_month") or [0] * 12),
             "monthly_operating_hours": list(r.get("hours") or [0] * 12),
+            # Worst month of the year - the hours/day this device sustains
+            # every single day, including its weakest month. This is the
+            # same quantity the PASS/FAIL test compares against the
+            # requirement (see core/simulate.py: status is
+            # min(hours) >= required_hrs), so it can never contradict the
+            # verdict shown alongside it.
+            "capability_hours": _capability_hours(r),
             "interpretation_text": _device_interpretation(short, annual_days, cls, language),
             "dataset": (r.get("pvgis_meta") or {}).get("dataset", "PVGIS-SARAH3"),
             "energy_balance_margin_pct": energy_margin_pct,
@@ -581,6 +650,7 @@ def build_report_data(loc, required_hours, results, overall, user_name, user_org
         "generated_for_organization": user_organization,
         "required_operation": f"{float(required_hours):.1f} {t('ui.hours_per_day_unit', language)}",
         "required_hours": float(required_hours),
+        **_capability_summary(devices, float(required_hours), language),
         "devices": devices,
         "devices_total": total,
         "devices_pass_count": pass_count,

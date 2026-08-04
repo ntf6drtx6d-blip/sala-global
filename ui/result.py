@@ -91,15 +91,58 @@ def render_airport_name_box(airport_name: str, airport_icao: str = ""):
     st.markdown(html, unsafe_allow_html=True)
 
 
-def render_required_time_card(hours_value: float, mode_text: str):
-    rounded_hours = math.ceil(float(hours_value))
-    window_text = operating_window_example(hours_value)
+def _fleet_capability_hours(results: dict):
+    """Hours/day the weakest device sustains in its weakest month - i.e.
+    every day of the year with no battery depletion. Mirrors the report's
+    headline figure (see report/data_builder._capability_hours) and is the
+    same quantity core/simulate.py compares against the requirement to
+    decide PASS/FAIL, so it can't disagree with the verdict shown."""
+    values = []
+    for row in (results or {}).values():
+        hours = [float(v) for v in (row.get("hours") or [])]
+        if hours:
+            values.append(min(hours))
+    return min(values) if values else None
+
+
+def render_required_time_card(hours_value: float, mode_text: str, results: dict = None):
+    """Leads with verified capability rather than the requested profile.
+
+    The requested figure is a client input; showing it as the headline
+    number made readers take it for a system limit ("this only runs 2
+    hrs/day"). It stays on the card as context, below the capability.
+    """
     lang = st.session_state.get("language", "en")
+    capability = _fleet_capability_hours(results)
+    required_text = f"{math.ceil(float(hours_value))} {t('ui.hours_per_day_unit', lang)}"
+
+    if capability is None:
+        render_kpi_card(
+            t("ui.required_daily_operation", lang),
+            required_text,
+            f"{mode_text}<br><span style='color:#344054;font-weight:700;'>{operating_window_example(hours_value)}</span>",
+            min_height=220,
+        )
+        return
+
+    if capability >= 23.95:
+        value_text = t("report.continuous_operation", lang)
+    else:
+        value_text = f"{capability:.1f} {t('ui.hours_per_day_unit', lang)}"
+
+    ratio = (capability / float(hours_value)) if float(hours_value) > 0 else None
+    if capability < 23.95 and ratio is not None and ratio >= 1.2:
+        requirement_note = t("ui.requirement_met_margin_short", lang).format(
+            required=required_text, ratio=f"{ratio:.1f}"
+        )
+    else:
+        requirement_note = t("ui.requirement_short", lang).format(required=required_text)
 
     render_kpi_card(
-        t("ui.required_daily_operation", lang),
-        f"{rounded_hours} {t('ui.hours_per_day_unit', lang)}",
-        f"{mode_text}<br><span style='color:#344054;font-weight:700;'>{window_text}</span>",
+        t("report.verified_capability", lang),
+        value_text,
+        f"{t('report.verified_capability_helper', lang)}"
+        f"<br><span style='color:#344054;font-weight:700;'>{requirement_note}</span>",
         min_height=220,
     )
 
@@ -440,7 +483,7 @@ def render_result():
 
         c1, c2 = st.columns(2)
         with c1:
-            render_required_time_card(required_hours, mode_name)
+            render_required_time_card(required_hours, mode_name, results)
         with c2:
             render_blackout_card(
                 days,

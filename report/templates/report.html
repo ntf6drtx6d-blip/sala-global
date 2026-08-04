@@ -45,12 +45,30 @@
       </div>
 
       <div class="kpi-row kpi-row-3 page-break-avoid">
-        {% set card = {
-          'title': report.i18n['report.required_operating_profile'],
-          'value': report.required_operation,
-          'helper': report.i18n['report.defined_compliance_target'],
-          'status': 'neutral'
-        } %}
+        {#
+          Headline the *verified capability* rather than the requested
+          profile. The requested figure is a client input and is already
+          shown in the Study Overview panel; repeating it here as a KPI
+          made it read as a system limit ("this only runs 2 hrs/day")
+          rather than as the target that was met. The capability shown is
+          min(monthly hours) across devices - the same quantity the
+          PASS/FAIL test uses - so the two can never disagree.
+        #}
+        {% if report.fleet_capability_hours is not none %}
+          {% set card = {
+            'title': report.i18n['report.verified_capability'],
+            'value': report.i18n['report.continuous_operation'] if report.fleet_capability_is_continuous else report.fleet_capability_display,
+            'helper': report.i18n['report.verified_capability_helper'],
+            'status': 'success' if report.devices_pass_count == report.devices_total else 'neutral'
+          } %}
+        {% else %}
+          {% set card = {
+            'title': report.i18n['report.required_operating_profile'],
+            'value': report.required_operation,
+            'helper': report.i18n['report.defined_compliance_target'],
+            'status': 'neutral'
+          } %}
+        {% endif %}
         {% include 'partials/_kpi_card.html' %}
 
         {% set card = {
@@ -73,6 +91,25 @@
       <div class="summary-strip status-{{ 'success' if report.devices_pass_count == report.devices_total else 'warning' if report.devices_fail_count == 0 else 'danger' }}">
         {{ report.devices_meet_requirement_text }}
       </div>
+
+      {#
+        The client's requested profile, stated explicitly as *their input*
+        and whether it was met - so removing it from the KPI row above
+        hides nothing, it just stops an input being read as an output.
+      #}
+      {% if report.fleet_capability_hours is not none %}
+        <div class="requirement-line">
+          {% if report.devices_pass_count == report.devices_total %}
+            {% if report.fleet_capability_show_margin %}
+              {{ report.i18n['report.requirement_met_margin'] | replace('{required}', report.required_operation) | replace('{ratio}', '%.1f'|format(report.fleet_capability_margin_ratio)) }}
+            {% else %}
+              {{ report.i18n['report.requirement_met'] | replace('{required}', report.required_operation) }}
+            {% endif %}
+          {% else %}
+            {{ report.i18n['report.requirement_not_met'] | replace('{required}', report.required_operation) }}
+          {% endif %}
+        </div>
+      {% endif %}
 
       <article class="card analyzed-devices-card page-break-avoid">
         <div class="eyebrow">{{ report.i18n['report.analyzed_devices'] }}</div>

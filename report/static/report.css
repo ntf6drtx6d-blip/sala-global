@@ -389,6 +389,16 @@ body {
   background: #fafbfc;
 }
 
+/* States the client's requested profile and whether it was met. Kept
+   deliberately quiet - it is context for the verified-capability KPI
+   above, not a headline number in its own right. */
+.requirement-line {
+  margin-top: 6px;
+  padding: 0 2px;
+  font-size: 11px;
+  color: #475467;
+}
+
 .section-title {
   font-size: 16px;
   font-weight: 800;

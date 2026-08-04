@@ -1,5 +1,6 @@
 import csv
 import io
+import math
 import time
 import re
 import requests
@@ -7,6 +8,7 @@ import streamlit as st
 
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 OURAIRPORTS_URL = "https://davidmegginson.github.io/ourairports-data/airports.csv"
+OURAIRPORTS_COUNTRIES_URL = "https://davidmegginson.github.io/ourairports-data/countries.csv"
 _MIN_DELAY_SECONDS = 1.2
 
 COUNTRY_NAME_TO_CODE = {
@@ -80,6 +82,78 @@ def _cached_airports():
     response.raise_for_status()
     reader = csv.DictReader(io.StringIO(response.text))
     return [row for row in reader if row.get("latitude_deg") and row.get("longitude_deg")]
+
+
+@st.cache_data(show_spinner=False, ttl=60 * 60 * 24 * 7)
+def _cached_country_names():
+    """ISO-3166 alpha-2 -> full country name, from the same OurAirports
+    dataset the airport lookup already uses (so no new dependency and no
+    250-entry hardcoded table to drift out of date)."""
+    headers = {
+        "User-Agent": "SALA-Feasibility-Study/1.0 (contact: support@sala-global.com)"
+    }
+    response = requests.get(OURAIRPORTS_COUNTRIES_URL, headers=headers, timeout=15)
+    response.raise_for_status()
+    reader = csv.DictReader(io.StringIO(response.text))
+    return {
+        str(row.get("code") or "").strip().upper(): str(row.get("name") or "").strip()
+        for row in reader
+        if str(row.get("code") or "").strip()
+    }
+
+
+def country_name_from_code(code) -> str:
+    """Full country name for an ISO-2 code, falling back to the code
+    itself if the lookup table can't be fetched."""
+    raw = str(code or "").strip().upper()
+    if not raw:
+        return "-"
+    try:
+        return _cached_country_names().get(raw) or raw
+    except Exception:
+        return raw
+
+
+def country_from_coordinates(lat, lon) -> str:
+    """Country for an arbitrary point, resolved as the country of the
+    nearest airport in the OurAirports dataset.
+
+    Every study has coordinates (PVGIS requires them), but not every study
+    has a resolved airport: a user can type a free-form site name, enter
+    coordinates directly, or click the map, and in those paths no
+    geocoding lookup ever runs. This is the catch-all so those studies
+    still record a country. Uses the already-cached airport list, so it
+    costs no network call and no new dependency.
+    """
+    try:
+        airports = _cached_airports()
+    except Exception:
+        return "-"
+
+    try:
+        lat_f = float(lat)
+        lon_f = float(lon)
+    except (TypeError, ValueError):
+        return "-"
+
+    # Equirectangular approximation - we only need the *nearest* airport,
+    # not an accurate distance, so this is both sufficient and much
+    # cheaper than haversine across ~80k rows.
+    cos_lat = math.cos(math.radians(lat_f)) or 1e-6
+    best_code = None
+    best_dist = float("inf")
+    for row in airports:
+        try:
+            d_lat = float(row["latitude_deg"]) - lat_f
+            d_lon = (float(row["longitude_deg"]) - lon_f) * cos_lat
+        except (TypeError, ValueError, KeyError):
+            continue
+        dist = d_lat * d_lat + d_lon * d_lon
+        if dist < best_dist:
+            best_dist = dist
+            best_code = row.get("iso_country")
+
+    return country_name_from_code(best_code) if best_code else "-"
 
 
 def _airport_display_name(row):
@@ -195,7 +269,7 @@ def _lookup_airport_database(normalized_query: str):
         "display_name": display_name or normalized_query,
         "lat": float(best["latitude_deg"]),
         "lon": float(best["longitude_deg"]),
-        "country": best.get("iso_country") or "-",
+        "country": country_name_from_code(best.get("iso_country")),
         "icao": _extract_icao_code(best.get("gps_code"), best.get("ident"), display_name),
         "raw": best,
         "source": "ourairports",

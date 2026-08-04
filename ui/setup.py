@@ -5,7 +5,7 @@ import streamlit as st
 import folium
 
 from core.catalog import get_cached_runtime_catalog
-from core.geocoding import search_airport
+from core.geocoding import search_airport, country_from_coordinates
 from core.i18n import t
 from ui.map_embed import render_folium_map
 
@@ -92,6 +92,20 @@ def _set_confirmed_location(label=None, lat=None, lon=None, icao=None, country=N
         st.session_state.airport_icao = str(icao or "").strip().upper()[:4]
     if country is not None:
         st.session_state.airport_country = country or "-"
+    elif lat is not None or lon is not None:
+        # The point moved but the caller had no country to give (typed
+        # coordinates, map click, or a manual site name with coordinates).
+        # Resolve it from the coordinates themselves - otherwise the study
+        # is saved with "-" (so admin statistics can't break down by
+        # country), or worse, keeps the country of a previously selected
+        # location that the user has since moved away from.
+        try:
+            st.session_state.airport_country = country_from_coordinates(
+                st.session_state.get("lat"), st.session_state.get("lon")
+            )
+        except Exception:
+            st.session_state.airport_country = "-"
+
     st.session_state.study_point_confirmed = True
     st.session_state.study_location = {
         "label": st.session_state.get("airport_label", ""),

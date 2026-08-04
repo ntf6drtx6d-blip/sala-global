@@ -30,7 +30,7 @@ from core.auth import hash_password
 from core.catalog import get_cached_runtime_catalog, runtime_device_label, invalidate_runtime_catalog_cache
 from core.person import normalize_person_name, split_person_name
 from core.notify import notify_user_access_approved
-from core.stats import compute_admin_stats
+from core.stats import LATITUDE_BANDS, compute_admin_stats, compute_device_feasibility
 from ui.map_embed import render_folium_map
 from psycopg.errors import UniqueViolation
 
@@ -967,25 +967,47 @@ def _weekly_fs_chart(weekly_counts, lang):
             for row in weekly_counts
         ]
     )
-    chart = (
-        alt.Chart(df_long)
-        .mark_bar()
-        .encode(
-            x=alt.X("week_start:O", title=None, axis=alt.Axis(labelAngle=-40)),
-            xOffset=alt.XOffset("series:N", sort=[internal_label, external_label]),
-            y=alt.Y("count:Q", title=None),
-            color=alt.Color(
-                "series:N",
-                title=None,
-                sort=[internal_label, external_label],
-                scale=alt.Scale(range=["#1d4ed8", "#93c5fd"]),
-                legend=alt.Legend(orient="top"),
-            ),
-            tooltip=[alt.Tooltip("week_start:O", title="Week"), "series:N", "count:Q"],
-        )
-        .properties(height=320)
+    color = alt.Color(
+        "series:N",
+        title=None,
+        sort=[internal_label, external_label],
+        scale=alt.Scale(
+            domain=[internal_label, external_label],
+            range=["#1d4ed8", "#f59e0b"],
+        ),
+        legend=alt.Legend(orient="top"),
     )
-    return chart
+    base = alt.Chart(df_long).encode(
+        x=alt.X("week_start:O", title=None, axis=alt.Axis(labelAngle=-40)),
+        y=alt.Y("count:Q", title=None, scale=alt.Scale(nice=True)),
+        color=color,
+    )
+    lines = base.mark_line(strokeWidth=2.5, point=alt.OverlayMarkDef(size=70, filled=True)).encode(
+        tooltip=[alt.Tooltip("week_start:O", title="Week"), "series:N", "count:Q"],
+    )
+    # Value labels on every point, so the counts are readable directly
+    # instead of having to be estimated against the y-axis. The two series
+    # are labelled in opposite directions so their labels can't overlap
+    # where the lines cross or share a value.
+    labels_internal = (
+        base.transform_filter(alt.datum.series == internal_label)
+        .mark_text(dy=-13, fontSize=12, fontWeight="bold")
+        .encode(text="count:Q")
+    )
+    labels_external = (
+        base.transform_filter(alt.datum.series == external_label)
+        .mark_text(dy=15, fontSize=12, fontWeight="bold")
+        .encode(text="count:Q")
+    )
+    return (lines + labels_internal + labels_external).properties(height=340)
+
+
+_MAP_STATUS_COLOURS = {
+    "PASS": "#16a34a",
+    "FAIL": "#dc2626",
+    "MIXED": "#f59e0b",
+    "UNKNOWN": "#94a3b8",
+}
 
 
 def _zoom_for_span(lat_span: float, lon_span: float) -> int:
@@ -1023,15 +1045,16 @@ def _build_stats_folium_map(map_points):
     folium.TileLayer("CartoDB positron", no_wrap=True).add_to(fmap)
 
     for p in map_points:
+        colour = _MAP_STATUS_COLOURS.get(p.get("status"), _MAP_STATUS_COLOURS["UNKNOWN"])
         folium.CircleMarker(
             location=[p["lat"], p["lon"]],
             radius=4,
-            color="#1d4ed8",
+            color=colour,
             fill=True,
-            fill_color="#1d4ed8",
+            fill_color=colour,
             fill_opacity=0.85,
             weight=1,
-            tooltip=f"{p['label']} — {p['count']} FS",
+            tooltip=f"{p['label']} — {p['count']} FS — {p.get('status', '—')}",
         ).add_to(fmap)
 
     return fmap
@@ -1163,13 +1186,23 @@ def render_admin_dashboard():
 
     st.markdown(f"#### {t('admin.stat_map_title', lang)}")
     st.caption(t("admin.stat_map_caption", lang))
+    st.caption(t("admin.stat_map_legend", lang))
     map_points = stats["map_points"]
     if not map_points:
         st.info(t("admin.stat_no_data", lang))
     else:
         render_folium_map(_build_stats_folium_map(map_points), height=420, key="admin_stats_map")
         top_points = sorted(map_points, key=lambda p: -p["count"])[:10]
-        table_df = pd.DataFrame([{"airport": p["label"], "count": p["count"]} for p in top_points])
+        table_df = pd.DataFrame(
+            [
+                {
+                    t("admin.stat_col_airport", lang): p["label"],
+                    t("admin.stat_col_status", lang): p.get("status", "—"),
+                    "FS": p["count"],
+                }
+                for p in top_points
+            ]
+        )
         st.dataframe(table_df, hide_index=True, use_container_width=True)
 
     st.markdown(f"#### {t('admin.stat_fs_listing_title', lang)}")
@@ -1198,6 +1231,75 @@ def render_admin_dashboard():
             data=listing_df.to_csv(index=False).encode("utf-8"),
             file_name="sala_fs_listing.csv",
             mime="text/csv",
+        )
+
+    _render_device_feasibility_section(lang)
+
+
+def _render_device_feasibility_section(lang):
+    st.divider()
+    st.markdown(f"#### {t('admin.stat_device_feasibility_title', lang)}")
+    st.caption(t("admin.stat_device_feasibility_caption", lang))
+
+    with st.spinner(t("admin.statistics_loading", lang)):
+        feasibility = compute_device_feasibility()
+
+    if not feasibility:
+        st.info(t("admin.stat_no_data", lang))
+        return
+
+    device_codes = list(feasibility.keys())
+    selected = st.selectbox(
+        t("admin.stat_device_picker", lang),
+        device_codes,
+        format_func=lambda code: f"{code} ({feasibility[code]['tested']})",
+        key="admin_device_feasibility_picker",
+    )
+    data = feasibility[selected]
+
+    m1, m2, m3 = st.columns(3)
+    m1.metric(t("admin.stat_device_tested", lang), data["tested"])
+    m2.metric(t("admin.stat_device_passed", lang), data["passed"])
+    pass_rate = (data["passed"] / data["tested"] * 100.0) if data["tested"] else 0.0
+    m3.metric(t("admin.stat_device_pass_rate", lang), f"{pass_rate:.0f}%")
+
+    band_labels = {
+        "tropical": t("admin.stat_band_tropical", lang),
+        "subtropical": t("admin.stat_band_subtropical", lang),
+        "high": t("admin.stat_band_high", lang),
+    }
+    band_rows = []
+    for band_key, _low, _high in LATITUDE_BANDS:
+        values = data["bands"].get(band_key)
+        if not values or not values["tested"]:
+            continue
+        band_rows.append(
+            {
+                t("admin.stat_col_band", lang): band_labels[band_key],
+                t("admin.stat_col_tested", lang): values["tested"],
+                t("admin.stat_col_passed", lang): values["passed"],
+                t("admin.stat_col_max_pass_hours", lang): (
+                    f"{values['max_pass_hours']:.1f}" if values["max_pass_hours"] is not None else "—"
+                ),
+                t("admin.stat_col_min_fail_hours", lang): (
+                    f"{values['min_fail_hours']:.1f}" if values["min_fail_hours"] is not None else "—"
+                ),
+            }
+        )
+
+    if band_rows:
+        st.dataframe(pd.DataFrame(band_rows), hide_index=True, use_container_width=True)
+        st.caption(t("admin.stat_band_table_caption", lang))
+    else:
+        st.info(t("admin.stat_no_data", lang))
+
+    points = [p for p in data["points"] if p.get("lat") is not None and p.get("lon") is not None]
+    if points:
+        st.caption(t("admin.stat_map_legend_pass_fail", lang))
+        render_folium_map(
+            _build_stats_folium_map(points),
+            height=420,
+            key=f"admin_device_map_{selected}",
         )
 
 

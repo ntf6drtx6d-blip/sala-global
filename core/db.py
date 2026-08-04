@@ -822,6 +822,47 @@ def list_studies_for_stats(limit=20000):
         return cur.fetchall()
 
 
+def list_device_outcomes_for_stats(limit=200000):
+    """One row per (study, device) with only the scalar fields the device
+    feasibility explorer needs.
+
+    The per-device PASS/FAIL lives inside study_data.result_summary, which
+    list_studies_for_stats() deliberately strips because loading it for
+    every study was crashing the service out of memory (it carries the
+    full monthly arrays for each device). Rather than pull that field back
+    into Python, this unnests it in Postgres and returns only the handful
+    of small values needed, so the heavy arrays never leave the database.
+    """
+    with db_cursor() as (_, cur):
+        cur.execute(
+            """
+            SELECT
+                s.id                                              AS study_id,
+                s.user_id,
+                s.created_at,
+                (s.study_data->>'lat')::float                     AS lat,
+                (s.study_data->>'lon')::float                     AS lon,
+                (s.study_data->>'required_hours')::float          AS required_hours,
+                s.study_data->>'airport_label'                    AS airport_label,
+                s.study_data->>'base_airport_label'               AS base_airport_label,
+                s.study_data->>'country'                          AS country,
+                dev.value->>'device_code'                         AS device_code,
+                dev.value->>'name'                                AS device_name,
+                dev.value->>'status'                              AS device_status
+            FROM studies s
+            CROSS JOIN LATERAL jsonb_each(s.study_data->'result_summary'->'results') AS dev(key, value)
+            WHERE jsonb_typeof(s.study_data->'result_summary'->'results') = 'object'
+              AND COALESCE(s.study_data->>'overall_result', '') NOT IN ('RUNNING', 'PENDING', '')
+              AND s.study_data->>'lat' IS NOT NULL
+              AND s.study_data->>'lon' IS NOT NULL
+            ORDER BY s.created_at ASC
+            LIMIT %s
+            """,
+            (limit,),
+        )
+        return cur.fetchall()
+
+
 def list_users_for_stats():
     with db_cursor() as (_, cur):
         cur.execute("SELECT id, email, organization, created_at, last_login_at FROM users")

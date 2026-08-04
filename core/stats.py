@@ -25,11 +25,18 @@ from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 
 from core.catalog import get_cached_runtime_catalog
-from core.db import list_studies_for_stats, list_users_for_stats
+from core.db import list_device_outcomes_for_stats, list_studies_for_stats, list_users_for_stats
 from core.notify import is_internal_email
 
 _NOT_COMPLETED_STATUSES = {"RUNNING", "PENDING", ""}
 _ACTIVE_WINDOW_DAYS = 30
+
+# Stored overall_result values -> the labels shown to admins.
+_STATUS_LABELS = {
+    "ALL_PASS": "PASS",
+    "NONE_PASS": "FAIL",
+    "MIXED": "MIXED",
+}
 
 
 def _as_utc(dt):
@@ -68,6 +75,107 @@ def _week_bucket_starts(weeks: int, now: datetime):
         hour=0, minute=0, second=0, microsecond=0
     )
     return [current_week_start - timedelta(weeks=i) for i in range(weeks - 1, -1, -1)]
+
+
+LATITUDE_BANDS = (
+    ("tropical", 0.0, 23.5),
+    ("subtropical", 23.5, 45.0),
+    ("high", 45.0, 90.1),
+)
+
+
+def _latitude_band(lat) -> str | None:
+    try:
+        abs_lat = abs(float(lat))
+    except (TypeError, ValueError):
+        return None
+    for name, low, high in LATITUDE_BANDS:
+        if low <= abs_lat < high:
+            return name
+    return None
+
+
+def compute_device_feasibility() -> dict:
+    """Empirical feasibility per device, from the actual outcomes of
+    studies that have been run - NOT a theoretical irradiance model.
+
+    For each device and latitude band it reports how many studies tested
+    it, how many passed, and the observed boundary: the highest required
+    operating hours that still passed, and the lowest that failed. Where
+    nobody has run a study, the cell is simply empty rather than
+    estimated - this is an evidence map, and its gaps are real gaps.
+
+    Deduplicated the same way as the rest of the dashboard: one entry per
+    (user, airport, device), keeping that combination's most recent study.
+    """
+    rows = list_device_outcomes_for_stats()
+
+    latest = {}
+    for row in rows:
+        base = row.get("base_airport_label") or row.get("airport_label") or "Unnamed"
+        key = (
+            row["user_id"],
+            " ".join(str(base).lower().split()),
+            row.get("device_code") or row.get("device_name") or "?",
+        )
+        current = latest.get(key)
+        if current is None or (row.get("created_at") or datetime.min) >= (
+            current.get("created_at") or datetime.min
+        ):
+            latest[key] = row
+
+    devices = defaultdict(
+        lambda: {
+            "tested": 0,
+            "passed": 0,
+            "points": [],
+            "bands": defaultdict(
+                lambda: {"tested": 0, "passed": 0, "max_pass_hours": None, "min_fail_hours": None}
+            ),
+        }
+    )
+
+    for row in latest.values():
+        code = row.get("device_code") or row.get("device_name") or "?"
+        passed = str(row.get("device_status") or "").upper() == "PASS"
+        entry = devices[code]
+        entry["tested"] += 1
+        entry["passed"] += int(passed)
+        entry["points"].append(
+            {
+                "lat": row.get("lat"),
+                "lon": row.get("lon"),
+                "label": row.get("airport_label") or "Unknown airport",
+                "country": row.get("country") or "-",
+                "status": "PASS" if passed else "FAIL",
+                "required_hours": row.get("required_hours"),
+                "count": 1,
+            }
+        )
+
+        band = _latitude_band(row.get("lat"))
+        hours = row.get("required_hours")
+        if band is None or hours is None:
+            continue
+        band_entry = entry["bands"][band]
+        band_entry["tested"] += 1
+        if passed:
+            band_entry["passed"] += 1
+            if band_entry["max_pass_hours"] is None or hours > band_entry["max_pass_hours"]:
+                band_entry["max_pass_hours"] = hours
+        else:
+            if band_entry["min_fail_hours"] is None or hours < band_entry["min_fail_hours"]:
+                band_entry["min_fail_hours"] = hours
+
+    return {
+        code: {
+            "tested": data["tested"],
+            "passed": data["passed"],
+            "points": data["points"],
+            "bands": {band: dict(values) for band, values in data["bands"].items()},
+        }
+        for code, data in sorted(devices.items(), key=lambda kv: -kv[1]["tested"])
+    }
 
 
 def compute_admin_stats(weeks: int = 8) -> dict:
@@ -161,7 +269,9 @@ def compute_admin_stats(weeks: int = 8) -> dict:
         device_counter.update(family_names)
     top_devices = device_counter.most_common(3)
 
-    map_points = defaultdict(lambda: {"count": 0, "label": None, "lat": None, "lon": None})
+    map_points = defaultdict(
+        lambda: {"count": 0, "label": None, "lat": None, "lon": None, "statuses": []}
+    )
     for f in distinct_fs:
         lat, lon = f.get("lat"), f.get("lon")
         if lat is None or lon is None:
@@ -174,8 +284,25 @@ def compute_admin_stats(weeks: int = 8) -> dict:
         entry["count"] += 1
         entry["lat"] = float(lat)
         entry["lon"] = float(lon)
+        entry["statuses"].append(_STATUS_LABELS.get(f["latest_status"], "UNKNOWN"))
         if not entry["label"]:
             entry["label"] = f.get("airport_label") or "Unknown airport"
+
+    for entry in map_points.values():
+        # A single airport can hold several studies (different users, or
+        # the same user's separate studies). Collapse their outcomes into
+        # one dot colour: all-passed -> pass, none-passed -> fail, and
+        # anything else (including a single MIXED study) -> mixed, so a
+        # partial result is never rounded up to a clean pass or down to a
+        # flat fail.
+        statuses = set(entry.pop("statuses"))
+        if statuses == {"PASS"}:
+            entry["status"] = "PASS"
+        elif "PASS" not in statuses and "MIXED" not in statuses:
+            entry["status"] = "FAIL"
+        else:
+            entry["status"] = "MIXED"
+
     map_points_list = sorted(map_points.values(), key=lambda p: -p["count"])
 
     org_counter = Counter()
@@ -200,11 +327,7 @@ def compute_admin_stats(weeks: int = 8) -> dict:
             "organization": f.get("organization") or "-",
             "date": f["first_created_at"],
             "days_since": (now - f["first_created_at"]).days if f["first_created_at"] else None,
-            "status": {
-                "ALL_PASS": "PASS",
-                "NONE_PASS": "FAIL",
-                "MIXED": "MIXED",
-            }.get(f["latest_status"], f["latest_status"] or "UNKNOWN"),
+            "status": _STATUS_LABELS.get(f["latest_status"], f["latest_status"] or "UNKNOWN"),
         }
         for f in sorted(distinct_fs, key=lambda f: f["first_created_at"] or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
     ]

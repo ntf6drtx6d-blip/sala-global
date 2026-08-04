@@ -1062,6 +1062,37 @@ def _build_stats_folium_map(map_points):
         folium.Element("<style>.folium-map, .leaflet-container { background: #d4dadc !important; }</style>")
     )
 
+    # How large the map can be drawn depends on the panel's real pixel
+    # width, which isn't knowable server-side: a globally-spread dataset
+    # spans ~295 degrees of longitude, which fits at zoom 3 on a ~1800px+
+    # panel (filling it) but would cut off the outermost points on a
+    # narrower one. So let Leaflet pick: fitBounds chooses the largest
+    # zoom at which every point still fits the actual container, which
+    # fills the width whenever the screen allows and falls back to a
+    # smaller zoom rather than dropping data when it doesn't.
+    #
+    # Deferred behind a timeout on purpose - called inline it runs before
+    # the container has been laid out, and Leaflet then computes the zoom
+    # from a zero-sized box (observed: zoom 20 on the wrong continent).
+    # zoom_start above remains the fallback if this never runs.
+    if len(map_points) > 1:
+        bounds = [[min(lats), min(lons)], [max(lats), max(lons)]]
+        fmap.get_root().script.add_child(
+            folium.Element(
+                f"""
+                setTimeout(function () {{
+                    try {{
+                        var m = {fmap.get_name()};
+                        if (m && m.getSize().x > 0) {{
+                            m.invalidateSize({{animate: false}});
+                            m.fitBounds({bounds}, {{padding: [18, 18], animate: false}});
+                        }}
+                    }} catch (e) {{}}
+                }}, 250);
+                """
+            )
+        )
+
     for p in map_points:
         colour = _MAP_STATUS_COLOURS.get(p.get("status"), _MAP_STATUS_COLOURS["UNKNOWN"])
         folium.CircleMarker(
@@ -1209,7 +1240,7 @@ def render_admin_dashboard():
     if not map_points:
         st.info(t("admin.stat_no_data", lang))
     else:
-        render_folium_map(_build_stats_folium_map(map_points), height=640, key="admin_stats_map")
+        render_folium_map(_build_stats_folium_map(map_points), height=720, key="admin_stats_map")
         top_points = sorted(map_points, key=lambda p: -p["count"])[:10]
         table_df = pd.DataFrame(
             [
@@ -1316,7 +1347,7 @@ def _render_device_feasibility_section(lang):
         st.caption(t("admin.stat_map_legend_pass_fail", lang))
         render_folium_map(
             _build_stats_folium_map(points),
-            height=640,
+            height=720,
             key=f"admin_device_map_{selected}",
         )
 

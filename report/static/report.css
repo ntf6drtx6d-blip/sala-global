@@ -1068,3 +1068,205 @@ body {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
+
+/* ---------------------------------------------------------------------
+   Page 1 availability hero + daily-operation gauge
+   ------------------------------------------------------------------ */
+
+.availability-pair {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  margin: 10px 0 14px 0;
+}
+
+.availability-stat {
+  flex: 1 1 0;
+  text-align: center;
+}
+
+.availability-value {
+  font-size: 46px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: #067647;
+}
+
+.availability-label {
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #475467;
+}
+
+.availability-divider {
+  width: 1px;
+  align-self: stretch;
+  background: #bfe3cd;
+}
+
+.availability-statement {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: #0f172a;
+  text-align: center;
+}
+
+.gauge-section {
+  margin-top: 14px;
+}
+
+.gauge-caption {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #667085;
+}
+
+.gauge-subhead {
+  margin-top: 2px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: #475467;
+}
+
+/* One shared grid for the axis row and every bar row, so the axis labels
+   line up with the true start and end of the tracks below rather than
+   being positioned independently. */
+.gauge-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+/* Device names carry an engine suffix ("... + SE MICRO"), so the name
+   column needs room at A4 content width (~186mm) or it ellipsises away
+   the very part that distinguishes two otherwise identical rows. */
+.gauge-row {
+  display: grid;
+  grid-template-columns: 186px 1fr 78px;
+  align-items: center;
+  column-gap: 9px;
+}
+
+.gauge-name {
+  font-size: 10px;
+  line-height: 1.2;
+  color: #0f172a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gauge-track-cell {
+  position: relative;
+}
+
+.gauge-axis {
+  position: relative;
+  height: 12px;
+  font-size: 9px;
+  color: #667085;
+}
+
+.gauge-axis-start { position: absolute; left: 0; }
+.gauge-axis-end { position: absolute; right: 0; }
+.gauge-axis-req {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  color: #344054;
+  font-weight: 700;
+}
+
+/* Neutral track: it is only the 0-24h canvas, so it carries no colour of
+   its own - colour appears solely on segments that mean something. */
+.gauge-track {
+  position: relative;
+  height: 14px;
+  border-radius: 999px;
+  background: #eef1f4;
+  overflow: hidden;
+}
+
+.gauge-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+}
+
+.gauge-fill.is-met { background: #16a34a; }
+.gauge-fill.is-short { background: #f59e0b; }
+
+/* Reserve is drawn as a dashed continuation of the guaranteed segment,
+   in the same hue, so it reads as "the same device, further" rather than
+   as a separate category. */
+.gauge-reserve {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+  border: 1.2px dashed #16a34a;
+  background: transparent;
+}
+
+.gauge-reserve.is-short { border-color: #f59e0b; }
+
+.gauge-req-tick {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 1.4px;
+  background: #344054;
+  transform: translateX(-50%);
+}
+
+.gauge-tag {
+  font-size: 10px;
+  color: #667085;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gauge-tag-head {
+  font-size: 9px;
+  letter-spacing: 0.02em;
+}
+
+.gauge-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 10px;
+  font-size: 10px;
+  color: #475467;
+}
+
+.gauge-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.gauge-swatch {
+  display: inline-block;
+  width: 22px;
+  height: 9px;
+  border-radius: 999px;
+}
+
+.swatch-met { background: #16a34a; }
+.swatch-short { background: #f59e0b; }
+.swatch-reserve {
+  background: transparent;
+  border: 1.2px dashed #16a34a;
+}

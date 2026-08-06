@@ -251,6 +251,85 @@ def _suppress_zero_blackout_worst_month(r: dict) -> bool:
 
 CONTINUOUS_HOURS_THRESHOLD = 23.95
 
+# Presentation order for every device list in the report: runway lights
+# first (elevated before inset, edge before threshold/end), then the
+# approach-slope indicators, guidance signs, runway guard lights and
+# finally the wind direction indicator. Anything not covered by the rule
+# (taxiway/approach/obstruction variants, third-party fixtures) sorts
+# after, keeping its existing relative order.
+_DEVICE_GROUP_RUNWAY = 0
+_DEVICE_GROUP_PAPI = 1
+_DEVICE_GROUP_SIGN = 2
+_DEVICE_GROUP_RGL = 3
+_DEVICE_GROUP_WDI = 4
+_DEVICE_GROUP_OTHER = 5
+
+
+def _device_sort_key(device: dict) -> tuple:
+    code = str(device.get("device_code") or "").upper()
+    variant = str(device.get("lamp_variant") or "").lower()
+
+    if code in {"PAPI", "A-PAPI"}:
+        # A-PAPI is the abbreviated variant; keep PAPI first.
+        return (_DEVICE_GROUP_PAPI, 0 if code == "PAPI" else 1, 0, device.get("name", ""))
+    if code.startswith("SIGN-"):
+        size_rank = {"SIGN-L": 0, "SIGN-M": 1, "SIGN-S": 2}.get(code, 3)
+        return (_DEVICE_GROUP_SIGN, size_rank, 0, device.get("name", ""))
+    if code == "RGL":
+        return (_DEVICE_GROUP_RGL, 0, 0, device.get("name", ""))
+    if code == "WDI":
+        return (_DEVICE_GROUP_WDI, 0, 0, device.get("name", ""))
+
+    if "runway" in variant:
+        # SP-200 is the inset fixture; every other runway light is elevated.
+        mount_rank = 1 if code == "SP-200" else 0
+        if "edge" in variant:
+            position_rank = 0
+        elif "threshold" in variant or "end" in variant:
+            position_rank = 1
+        else:
+            position_rank = 2
+        return (_DEVICE_GROUP_RUNWAY, mount_rank, position_rank, device.get("name", ""))
+
+    return (_DEVICE_GROUP_OTHER, 0, 0, device.get("name", ""))
+
+
+def _upgrade_tag(r: dict) -> str | None:
+    """The real remediation for a device that falls short, named as an
+    actual product rather than a generic "bigger system" claim.
+
+    Devices with a separate solar engine can take either the extended
+    battery for their current engine (only SE COMPACT and SE MAX offer
+    one) or the next engine up. Built-in-panel fixtures have neither, so
+    their only lever is a reduced-intensity operating profile.
+    """
+    if str(r.get("system_type") or "") != "external_engine":
+        return "Lower intensity"
+
+    from core.catalog import get_cached_runtime_catalog
+
+    try:
+        _devices, engines = get_cached_runtime_catalog()
+    except Exception:
+        return "Lower intensity"
+
+    engine_key = r.get("engine_key")
+    engine = engines.get(engine_key) if engine_key else None
+    if not engine:
+        return "Lower intensity"
+
+    short_name = engine.get("short_name") or str(engine_key).upper()
+    if str(r.get("battery_mode") or "Std") == "Std" and engine.get("batt_ext"):
+        return f"{short_name} Extended"
+
+    ordered = sorted(engines.values(), key=lambda e: float(e.get("pv") or 0))
+    for candidate in ordered:
+        if float(candidate.get("pv") or 0) > float(engine.get("pv") or 0):
+            return candidate.get("short_name") or "Larger engine"
+
+    # Already on the largest engine with its extended battery.
+    return "Lower intensity"
+
 
 def _capability_hours(r: dict) -> float | None:
     """Hours/day this device sustains in its weakest month, i.e. every day
@@ -267,6 +346,43 @@ def _capability_hours(r: dict) -> float | None:
     if not hours:
         return None
     return min(hours)
+
+
+def _attach_gauge_fields(devices: list, required_hours: float) -> None:
+    """Percentages for page 1's 0-24h gauge, computed per device from real
+    simulated hours - never carried over from a design mock.
+
+    guaranteed = the worst month's sustainable hours (what the device
+    delivers every day of the year); reserve = how much further the
+    battery alone can carry it on an occasional basis. Both are expressed
+    against the same fixed 24h axis so every bar is directly comparable.
+    """
+    for device in devices:
+        capability = device.get("capability_hours")
+        guaranteed_pct = 0.0 if capability is None else max(0.0, min(capability / 24.0, 1.0)) * 100.0
+
+        autonomy = device.get("battery_autonomy_hours")
+        autonomy_pct = 0.0 if autonomy is None else max(0.0, min(float(autonomy) / 24.0, 1.0)) * 100.0
+        # The reserve is drawn as an extension of the guaranteed segment,
+        # so it only exists where the battery reaches beyond it. Nothing to
+        # draw once the guaranteed segment already fills the axis.
+        reserve_pct = max(0.0, autonomy_pct - guaranteed_pct)
+
+        meets = capability is not None and capability >= required_hours - 1e-6
+        device["guaranteed_pct"] = guaranteed_pct
+        device["reserve_pct"] = reserve_pct
+        device["meets_requirement"] = meets
+        device["shortfall_tag"] = None if meets else _upgrade_tag(device_raw_view(device))
+
+
+def device_raw_view(device: dict) -> dict:
+    """Adapter so _upgrade_tag can read the simulation-shaped keys it
+    needs from an already-built report device dict."""
+    return {
+        "system_type": device.get("system_type_raw") or device.get("system_type"),
+        "engine_key": device.get("engine_key"),
+        "battery_mode": device.get("battery_mode"),
+    }
 
 
 def _capability_summary(devices: list, required_hours: float, language: str) -> dict:
@@ -522,6 +638,11 @@ def build_report_data(loc, required_hours, results, overall, user_name, user_org
             # min(hours) >= required_hrs), so it can never contradict the
             # verdict shown alongside it.
             "capability_hours": _capability_hours(r),
+            "device_code": r.get("device_code", ""),
+            "lamp_variant": r.get("lamp_variant"),
+            "system_type_raw": r.get("system_type", ""),
+            "engine_key": r.get("engine_key"),
+            "battery_mode": r.get("battery_mode", "Std"),
             "interpretation_text": _device_interpretation(short, annual_days, cls, language),
             "dataset": (r.get("pvgis_meta") or {}).get("dataset", "PVGIS-SARAH3"),
             "energy_balance_margin_pct": energy_margin_pct,
@@ -574,7 +695,12 @@ def build_report_data(loc, required_hours, results, overall, user_name, user_org
             "compact_chart_mode": False,
         })
 
-    devices.sort(key=lambda x: ({"FAIL": 0, "NEAR THRESHOLD": 1, "PASS": 2}[x["result_class"]], -x["annual_blackout_days"], x["name"]))
+    # Operational order (runway lights, PAPI, signs, RGL, WDI) rather than
+    # worst-result-first: the reader looks devices up by what they are, and
+    # a stable order also keeps page 1's chart aligned with the device
+    # pages that follow.
+    devices.sort(key=_device_sort_key)
+    _attach_gauge_fields(devices, float(required_hours))
 
     total = len(devices)
     title, text, overall_label = _overall_case(pass_count, near_count, fail_count, total, language)
@@ -651,6 +777,15 @@ def build_report_data(loc, required_hours, results, overall, user_name, user_org
         "required_operation": f"{float(required_hours):.1f} {t('ui.hours_per_day_unit', language)}",
         "required_hours": float(required_hours),
         **_capability_summary(devices, float(required_hours), language),
+        # Page 1 gauge geometry. The requirement tick sits on the same
+        # fixed 0-24h axis as every bar, so it lines up by construction.
+        "requirement_pct": max(0.0, min(float(required_hours) / 24.0, 1.0)) * 100.0,
+        "requirement_hours_label": f"{float(required_hours):g}h",
+        "devices_meeting_requirement": sum(1 for d in devices if d.get("meets_requirement")),
+        # The "365 days / 24 hrs" claim is only true when no device runs
+        # its battery down at any point in the year. Gate it on that
+        # rather than printing it unconditionally.
+        "show_availability_hero": bool(devices) and all(d["annual_blackout_days"] == 0 for d in devices),
         "devices": devices,
         "devices_total": total,
         "devices_pass_count": pass_count,

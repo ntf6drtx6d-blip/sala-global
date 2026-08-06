@@ -21,12 +21,41 @@
       </div>
 
       <div class="grid two-col top-grid page-break-avoid">
+        {#
+          Two paired figures rather than one: shown alone, a single hours
+          number is read as a ceiling on what the system can do. Together
+          they state availability - the equipment is energised and ready
+          around the clock, all year - which is the fact the operating
+          hours below are then measured against.
+
+          Only rendered when no device runs its battery down at any point
+          in the year; otherwise the claim would not be true and the
+          previous conclusion panel is shown instead.
+        #}
+        {% if report.show_availability_hero %}
+        <article class="card hero-card status-pass">
+          <div class="eyebrow">{{ report.i18n['report.overall_conclusion'] }}</div>
+          <div class="availability-pair">
+            <div class="availability-stat">
+              <div class="availability-value">365</div>
+              <div class="availability-label">{{ report.i18n['report.days_a_year'] }}</div>
+            </div>
+            <div class="availability-divider"></div>
+            <div class="availability-stat">
+              <div class="availability-value">24</div>
+              <div class="availability-label">{{ report.i18n['report.hours_available'] }}</div>
+            </div>
+          </div>
+          <p class="availability-statement">{{ report.i18n['report.availability_statement'] }}</p>
+        </article>
+        {% else %}
         <article class="card hero-card status-{{ report.overall_result_label | lower | replace(' ', '-') }}">
           <div class="eyebrow">{{ report.i18n['report.overall_conclusion'] }}</div>
           <div class="hero-title">{{ report.overall_result_title }}</div>
           <p class="body-copy">{{ report.cover_statement }}</p>
           <div class="status-strip status-{{ report.overall_result_label | lower | replace(' ', '-') }}">{{ report.cover_verdict }}</div>
         </article>
+        {% endif %}
 
         <article class="card summary-card">
           <div class="eyebrow">{{ report.i18n['report.study_overview'] }}</div>
@@ -44,72 +73,61 @@
         </article>
       </div>
 
-      <div class="kpi-row kpi-row-3 page-break-avoid">
-        {#
-          Headline the *verified capability* rather than the requested
-          profile. The requested figure is a client input and is already
-          shown in the Study Overview panel; repeating it here as a KPI
-          made it read as a system limit ("this only runs 2 hrs/day")
-          rather than as the target that was met. The capability shown is
-          min(monthly hours) across devices - the same quantity the
-          PASS/FAIL test uses - so the two can never disagree.
-        #}
-        {% if report.fleet_capability_hours is not none %}
-          {% set card = {
-            'title': report.i18n['report.verified_capability'],
-            'value': report.i18n['report.continuous_operation'] if report.fleet_capability_is_continuous else report.fleet_capability_display,
-            'helper': report.i18n['report.verified_capability_helper'],
-            'status': 'success' if report.devices_pass_count == report.devices_total else 'neutral'
-          } %}
-        {% else %}
-          {% set card = {
-            'title': report.i18n['report.required_operating_profile'],
-            'value': report.required_operation,
-            'helper': report.i18n['report.defined_compliance_target'],
-            'status': 'neutral'
-          } %}
-        {% endif %}
-        {% include 'partials/_kpi_card.html' %}
-
-        {% set card = {
-          'title': report.i18n['report.blackout_days_year'],
-          'value': report.max_blackout_days,
-          'helper': report.blackout_card_helper,
-          'status': 'success' if report.max_blackout_days == 0 else 'warning' if report.max_blackout_days <= 5 else 'danger'
-        } %}
-        {% include 'partials/_kpi_card.html' %}
-
-        {% set card = {
-          'title': report.i18n['report.devices_meeting_requirement'],
-          'value': report.devices_pass_count ~ ' / ' ~ report.devices_total,
-          'helper': report.i18n['report.fleet_result'],
-          'status': 'neutral'
-        } %}
-        {% include 'partials/_kpi_card.html' %}
-      </div>
-
-      <div class="summary-strip status-{{ 'success' if report.devices_pass_count == report.devices_total else 'warning' if report.devices_fail_count == 0 else 'danger' }}">
-        {{ report.devices_meet_requirement_text }}
-      </div>
-
       {#
-        The client's requested profile, stated explicitly as *their input*
-        and whether it was met - so removing it from the KPI row above
-        hides nothing, it just stops an input being read as an output.
+        Quiet section header - the hero above is the headline, this is
+        just what the chart is. The requirement figure is the client's own
+        requested operating profile (see Study Overview), not an external
+        airport-category standard, so it is worded as "requested".
       #}
-      {% if report.fleet_capability_hours is not none %}
-        <div class="requirement-line">
-          {% if report.devices_pass_count == report.devices_total %}
-            {% if report.fleet_capability_show_margin %}
-              {{ report.i18n['report.requirement_met_margin'] | replace('{required}', report.required_operation) | replace('{ratio}', '%.1f'|format(report.fleet_capability_margin_ratio)) }}
-            {% else %}
-              {{ report.i18n['report.requirement_met'] | replace('{required}', report.required_operation) }}
-            {% endif %}
-          {% else %}
-            {{ report.i18n['report.requirement_not_met'] | replace('{required}', report.required_operation) }}
-          {% endif %}
+      <div class="gauge-section page-break-avoid">
+        <div class="gauge-caption">{{ report.i18n['report.daily_operation_by_device'] }}</div>
+        <div class="gauge-subhead">
+          {{ report.i18n['report.devices_meet_requested']
+             | replace('{met}', report.devices_meeting_requirement)
+             | replace('{total}', report.devices_total)
+             | replace('{hours}', report.required_operation) }}
         </div>
-      {% endif %}
+
+        {# Axis and every bar row share one grid definition, so the 0h /
+           24h labels sit exactly over the real start and end of the tracks. #}
+        <div class="gauge-grid">
+          <div class="gauge-row gauge-axis-row">
+            <div class="gauge-name"></div>
+            <div class="gauge-track-cell">
+              <div class="gauge-axis">
+                <span class="gauge-axis-start">0h</span>
+                <span class="gauge-axis-req" style="left: {{ '%.4f'|format(report.requirement_pct) }}%;">{{ report.i18n['report.axis_requested'] }} {{ report.requirement_hours_label }}</span>
+                <span class="gauge-axis-end">24h</span>
+              </div>
+            </div>
+            <div class="gauge-tag gauge-tag-head">{{ report.i18n['report.reaches_hours'] | replace('{hours}', report.requirement_hours_label) }}</div>
+          </div>
+
+          {% for device in report.devices %}
+          <div class="gauge-row">
+            <div class="gauge-name">{{ device.name }}</div>
+            <div class="gauge-track-cell">
+              <div class="gauge-track">
+                {% if device.reserve_pct > 0.1 %}
+                <div class="gauge-reserve {{ 'is-met' if device.meets_requirement else 'is-short' }}"
+                     style="left: {{ '%.4f'|format(device.guaranteed_pct) }}%; width: {{ '%.4f'|format(device.reserve_pct) }}%;"></div>
+                {% endif %}
+                <div class="gauge-fill {{ 'is-met' if device.meets_requirement else 'is-short' }}"
+                     style="width: {{ '%.4f'|format(device.guaranteed_pct) }}%;"></div>
+                <div class="gauge-req-tick" style="left: {{ '%.4f'|format(report.requirement_pct) }}%;"></div>
+              </div>
+            </div>
+            <div class="gauge-tag">{% if device.shortfall_tag %}{{ device.shortfall_tag }}{% endif %}</div>
+          </div>
+          {% endfor %}
+        </div>
+
+        <div class="gauge-legend">
+          <span class="gauge-legend-item"><span class="gauge-swatch swatch-met"></span>{{ report.i18n['report.legend_every_day'] }}</span>
+          <span class="gauge-legend-item"><span class="gauge-swatch swatch-reserve"></span>{{ report.i18n['report.legend_reserve'] }}</span>
+          <span class="gauge-legend-item"><span class="gauge-swatch swatch-short"></span>{{ report.i18n['report.legend_below'] }}</span>
+        </div>
+      </div>
 
       <article class="card analyzed-devices-card page-break-avoid">
         <div class="eyebrow">{{ report.i18n['report.analyzed_devices'] }}</div>

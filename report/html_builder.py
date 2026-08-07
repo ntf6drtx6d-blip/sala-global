@@ -186,7 +186,7 @@ def _device_aging_chart(checkpoints: list[dict], report_i18n: dict[str, str]) ->
     ax.set_facecolor("#f8fbff")
     ax.plot(
         ages, capacities, color="#16a34a", linewidth=2.2, marker="o", markersize=4.5,
-        solid_capstyle="round", label="Capacity retained",
+        solid_capstyle="round", label=report_i18n["report.chart_capacity_retained"],
     )
     for age, cap in zip(ages, capacities):
         ax.annotate(
@@ -199,10 +199,10 @@ def _device_aging_chart(checkpoints: list[dict], report_i18n: dict[str, str]) ->
     if show_blackout:
         ax2 = ax.twinx()
         ax2.bar(ages, blackout_days, width=0.6, color="#93c5fd", alpha=0.7,
-                edgecolor="#2563eb", linewidth=0.7, label="Blackout days/year at that age")
+                edgecolor="#2563eb", linewidth=0.7, label=report_i18n["report.chart_days_at_age"])
 
-    ax.set_ylabel("Capacity retained (%)")
-    ax.set_xlabel("Age (years)")
+    ax.set_ylabel(report_i18n["report.chart_capacity_retained_pct"])
+    ax.set_xlabel(report_i18n["report.chart_age_years"])
     ax.set_ylim(0, 116)
     ax.set_xlim(-0.3, max(ages) + 0.5)
     ax.set_xticks(ages)
@@ -217,7 +217,7 @@ def _device_aging_chart(checkpoints: list[dict], report_i18n: dict[str, str]) ->
         # own data makes every device's worst bar look equally "full",
         # whether it represents 5 blacked-out days or 300. A shared scale
         # is what actually makes severity comparable across devices.
-        ax2.set_ylabel("Blackout days / year (of 365)", color="#2563eb")
+        ax2.set_ylabel(report_i18n["report.chart_days_per_year_axis"], color="#2563eb")
         ax2.set_ylim(0, 365)
         ax2.set_yticks([0, 100, 200, 300, 365])
         ax2.spines["top"].set_visible(False)
@@ -257,7 +257,7 @@ def _blackout_chart(data: dict, include_js: bool, report_i18n: dict[str, str]) -
     # aging chart) is an annual total, and skimming past just the axis
     # label without reading the caption made that easy to misread as the
     # same unit.
-    ax.set_ylabel("Days / month")
+    ax.set_ylabel(report_i18n["report.chart_days_per_month"])
     ax.set_xlabel(report_i18n["ui.month"])
     ax.set_title(report_i18n["report.monthly_0_battery_days"], loc="left", fontsize=11, fontweight="bold")
     ax.set_ylim(bottom=0)

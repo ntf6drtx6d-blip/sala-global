@@ -52,7 +52,7 @@ def compute_aging(loc, required_hrs, results) -> dict:
     return estimate_battery_aging_for_results(loc, required_hrs, results)
 
 
-def build_aging_page_data(aging: dict, device_short_names: dict) -> dict:
+def build_aging_page_data(aging: dict, device_short_names: dict, report_i18n: dict | None = None) -> dict:
     """
     aging: the dict returned by compute_aging() - NOT recomputed here.
     device_short_names: {result_key: display_name}, matching the same
@@ -60,6 +60,12 @@ def build_aging_page_data(aging: dict, device_short_names: dict) -> dict:
     report/data_builder.py's _short_name), so this page's table is
     consistent with the rest of the document.
     """
+    # Fall back to English if a caller (e.g. the standalone preview
+    # harness) doesn't supply one, so chart labels never crash.
+    from core.i18n import get_report_i18n
+
+    i18n = report_i18n or get_report_i18n("en")
+
     summary_rows = []
     trajectories = []
     fade_breakdowns = []
@@ -91,13 +97,13 @@ def build_aging_page_data(aging: dict, device_short_names: dict) -> dict:
         "avg_site_temp_c": aging["avg_site_temp_c"],
         "monthly_temps_c": aging["monthly_temps_c"],
         "summary_rows": summary_rows,
-        "temperature_chart_html": _monthly_temperature_chart(aging["monthly_temps_c"]),
-        "capacity_chart_html": _capacity_trajectory_chart(trajectories),
-        "fade_driver_chart_html": _fade_driver_pie_charts(fade_breakdowns),
+        "temperature_chart_html": _monthly_temperature_chart(aging["monthly_temps_c"], i18n),
+        "capacity_chart_html": _capacity_trajectory_chart(trajectories, i18n),
+        "fade_driver_chart_html": _fade_driver_pie_charts(fade_breakdowns, i18n),
     }
 
 
-def _monthly_temperature_chart(monthly_temps_c) -> str:
+def _monthly_temperature_chart(monthly_temps_c, report_i18n) -> str:
     """Monthly average ambient temperature (PVGIS MRcalc, avtemp=1) across
     the year - gives the reader the seasonal context behind the single
     annual-average figure the calendar-aging formula actually uses.
@@ -109,12 +115,15 @@ def _monthly_temperature_chart(monthly_temps_c) -> str:
 
     avg = sum(monthly_temps_c) / len(monthly_temps_c)
     ax.axhline(avg, color="#94a3b8", linestyle=(0, (3, 2)), linewidth=1.0)
-    ax.annotate(f"avg {avg:.1f}°C", (11, avg), textcoords="offset points", xytext=(-2, 4),
+    ax.annotate(f'{report_i18n["report.chart_avg_short"]} {avg:.1f}°C', (11, avg), textcoords="offset points", xytext=(-2, 4),
                 ha="right", fontsize=7, color="#475467")
 
     ax.set_xticks(x)
-    ax.set_xticklabels(MONTH_LABELS, fontsize=6.5, rotation=0)
-    ax.set_ylabel("Avg. temp (°C)", fontsize=7.5)
+    ax.set_xticklabels(
+        [report_i18n.get(f"report.month.{m.lower()}", m) for m in MONTH_LABELS],
+        fontsize=6.5, rotation=0,
+    )
+    ax.set_ylabel(report_i18n["report.chart_avg_temp"], fontsize=7.5)
     ax.tick_params(axis="y", labelsize=7)
     ax.grid(axis="y", color="#dbe3ef", linewidth=0.6)
     ax.spines["top"].set_visible(False)
@@ -126,7 +135,7 @@ def _monthly_temperature_chart(monthly_temps_c) -> str:
     return _chart_html_from_figure(fig)
 
 
-def _capacity_trajectory_chart(trajectories) -> str:
+def _capacity_trajectory_chart(trajectories, report_i18n) -> str:
     """Capacity retained (%) vs. age, one line per device. Kept on a
     shared, naturally bounded 0-100% axis deliberately - unlike blackout
     days/year, capacity retention is always comparable across devices
@@ -151,10 +160,10 @@ def _capacity_trajectory_chart(trajectories) -> str:
         )
 
     ax.axhline(80, color="#94a3b8", linestyle=(0, (3, 2)), linewidth=1.0)
-    ax.annotate("80% EOL", (0.1, 82), fontsize=6.5, color="#667085")
+    ax.annotate(report_i18n["report.chart_eol_80"], (0.1, 82), fontsize=6.5, color="#667085")
 
-    ax.set_xlabel("Age (years)", fontsize=7.5)
-    ax.set_ylabel("Capacity (%)", fontsize=7.5)
+    ax.set_xlabel(report_i18n["report.chart_age_years"], fontsize=7.5)
+    ax.set_ylabel(report_i18n["report.chart_capacity_pct"], fontsize=7.5)
     ax.set_yticks(range(0, 101, 25))
     ax.tick_params(labelsize=7)
     ax.set_ylim(0, 108)
@@ -168,7 +177,7 @@ def _capacity_trajectory_chart(trajectories) -> str:
     return _chart_html_from_figure(fig)
 
 
-def _fade_driver_pie_charts(fade_breakdowns) -> str:
+def _fade_driver_pie_charts(fade_breakdowns, report_i18n) -> str:
     """One small pie per device: what share of its annual capacity fade
     comes from temperature (calendar aging) vs. daily cycling (cycle
     aging). A 2-slice pie is a natural fit for a single whole split into
@@ -194,7 +203,7 @@ def _fade_driver_pie_charts(fade_breakdowns) -> str:
         ax.set_title(short_name, fontsize=6.5, pad=3)
 
     fig.legend(
-        ["Temperature", "Cycling"],
+        [report_i18n["report.chart_temperature"], report_i18n["report.chart_cycling"]],
         loc="lower center", ncol=2, frameon=False, fontsize=6.5,
         bbox_to_anchor=(0.5, -0.06),
     )

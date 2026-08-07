@@ -48,13 +48,9 @@
 
     <article class="card chart-block avoid-break">
       {% if device.chart_is_aging %}
-        <div class="section-title">Projected battery capacity by age</div>
+        <div class="section-title">{{ report.i18n['report.aging_device_chart_title'] }}</div>
         <div class="plotly-chart">{{ device.chart_html | safe }}</div>
-        <div class="chart-explainer">
-          Estimated capacity retained as this battery ages (published rule-of-thumb figures, not a
-          manufacturer-certified prediction — see the Battery Aging page for methodology), and the resulting
-          blackout-day risk at each age.
-        </div>
+        <div class="chart-explainer">{{ report.i18n['report.aging_device_chart_explainer'] }}</div>
       {% else %}
         <div class="section-title">{{ report.i18n['report.daily_battery_energy_balance'] }}</div>
         <div class="plotly-chart">{{ device.chart_html | safe }}</div>

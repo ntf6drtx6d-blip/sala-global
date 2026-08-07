@@ -235,7 +235,9 @@ def make_pdf(
         aging_raw = _compute_aging_safe(loc, required_hours, results)
         if aging_raw is not None:
             device_short_names = {d["result_key"]: d["name"] for d in data.get("devices", [])}
-            data["aging"] = build_aging_page_data(aging_raw, device_short_names)
+            data["aging"] = build_aging_page_data(
+                aging_raw, device_short_names, data.get("i18n")
+            )
             data["total_pages"] = data.get("total_pages", 0) + 1
             for device in data.get("devices", []):
                 device_aging = aging_raw["devices"].get(device["result_key"])

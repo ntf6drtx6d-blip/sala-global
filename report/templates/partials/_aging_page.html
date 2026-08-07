@@ -47,45 +47,39 @@
   {% include 'partials/_header.html' %}
   <div class="page-title-wrap compact">
     <div>
-      <div class="eyebrow">LONG-TERM RELIABILITY</div>
-      <h2 class="page-title">Battery Aging (Estimate)</h2>
+      <div class="eyebrow">{{ report.i18n['report.aging_eyebrow'] }}</div>
+      <h2 class="page-title">{{ report.i18n['report.aging_title'] }}</h2>
     </div>
   </div>
 
   <div class="section-stack">
     <div class="grid two-col page-break-avoid">
       <article class="card">
-        <div class="section-title">Why this matters</div>
-        <p class="body-copy">
-          Capacity fades over time from ambient temperature and daily cycling depth. This page projects each
-          device's capacity and result forward using published, rule-of-thumb figures. This is a
-          <strong>SALA Estimate</strong>, not a manufacturer-certified prediction.
-        </p>
+        <div class="section-title">{{ report.i18n['report.aging_why_title'] }}</div>
+        <p class="body-copy">{{ report.i18n['report.aging_why_body'] | safe }}</p>
         <div class="info-row">
-          <span>Site average annual temperature</span>
+          <span>{{ report.i18n['report.aging_site_avg_temp'] }}</span>
           <strong>{{ '%.1f'|format(report.aging.avg_site_temp_c) }} °C</strong>
         </div>
       </article>
 
       <article class="card chart-block">
-        <div class="section-title">Site temperature profile</div>
+        <div class="section-title">{{ report.i18n['report.aging_temp_profile'] }}</div>
         <div class="plotly-chart">{{ report.aging.temperature_chart_html | safe }}</div>
       </article>
     </div>
 
     <article class="card page-break-avoid">
-      <div class="section-title">Aging summary by device</div>
-      <div class="table-caption">
-        All devices share the same 5-year horizon so results are directly comparable across chemistries.
-      </div>
+      <div class="section-title">{{ report.i18n['report.aging_summary_title'] }}</div>
+      <div class="table-caption">{{ report.i18n['report.aging_summary_caption'] }}</div>
       <table class="report-table aging-summary-table">
         <thead>
           <tr>
-            <th>Device</th>
-            <th>Chemistry</th>
-            <th>Year 0 (as-new)</th>
-            <th>Year 2</th>
-            <th>Year 5</th>
+            <th>{{ report.i18n['report.aging_col_device'] }}</th>
+            <th>{{ report.i18n['report.aging_col_chemistry'] }}</th>
+            <th>{{ report.i18n['report.aging_col_year0'] }}</th>
+            <th>{{ report.i18n['report.aging_col_year2'] }}</th>
+            <th>{{ report.i18n['report.aging_col_year5'] }}</th>
           </tr>
         </thead>
         <tbody>
@@ -96,7 +90,7 @@
             {% for cell in [row.as_new, row.mid_life, row.end_of_horizon] %}
             <td>
               <span class="status-pill status-{{ cell.status | lower | replace(' ', '-') }}">{{ cell.status }}</span>
-              <div class="cell-sub">Year {{ cell.age_years }} · {{ '%.0f'|format(cell.capacity_pct) }}% cap. · {{ '%.1f'|format(cell.blackout_days) }} d/yr</div>
+              <div class="cell-sub">{{ report.i18n['report.aging_cell_sub'] | replace('{year}', cell.age_years) | replace('{cap}', '%.0f'|format(cell.capacity_pct)) | replace('{days}', '%.1f'|format(cell.blackout_days)) }}</div>
             </td>
             {% endfor %}
           </tr>
@@ -107,26 +101,19 @@
 
     <div class="grid two-col page-break-avoid">
       <article class="card chart-block">
-        <div class="section-title">Projected capacity by age</div>
+        <div class="section-title">{{ report.i18n['report.aging_projected_title'] }}</div>
         <div class="plotly-chart">{{ report.aging.capacity_chart_html | safe }}</div>
       </article>
 
       <article class="card chart-block">
-        <div class="section-title">What's driving the aging</div>
+        <div class="section-title">{{ report.i18n['report.aging_drivers_title'] }}</div>
         <div class="plotly-chart">{{ report.aging.fade_driver_chart_html | safe }}</div>
-        <p class="chart-explainer">
-          Temperature-dominated devices benefit most from a cooler mounting location; cycling-dominated devices
-          benefit most from a larger battery relative to load.
-        </p>
+        <p class="chart-explainer">{{ report.i18n['report.aging_drivers_explainer'] }}</p>
       </article>
     </div>
 
     <article class="card page-break-avoid">
-      <p class="chart-explainer">
-        <strong>Methodology:</strong> calendar aging uses this site's PVGIS-derived average temperature; cycle
-        aging is derated by depth-of-discharge from this study's simulated daily cycling. Figures are sourced
-        from published battery-industry literature per chemistry, not manufacturer-specific test data.
-      </p>
+      <p class="chart-explainer">{{ report.i18n['report.aging_methodology'] | safe }}</p>
     </article>
   </div>
 

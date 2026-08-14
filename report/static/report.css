@@ -1275,3 +1275,42 @@ body {
   background: transparent;
   border: 1.2px dashed #16a34a;
 }
+
+/* Independent-methodology trust strip on page 1. Deliberately quiet in
+   weight but full width, so it reads as a credential line rather than as
+   another result card competing with the hero above it. */
+.independent-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 13px;
+  border: var(--border) solid #cfe0f5;
+  border-radius: 12px;
+  background: #f6faff;
+}
+
+.independent-logo {
+  height: 30px;
+  width: auto;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+
+.independent-text {
+  min-width: 0;
+}
+
+.independent-title {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #12355b;
+}
+
+.independent-body {
+  margin-top: 1px;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: #475467;
+}

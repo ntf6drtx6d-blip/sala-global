@@ -74,6 +74,21 @@
       </div>
 
       {#
+        Trust marker: the assessment rests on a public EU methodology, not
+        on a vendor's own model. That is the single most load-bearing fact
+        for a reader deciding whether to believe the result, and it was
+        previously only visible as a logo in the header and a line in the
+        footer.
+      #}
+      <div class="independent-strip page-break-avoid">
+        {% if report.logo_jrc %}<img src="{{ report.logo_jrc }}" alt="JRC" class="independent-logo" />{% endif %}
+        <div class="independent-text">
+          <div class="independent-title">{{ report.i18n['report.independent_badge_title'] }}</div>
+          <div class="independent-body">{{ report.i18n['report.independent_badge_body'] }}</div>
+        </div>
+      </div>
+
+      {#
         Quiet section header - the hero above is the headline, this is
         just what the chart is. The requirement figure is the client's own
         requested operating profile (see Study Overview), not an external

@@ -294,16 +294,18 @@ def _device_sort_key(device: dict) -> tuple:
     return (_DEVICE_GROUP_OTHER, 0, 0, device.get("name", ""))
 
 
-def _upgrade_tag(r: dict) -> str | None:
+def _upgrade_tag(r: dict, required_hours: float) -> str | None:
     """The real remediation for a device that falls short, named as an
     actual product rather than a generic "bigger system" claim.
 
     Devices with a separate solar engine can take either the extended
     battery for their current engine (only SE COMPACT and SE MAX offer
-    one) or the next engine up. Built-in-panel fixtures have neither, so
-    their only lever is a reduced-intensity operating profile.
+    one) or the next engine up; which of the two actually helps depends on
+    whether the device is short of storage or short of daily recharge.
+    Built-in-panel fixtures have neither lever, so their only option is a
+    reduced-intensity operating profile.
     """
-    if str(r.get("system_type") or "") != "external_engine":
+    if str(r.get("system_type_raw") or r.get("system_type") or "") != "external_engine":
         return "Lower intensity"
 
     from core.catalog import get_cached_runtime_catalog
@@ -319,15 +321,31 @@ def _upgrade_tag(r: dict) -> str | None:
         return "Lower intensity"
 
     short_name = engine.get("short_name") or str(engine_key).upper()
-    if str(r.get("battery_mode") or "Std") == "Std" and engine.get("batt_ext"):
+
+    # Which upgrade helps depends on what is actually limiting the device.
+    # If the battery alone already carries past the requested hours then
+    # storage is not the constraint - the system simply cannot recharge
+    # that much each day - and a bigger battery would change almost
+    # nothing. More panel is what is needed. The extended battery is only
+    # the honest answer when the battery itself falls short too.
+    autonomy = r.get("battery_autonomy_hours")
+    # Tolerance so a battery that exactly covers the requirement isn't
+    # called short by floating-point noise (0.7 * capacity / load lands a
+    # fraction under the target often enough to matter).
+    storage_is_short = autonomy is not None and float(autonomy) < float(required_hours) - 1e-6
+    can_extend = str(r.get("battery_mode") or "Std") == "Std" and engine.get("batt_ext")
+
+    if storage_is_short and can_extend:
         return f"{short_name} Extended"
 
-    ordered = sorted(engines.values(), key=lambda e: float(e.get("pv") or 0))
-    for candidate in ordered:
+    for candidate in sorted(engines.values(), key=lambda e: float(e.get("pv") or 0)):
         if float(candidate.get("pv") or 0) > float(engine.get("pv") or 0):
             return candidate.get("short_name") or "Larger engine"
 
-    # Already on the largest engine with its extended battery.
+    # Already on the largest engine: naming its extended battery is only
+    # worth doing if storage is genuinely the shortfall.
+    if can_extend:
+        return f"{short_name} Extended"
     return "Lower intensity"
 
 
@@ -403,17 +421,7 @@ def _attach_gauge_fields(devices: list, required_hours: float) -> None:
         device["guaranteed_pct"] = guaranteed_pct
         device["reserve_pct"] = reserve_pct
         device["meets_requirement"] = meets
-        device["shortfall_tag"] = None if meets else _upgrade_tag(device_raw_view(device))
-
-
-def device_raw_view(device: dict) -> dict:
-    """Adapter so _upgrade_tag can read the simulation-shaped keys it
-    needs from an already-built report device dict."""
-    return {
-        "system_type": device.get("system_type_raw") or device.get("system_type"),
-        "engine_key": device.get("engine_key"),
-        "battery_mode": device.get("battery_mode"),
-    }
+        device["shortfall_tag"] = None if meets else _upgrade_tag(device, required_hours)
 
 
 def _capability_summary(devices: list, required_hours: float, language: str) -> dict:

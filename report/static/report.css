@@ -1149,7 +1149,7 @@ body {
    the very part that distinguishes two otherwise identical rows. */
 .gauge-row {
   display: grid;
-  grid-template-columns: 186px 1fr 78px;
+  grid-template-columns: 186px 1fr 106px;
   align-items: center;
   column-gap: 9px;
 }
@@ -1233,13 +1233,15 @@ body {
   transform: translateX(-50%);
 }
 
+/* Wraps rather than truncating: an upgrade name cut to "SE COMPACT ..."
+   tells the reader nothing, and this column is the only place the report
+   says what would actually fix a shortfall. */
 .gauge-tag {
   font-size: 10px;
+  line-height: 1.25;
   color: #667085;
   text-align: right;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: break-word;
 }
 
 .gauge-tag-head {

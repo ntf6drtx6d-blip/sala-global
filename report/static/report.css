@@ -1178,11 +1178,16 @@ body {
 .gauge-axis-end { position: absolute; right: 0; }
 .gauge-axis-req {
   position: absolute;
-  transform: translateX(-50%);
   white-space: nowrap;
   color: #344054;
   font-weight: 700;
 }
+
+/* Anchor the label inside the track at the extremes, so it never
+   overflows the axis or lands on top of an end label. */
+.gauge-axis-req.align-middle { transform: translateX(-50%); }
+.gauge-axis-req.align-end { transform: translateX(-100%); }
+.gauge-axis-req.align-start { transform: translateX(0); }
 
 /* Neutral track: it is only the 0-24h canvas, so it carries no colour of
    its own - colour appears solely on segments that mean something. */

@@ -348,6 +348,37 @@ def _capability_hours(r: dict) -> float | None:
     return min(hours)
 
 
+_AXIS_EDGE_PCT = 12.0
+
+
+def _requirement_label_placement(required_hours: float) -> dict:
+    """Where to anchor the requirement label on the 0-24h axis, and which
+    end label it makes redundant.
+
+    Centring the label on its position works in the middle of the axis but
+    collides at the extremes - a 24 h/day requirement puts it at 100%,
+    where half of it overflows the track and covers the "24h" end label.
+    """
+    pct = max(0.0, min(required_hours / 24.0, 1.0)) * 100.0
+    if pct >= 100.0 - _AXIS_EDGE_PCT:
+        return {
+            "requirement_label_align": "end",
+            "show_axis_start_label": True,
+            "show_axis_end_label": False,
+        }
+    if pct <= _AXIS_EDGE_PCT:
+        return {
+            "requirement_label_align": "start",
+            "show_axis_start_label": False,
+            "show_axis_end_label": True,
+        }
+    return {
+        "requirement_label_align": "middle",
+        "show_axis_start_label": True,
+        "show_axis_end_label": True,
+    }
+
+
 def _attach_gauge_fields(devices: list, required_hours: float) -> None:
     """Percentages for page 1's 0-24h gauge, computed per device from real
     simulated hours - never carried over from a design mock.
@@ -781,6 +812,12 @@ def build_report_data(loc, required_hours, results, overall, user_name, user_org
         # fixed 0-24h axis as every bar, so it lines up by construction.
         "requirement_pct": max(0.0, min(float(required_hours) / 24.0, 1.0)) * 100.0,
         "requirement_hours_label": f"{float(required_hours):g}h",
+        # A requirement at or near either end of the axis (24/7 operation
+        # being the common case) would otherwise be centred on the axis
+        # edge: half the label spills out of the track and lands on top of
+        # the "0h"/"24h" end label. Anchor it inwards instead, and drop the
+        # end label it duplicates.
+        **_requirement_label_placement(float(required_hours)),
         "devices_meeting_requirement": sum(1 for d in devices if d.get("meets_requirement")),
         # The "365 days / 24 hrs" claim is only true when no device runs
         # its battery down at any point in the year. Gate it on that

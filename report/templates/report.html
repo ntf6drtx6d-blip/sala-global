@@ -95,9 +95,9 @@
             <div class="gauge-name"></div>
             <div class="gauge-track-cell">
               <div class="gauge-axis">
-                <span class="gauge-axis-start">0h</span>
-                <span class="gauge-axis-req" style="left: {{ '%.4f'|format(report.requirement_pct) }}%;">{{ report.i18n['report.axis_requested'] }} {{ report.requirement_hours_label }}</span>
-                <span class="gauge-axis-end">24h</span>
+                {% if report.show_axis_start_label %}<span class="gauge-axis-start">0h</span>{% endif %}
+                <span class="gauge-axis-req align-{{ report.requirement_label_align }}" style="left: {{ '%.4f'|format(report.requirement_pct) }}%;">{{ report.i18n['report.axis_requested'] }} {{ report.requirement_hours_label }}</span>
+                {% if report.show_axis_end_label %}<span class="gauge-axis-end">24h</span>{% endif %}
               </div>
             </div>
             <div class="gauge-tag gauge-tag-head">{{ report.i18n['report.reaches_hours'] | replace('{hours}', report.requirement_hours_label) }}</div>

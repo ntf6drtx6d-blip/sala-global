@@ -1,0 +1,39 @@
+<section class="report-page recommendations-page">
+  {% include 'partials/_header.html' %}
+  <div class="page-title-wrap compact">
+    <div>
+      <div class="eyebrow">{{ report.i18n['report.rec_eyebrow'] }}</div>
+      <h2 class="page-title">{{ report.i18n['report.rec_title'] }}</h2>
+    </div>
+  </div>
+
+  <article class="card page-break-avoid">
+    <p class="body-copy">{{ report.i18n['report.rec_intro'] }}</p>
+    <table class="report-table recommendations-table">
+      <thead>
+        <tr>
+          <th>{{ report.i18n['report.rec_col_device'] }}</th>
+          <th>{{ report.i18n['report.rec_col_now'] }}</th>
+          <th>{{ report.i18n['report.rec_col_action'] }}</th>
+          <th>{{ report.i18n['report.rec_col_reason'] }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in report.recommendations %}
+        <tr>
+          <td>{{ row.name }}</td>
+          <td class="rec-hours">
+            {% if row.capability_hours is not none %}{{ '%.1f'|format(row.capability_hours) }} h{% else %}—{% endif %}
+            <div class="rec-of">{{ report.i18n['report.axis_requested'] }} {{ report.requirement_hours_label }}</div>
+          </td>
+          <td><strong>{{ row.action }}</strong></td>
+          <td class="rec-reason">{{ row.reason }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="chart-explainer">{{ report.i18n['report.rec_footer_note'] }}</p>
+  </article>
+
+  <div class="page-footer"><span>{{ report.footer_note }}</span><span>{{ report.i18n['report.page'] }} {{ 4 + report.devices|length + aging_offset }} of {{ report.total_pages }}</span></div>
+</section>

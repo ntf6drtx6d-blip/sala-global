@@ -1149,7 +1149,7 @@ body {
    the very part that distinguishes two otherwise identical rows. */
 .gauge-row {
   display: grid;
-  grid-template-columns: 186px 1fr 106px;
+  grid-template-columns: 186px 1fr;
   align-items: center;
   column-gap: 9px;
 }
@@ -1315,4 +1315,27 @@ body {
   font-size: 10.5px;
   line-height: 1.4;
   color: #475467;
+}
+
+/* Recommendations page (only present when a device falls short). */
+.recommendations-table td {
+  vertical-align: top;
+}
+
+.recommendations-table .rec-hours {
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.recommendations-table .rec-of {
+  margin-top: 2px;
+  font-size: 9.5px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.recommendations-table .rec-reason {
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--muted);
 }

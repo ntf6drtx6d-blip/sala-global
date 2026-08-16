@@ -294,40 +294,38 @@ def _device_sort_key(device: dict) -> tuple:
     return (_DEVICE_GROUP_OTHER, 0, 0, device.get("name", ""))
 
 
-def _upgrade_tag(r: dict, required_hours: float) -> str | None:
-    """The real remediation for a device that falls short, named as an
-    actual product rather than a generic "bigger system" claim.
+def _recommended_action(r: dict, required_hours: float, i18n: dict) -> tuple:
+    """What would actually close the gap for a device that falls short,
+    returned as (action, reason).
 
-    Devices with a separate solar engine can take either the extended
-    battery for their current engine (only SE COMPACT and SE MAX offer
-    one) or the next engine up; which of the two actually helps depends on
-    whether the device is short of storage or short of daily recharge.
-    Built-in-panel fixtures have neither lever, so their only option is a
-    reduced-intensity operating profile.
+    Only names things that exist: the solar engine tiers by their real
+    product names, and the extended-battery option the configurator itself
+    offers as a battery mode. It deliberately does NOT concatenate the two
+    into a product name like "SE COMPACT Extended", which is not a product
+    S4GA sells.
+
+    Which lever helps depends on what is binding. If the battery alone
+    already carries past the requested hours, storage is not the
+    constraint - the system cannot recharge that much per day - and more
+    battery would change almost nothing; more panel is what is needed.
     """
+    lower_intensity = (i18n["report.rec_lower_intensity"], i18n["report.rec_reason_builtin"])
+
     if str(r.get("system_type_raw") or r.get("system_type") or "") != "external_engine":
-        return "Lower intensity"
+        return lower_intensity
 
     from core.catalog import get_cached_runtime_catalog
 
     try:
         _devices, engines = get_cached_runtime_catalog()
     except Exception:
-        return "Lower intensity"
+        return lower_intensity
 
     engine_key = r.get("engine_key")
     engine = engines.get(engine_key) if engine_key else None
     if not engine:
-        return "Lower intensity"
+        return lower_intensity
 
-    short_name = engine.get("short_name") or str(engine_key).upper()
-
-    # Which upgrade helps depends on what is actually limiting the device.
-    # If the battery alone already carries past the requested hours then
-    # storage is not the constraint - the system simply cannot recharge
-    # that much each day - and a bigger battery would change almost
-    # nothing. More panel is what is needed. The extended battery is only
-    # the honest answer when the battery itself falls short too.
     autonomy = r.get("battery_autonomy_hours")
     # Tolerance so a battery that exactly covers the requirement isn't
     # called short by floating-point noise (0.7 * capacity / load lands a
@@ -336,17 +334,20 @@ def _upgrade_tag(r: dict, required_hours: float) -> str | None:
     can_extend = str(r.get("battery_mode") or "Std") == "Std" and engine.get("batt_ext")
 
     if storage_is_short and can_extend:
-        return f"{short_name} Extended"
+        return (i18n["report.rec_extended_battery"], i18n["report.rec_reason_storage"])
 
     for candidate in sorted(engines.values(), key=lambda e: float(e.get("pv") or 0)):
         if float(candidate.get("pv") or 0) > float(engine.get("pv") or 0):
-            return candidate.get("short_name") or "Larger engine"
+            name = candidate.get("short_name") or ""
+            return (
+                i18n["report.rec_larger_engine"].replace("{engine}", name),
+                i18n["report.rec_reason_recharge"],
+            )
 
-    # Already on the largest engine: naming its extended battery is only
-    # worth doing if storage is genuinely the shortfall.
+    # Already on the largest engine.
     if can_extend:
-        return f"{short_name} Extended"
-    return "Lower intensity"
+        return (i18n["report.rec_extended_battery"], i18n["report.rec_reason_storage"])
+    return lower_intensity
 
 
 def _capability_hours(r: dict) -> float | None:
@@ -421,7 +422,30 @@ def _attach_gauge_fields(devices: list, required_hours: float) -> None:
         device["guaranteed_pct"] = guaranteed_pct
         device["reserve_pct"] = reserve_pct
         device["meets_requirement"] = meets
-        device["shortfall_tag"] = None if meets else _upgrade_tag(device, required_hours)
+
+
+def _build_recommendations(devices: list, required_hours: float, i18n: dict) -> list:
+    """One entry per device that falls short of the requested profile.
+
+    Kept off page 1 on purpose: page 1 answers "does this work", and a
+    column of remedies there reads as a list of things wrong with the
+    proposal. These belong later in the document, once the reader has the
+    per-device detail to interpret them.
+    """
+    rows = []
+    for device in devices:
+        if device.get("meets_requirement"):
+            continue
+        capability = device.get("capability_hours")
+        action, reason = _recommended_action(device, required_hours, i18n)
+        rows.append({
+            "name": device["name"],
+            "capability_hours": capability,
+            "shortfall_hours": (required_hours - capability) if capability is not None else None,
+            "action": action,
+            "reason": reason,
+        })
+    return rows
 
 
 def _capability_summary(devices: list, required_hours: float, language: str) -> dict:
@@ -740,6 +764,7 @@ def build_report_data(loc, required_hours, results, overall, user_name, user_org
     # pages that follow.
     devices.sort(key=_device_sort_key)
     _attach_gauge_fields(devices, float(required_hours))
+    recommendations = _build_recommendations(devices, float(required_hours), i18n)
 
     total = len(devices)
     title, text, overall_label = _overall_case(pass_count, near_count, fail_count, total, language)
@@ -800,7 +825,8 @@ def build_report_data(loc, required_hours, results, overall, user_name, user_org
             ],
         })
 
-    total_pages = 5 + len(devices)
+    # The recommendations page only exists when something falls short.
+    total_pages = 5 + len(devices) + (1 if recommendations else 0)
 
     return {
         "language": language,
@@ -827,6 +853,7 @@ def build_report_data(loc, required_hours, results, overall, user_name, user_org
         # end label it duplicates.
         **_requirement_label_placement(float(required_hours)),
         "devices_meeting_requirement": sum(1 for d in devices if d.get("meets_requirement")),
+        "recommendations": recommendations,
         # The "365 days / 24 hrs" claim is only true when no device runs
         # its battery down at any point in the year. Gate it on that
         # rather than printing it unconditionally.

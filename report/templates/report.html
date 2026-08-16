@@ -115,7 +115,6 @@
                 {% if report.show_axis_end_label %}<span class="gauge-axis-end">24h</span>{% endif %}
               </div>
             </div>
-            <div class="gauge-tag gauge-tag-head">{{ report.i18n['report.reaches_hours'] | replace('{hours}', report.requirement_hours_label) }}</div>
           </div>
 
           {% for device in report.devices %}
@@ -132,7 +131,6 @@
                 <div class="gauge-req-tick" style="left: {{ '%.4f'|format(report.requirement_pct) }}%;"></div>
               </div>
             </div>
-            <div class="gauge-tag">{% if device.shortfall_tag %}{{ device.shortfall_tag }}{% endif %}</div>
           </div>
           {% endfor %}
         </div>
@@ -278,16 +276,25 @@
       {% include 'partials/_aging_page.html' %}
     {% endif %}
 
+    {# Remedies sit near the end, after the reader has the per-device
+       detail needed to interpret them - not on page 1, where a column of
+       fixes reads as a list of faults. Only rendered when something
+       actually falls short. #}
+    {% set rec_offset = 1 if report.recommendations else 0 %}
+    {% if report.recommendations %}
+      {% include 'partials/_recommendations_page.html' %}
+    {% endif %}
+
     <section class="report-page methodology-page">
       {% include 'partials/_header.html' %}
       {% include 'partials/_methodology_block.html' %}
-      <div class="page-footer"><span>{{ report.footer_note }}</span><span>{{ report.i18n['report.page'] }} {{ 4 + report.devices|length + aging_offset }} of {{ report.total_pages }}</span></div>
+      <div class="page-footer"><span>{{ report.footer_note }}</span><span>{{ report.i18n['report.page'] }} {{ 4 + report.devices|length + aging_offset + rec_offset }} of {{ report.total_pages }}</span></div>
     </section>
 
     <section class="report-page methodology-page">
       {% include 'partials/_header.html' %}
       {% include 'partials/_methodology_definitions.html' %}
-      <div class="page-footer"><span>{{ report.footer_note }}</span><span>{{ report.i18n['report.page'] }} {{ 5 + report.devices|length + aging_offset }} of {{ report.total_pages }}</span></div>
+      <div class="page-footer"><span>{{ report.footer_note }}</span><span>{{ report.i18n['report.page'] }} {{ 5 + report.devices|length + aging_offset + rec_offset }} of {{ report.total_pages }}</span></div>
     </section>
   </main>
 </body>

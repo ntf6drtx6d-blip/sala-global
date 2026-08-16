@@ -294,6 +294,107 @@ def _device_sort_key(device: dict) -> tuple:
     return (_DEVICE_GROUP_OTHER, 0, 0, device.get("name", ""))
 
 
+# How each kind of fixture is actually used, which decides whether its
+# operating hours fall in darkness or follow traffic across the whole day.
+#
+#   darkness  - only needed once it is dark (runway, approach, taxiway, WDI)
+#   movement  - follows aircraft movements, so runs day and night (PAPI, RGL)
+#   excluded  - intensity must not be proposed: obstruction lighting is fixed
+#               by standard, and guidance signs / TLOF / FATO are pending
+#               confirmed duty levels from S4GA.
+_LOW_VIS_SHARE = 0.10        # share of darkness assumed at full brilliancy
+_DARKNESS_TYPICAL_PCT = 10.0
+_FULL_PCT = 100.0
+_RGL_NIGHT_PCT = 30.0
+
+
+def _profile_class(device: dict) -> str:
+    code = str(device.get("device_code") or "").upper()
+    variant = str(device.get("lamp_variant") or "").lower()
+
+    # Obstruction lighting intensity is set by the applicable standard, so
+    # it must never be offered as an adjustable lever - unlike the cases
+    # below, which are merely awaiting confirmed duty levels.
+    if "obstruction" in variant:
+        return "fixed"
+    if "tlof" in variant or "fato" in variant or code.startswith("SIGN-"):
+        return "excluded"
+    if code in {"PAPI", "A-PAPI", "RGL"}:
+        return "movement"
+    return "darkness"
+
+
+def _daylight_hours_at(lat: float, month_idx: int) -> float | None:
+    try:
+        from core.simulate import _estimate_daylight_hours_by_month
+
+        values = _estimate_daylight_hours_by_month(float(lat))
+        return float(values[max(0, min(11, int(month_idx)))])
+    except Exception:
+        return None
+
+
+def _proposed_profile(device: dict, required_hours: float, lat: float) -> dict | None:
+    """A mixed-intensity profile that would let this device reach the
+    requested hours without changing hardware, or None if none exists.
+
+    The model is exact rather than estimated: the daily energy budget in
+    core/simulate.py does not depend on the load, and power scales
+    linearly with intensity, so hours x intensity is a constant. That
+    makes the average intensity needed solvable directly, and the
+    day/night split then determines whether a real profile can deliver it.
+    """
+    if not device.get("supports_intensity_adjustment"):
+        return None
+    if _profile_class(device) in ("excluded", "fixed"):
+        return None
+
+    capability = device.get("capability_hours")
+    current_pct = float(device.get("effective_intensity_pct") or 100.0)
+    if not capability or capability <= 0 or current_pct <= 0 or required_hours <= 0:
+        return None
+
+    daylight = _daylight_hours_at(lat, device.get("weakest_month_idx", 0))
+    if daylight is None:
+        return None
+    darkness = max(0.0, 24.0 - daylight)
+
+    if _profile_class(device) == "movement":
+        # Traffic follows the clock, so the daylight share of any operating
+        # window is simply the daylight share of the day. No airport
+        # schedule is assumed.
+        day_share = daylight / 24.0
+        night_pct = _RGL_NIGHT_PCT if str(device.get("device_code") or "").upper() == "RGL" else _DARKNESS_TYPICAL_PCT
+    else:
+        # Darkness-driven: fills the night first; only hours beyond the
+        # night's length spill into daylight, at full brilliancy.
+        night_hours = min(required_hours, darkness)
+        day_share = max(0.0, (required_hours - night_hours) / required_hours)
+        # Within darkness, most of the time at the low step, a small share
+        # at full for poor visibility.
+        night_pct = (1.0 - _LOW_VIS_SHARE) * _DARKNESS_TYPICAL_PCT + _LOW_VIS_SHARE * _FULL_PCT
+
+    proposed_pct = day_share * _FULL_PCT + (1.0 - day_share) * night_pct
+    if proposed_pct <= 0 or proposed_pct >= current_pct:
+        return None  # no saving available
+
+    reachable = capability * (current_pct / proposed_pct)
+    if reachable < required_hours - 1e-6:
+        return None  # even this profile cannot close the gap
+
+    return {
+        "day_share_pct": day_share * 100.0,
+        "night_share_pct": (1.0 - day_share) * 100.0,
+        "night_pct": night_pct,
+        "effective_pct": proposed_pct,
+        "current_pct": current_pct,
+        "reachable_hours": reachable,
+        "daylight_hours": daylight,
+        "typical_pct": _DARKNESS_TYPICAL_PCT,
+        "low_vis_share_pct": _LOW_VIS_SHARE * 100.0,
+    }
+
+
 def _recommended_action(r: dict, required_hours: float, i18n: dict) -> tuple:
     """What would actually close the gap for a device that falls short,
     returned as (action, reason).
@@ -311,7 +412,37 @@ def _recommended_action(r: dict, required_hours: float, i18n: dict) -> tuple:
     """
     lower_intensity = (i18n["report.rec_lower_intensity"], i18n["report.rec_reason_builtin"])
 
+    # Profile first: a configuration change costs nothing, so it is only
+    # right to name hardware once no achievable profile can close the gap.
+    profile = r.get("proposed_profile")
+    if profile:
+        if profile["day_share_pct"] < 1.0:
+            # Night-only equipment: state it the way an operator sets it,
+            # rather than as a mix with a zero daytime share.
+            action = (
+                i18n["report.rec_darkness_profile"]
+                .replace("{typical}", f"{profile['typical_pct']:.0f}")
+                .replace("{lowvis}", f"{profile['low_vis_share_pct']:.0f}")
+            )
+        else:
+            action = (
+                i18n["report.rec_mixed_profile"]
+                .replace("{day_share}", f"{profile['day_share_pct']:.0f}")
+                .replace("{night_share}", f"{profile['night_share_pct']:.0f}")
+                .replace("{night_pct}", f"{profile['night_pct']:.0f}")
+            )
+        return (
+            action,
+            i18n["report.rec_reason_profile"]
+            .replace("{hours}", f"{profile['reachable_hours']:.1f}")
+            .replace("{daylight}", f"{profile['daylight_hours']:.1f}"),
+        )
+
     if str(r.get("system_type_raw") or r.get("system_type") or "") != "external_engine":
+        # Obstruction lighting must keep its specified intensity, so the
+        # only remaining lever is the operating time itself.
+        if _profile_class(r) == "fixed":
+            return (i18n["report.rec_reduce_hours"], i18n["report.rec_reason_fixed_intensity"])
         return lower_intensity
 
     from core.catalog import get_cached_runtime_catalog
@@ -408,7 +539,7 @@ def _requirement_label_placement(required_hours: float) -> dict:
     }
 
 
-def _attach_gauge_fields(devices: list, required_hours: float) -> None:
+def _attach_gauge_fields(devices: list, required_hours: float, lat: float = 0.0) -> None:
     """Percentages for page 1's 0-24h gauge, computed per device from real
     simulated hours - never carried over from a design mock.
 
@@ -432,6 +563,7 @@ def _attach_gauge_fields(devices: list, required_hours: float) -> None:
         device["guaranteed_pct"] = guaranteed_pct
         device["reserve_pct"] = reserve_pct
         device["meets_requirement"] = meets
+        device["proposed_profile"] = None if meets else _proposed_profile(device, required_hours, lat)
 
 
 def _build_recommendations(devices: list, required_hours: float, i18n: dict) -> list:
@@ -713,6 +845,8 @@ def build_report_data(loc, required_hours, results, overall, user_name, user_org
             "capability_hours": _capability_hours(r),
             "device_code": r.get("device_code", ""),
             "lamp_variant": r.get("lamp_variant"),
+            "effective_intensity_pct": float(r.get("effective_intensity_pct", 100.0) or 100.0),
+            "supports_intensity_adjustment": bool(r.get("supports_intensity_adjustment")),
             "system_type_raw": r.get("system_type", ""),
             "engine_key": r.get("engine_key"),
             "battery_mode": r.get("battery_mode", "Std"),
@@ -773,7 +907,7 @@ def build_report_data(loc, required_hours, results, overall, user_name, user_org
     # a stable order also keeps page 1's chart aligned with the device
     # pages that follow.
     devices.sort(key=_device_sort_key)
-    _attach_gauge_fields(devices, float(required_hours))
+    _attach_gauge_fields(devices, float(required_hours), float(loc.get("lat", 0) or 0))
     recommendations = _build_recommendations(devices, float(required_hours), i18n)
 
     total = len(devices)

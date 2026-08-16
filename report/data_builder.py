@@ -333,8 +333,18 @@ def _recommended_action(r: dict, required_hours: float, i18n: dict) -> tuple:
     storage_is_short = autonomy is not None and float(autonomy) < float(required_hours) - 1e-6
     can_extend = str(r.get("battery_mode") or "Std") == "Std" and engine.get("batt_ext")
 
+    def _extended_battery():
+        # Quote the actual capacities rather than a bare "extended
+        # battery", so the reader can see how much it changes.
+        return (
+            i18n["report.rec_extended_battery"]
+            .replace("{ext}", f"{float(engine['batt_ext']):.0f}")
+            .replace("{std}", f"{float(engine.get('batt') or 0):.0f}"),
+            i18n["report.rec_reason_storage"],
+        )
+
     if storage_is_short and can_extend:
-        return (i18n["report.rec_extended_battery"], i18n["report.rec_reason_storage"])
+        return _extended_battery()
 
     for candidate in sorted(engines.values(), key=lambda e: float(e.get("pv") or 0)):
         if float(candidate.get("pv") or 0) > float(engine.get("pv") or 0):
@@ -346,7 +356,7 @@ def _recommended_action(r: dict, required_hours: float, i18n: dict) -> tuple:
 
     # Already on the largest engine.
     if can_extend:
-        return (i18n["report.rec_extended_battery"], i18n["report.rec_reason_storage"])
+        return _extended_battery()
     return lower_intensity
 
 

@@ -312,13 +312,15 @@ def _profile_class(device: dict) -> str:
     code = str(device.get("device_code") or "").upper()
     variant = str(device.get("lamp_variant") or "").lower()
 
-    # Obstruction lighting intensity is set by the applicable standard, so
-    # it must never be offered as an adjustable lever - unlike the cases
-    # below, which are merely awaiting confirmed duty levels.
+    # Two different reasons a device has no intensity lever at all:
+    # obstruction lighting must hold the intensity set by the applicable
+    # standard, while guidance signs simply have no dimming control.
+    # TLOF and FATO behave like runway lighting and fall through to
+    # "darkness" below.
     if "obstruction" in variant:
-        return "fixed"
-    if "tlof" in variant or "fato" in variant or code.startswith("SIGN-"):
-        return "excluded"
+        return "fixed_standard"
+    if code.startswith("SIGN-"):
+        return "no_dimming"
     if code in {"PAPI", "A-PAPI", "RGL"}:
         return "movement"
     return "darkness"
@@ -346,7 +348,7 @@ def _proposed_profile(device: dict, required_hours: float, lat: float) -> dict |
     """
     if not device.get("supports_intensity_adjustment"):
         return None
-    if _profile_class(device) in ("excluded", "fixed"):
+    if _profile_class(device) in ("fixed_standard", "no_dimming"):
         return None
 
     capability = device.get("capability_hours")
@@ -395,6 +397,18 @@ def _proposed_profile(device: dict, required_hours: float, lat: float) -> dict |
     }
 
 
+def _no_intensity_lever(r: dict, i18n: dict):
+    """Recommendation for devices that cannot be dimmed at all, or None if
+    intensity is available. Obstruction lighting must hold the intensity
+    set by the standard; guidance signs have no dimming control at all."""
+    cls = _profile_class(r)
+    if cls == "fixed_standard":
+        return (i18n["report.rec_reduce_hours"], i18n["report.rec_reason_fixed_intensity"])
+    if cls == "no_dimming":
+        return (i18n["report.rec_reduce_hours"], i18n["report.rec_reason_no_dimming"])
+    return None
+
+
 def _recommended_action(r: dict, required_hours: float, i18n: dict) -> tuple:
     """What would actually close the gap for a device that falls short,
     returned as (action, reason).
@@ -438,12 +452,12 @@ def _recommended_action(r: dict, required_hours: float, i18n: dict) -> tuple:
             .replace("{daylight}", f"{profile['daylight_hours']:.1f}"),
         )
 
+    no_intensity_lever = _no_intensity_lever(r, i18n)
+
     if str(r.get("system_type_raw") or r.get("system_type") or "") != "external_engine":
-        # Obstruction lighting must keep its specified intensity, so the
-        # only remaining lever is the operating time itself.
-        if _profile_class(r) == "fixed":
-            return (i18n["report.rec_reduce_hours"], i18n["report.rec_reason_fixed_intensity"])
-        return lower_intensity
+        # No hardware option on a built-in fixture, so if intensity is also
+        # unavailable the operating time is all that is left.
+        return no_intensity_lever or lower_intensity
 
     from core.catalog import get_cached_runtime_catalog
 
@@ -488,7 +502,9 @@ def _recommended_action(r: dict, required_hours: float, i18n: dict) -> tuple:
     # Already on the largest engine.
     if can_extend:
         return _extended_battery()
-    return lower_intensity
+    # Nothing left to upgrade: only suggest dimming if the device can
+    # actually be dimmed.
+    return no_intensity_lever or lower_intensity
 
 
 def _capability_hours(r: dict) -> float | None:

@@ -368,13 +368,16 @@ def _proposed_profile(device: dict, required_hours: float, lat: float) -> dict |
         day_share = daylight / 24.0
         night_pct = _RGL_NIGHT_PCT if str(device.get("device_code") or "").upper() == "RGL" else _DARKNESS_TYPICAL_PCT
     else:
-        # Darkness-driven: fills the night first; only hours beyond the
-        # night's length spill into daylight, at full brilliancy.
+        # Darkness-driven kit only runs in daylight when visibility is
+        # poor - and that is exactly when it needs full brilliancy. So the
+        # low-visibility allowance IS its daytime share, which keeps the
+        # recommendation in the same Day/Night terms the configurator uses
+        # and lets the reader enter it directly. Hours beyond the night's
+        # length also spill into daylight at full brilliancy.
         night_hours = min(required_hours, darkness)
-        day_share = max(0.0, (required_hours - night_hours) / required_hours)
-        # Within darkness, most of the time at the low step, a small share
-        # at full for poor visibility.
-        night_pct = (1.0 - _LOW_VIS_SHARE) * _DARKNESS_TYPICAL_PCT + _LOW_VIS_SHARE * _FULL_PCT
+        spill = max(0.0, (required_hours - night_hours) / required_hours)
+        day_share = max(_LOW_VIS_SHARE, spill)
+        night_pct = _DARKNESS_TYPICAL_PCT
 
     proposed_pct = day_share * _FULL_PCT + (1.0 - day_share) * night_pct
     if proposed_pct <= 0 or proposed_pct >= current_pct:
@@ -384,19 +387,19 @@ def _proposed_profile(device: dict, required_hours: float, lat: float) -> dict |
     # has to be clamped - otherwise a deep dimming step produces absurd
     # claims (observed in a live report: "reaches 51.7 h/day").
     reachable = min(24.0, capability * (current_pct / proposed_pct))
-    if reachable < required_hours - 1e-6:
-        return None  # even this profile cannot close the gap
 
     return {
         "day_share_pct": day_share * 100.0,
+        "day_intensity_pct": _FULL_PCT,
         "night_share_pct": (1.0 - day_share) * 100.0,
         "night_pct": night_pct,
         "effective_pct": proposed_pct,
         "current_pct": current_pct,
         "reachable_hours": reachable,
         "daylight_hours": daylight,
-        "typical_pct": _DARKNESS_TYPICAL_PCT,
-        "low_vis_share_pct": _LOW_VIS_SHARE * 100.0,
+        # Kept even when it falls short, so it can be recommended together
+        # with a hardware change instead of being discarded.
+        "sufficient": reachable >= required_hours - 1e-6,
     }
 
 
@@ -412,67 +415,50 @@ def _no_intensity_lever(r: dict, i18n: dict):
     return None
 
 
-def _recommended_action(r: dict, required_hours: float, i18n: dict) -> tuple:
-    """What would actually close the gap for a device that falls short,
-    returned as (action, reason).
+def _profile_text(profile: dict, i18n: dict) -> str:
+    """Phrased the way the configurator states it, so the reader can enter
+    it straight back into the study: the input screen labels these fields
+    Day time share / Day intensity / Night time share / Night intensity,
+    and the device pages already print the same "Operating time split"
+    sentence."""
+    return (
+        i18n["report.rec_profile_split"]
+        .replace("{day_share}", f"{profile['day_share_pct']:.0f}")
+        .replace("{day_pct}", f"{profile['day_intensity_pct']:.0f}")
+        .replace("{night_share}", f"{profile['night_share_pct']:.0f}")
+        .replace("{night_pct}", f"{profile['night_pct']:.0f}")
+    )
+
+
+def _hardware_action(r: dict, required_hours: float, i18n: dict):
+    """The equipment change for a device that falls short, or None when no
+    hardware option exists.
 
     Only names things that exist: the solar engine tiers by their real
     product names, and the extended-battery option the configurator itself
     offers as a battery mode. It deliberately does NOT concatenate the two
-    into a product name like "SE COMPACT Extended", which is not a product
-    S4GA sells.
+    into a product name like "SE COMPACT Extended", which S4GA does not
+    sell.
 
     Which lever helps depends on what is binding. If the battery alone
     already carries past the requested hours, storage is not the
     constraint - the system cannot recharge that much per day - and more
     battery would change almost nothing; more panel is what is needed.
     """
-    lower_intensity = (i18n["report.rec_lower_intensity"], i18n["report.rec_reason_builtin"])
-
-    # Profile first: a configuration change costs nothing, so it is only
-    # right to name hardware once no achievable profile can close the gap.
-    profile = r.get("proposed_profile")
-    if profile:
-        if profile["day_share_pct"] < 1.0:
-            # Night-only equipment: state it the way an operator sets it,
-            # rather than as a mix with a zero daytime share.
-            action = (
-                i18n["report.rec_darkness_profile"]
-                .replace("{typical}", f"{profile['typical_pct']:.0f}")
-                .replace("{lowvis}", f"{profile['low_vis_share_pct']:.0f}")
-            )
-        else:
-            action = (
-                i18n["report.rec_mixed_profile"]
-                .replace("{day_share}", f"{profile['day_share_pct']:.0f}")
-                .replace("{night_share}", f"{profile['night_share_pct']:.0f}")
-                .replace("{night_pct}", f"{profile['night_pct']:.0f}")
-            )
-        return (
-            action,
-            i18n["report.rec_reason_profile"]
-            .replace("{hours}", f"{profile['reachable_hours']:.1f}")
-            .replace("{daylight}", f"{profile['daylight_hours']:.1f}"),
-        )
-
-    no_intensity_lever = _no_intensity_lever(r, i18n)
-
     if str(r.get("system_type_raw") or r.get("system_type") or "") != "external_engine":
-        # No hardware option on a built-in fixture, so if intensity is also
-        # unavailable the operating time is all that is left.
-        return no_intensity_lever or lower_intensity
+        return None
 
     from core.catalog import get_cached_runtime_catalog
 
     try:
         _devices, engines = get_cached_runtime_catalog()
     except Exception:
-        return lower_intensity
+        return None
 
     engine_key = r.get("engine_key")
     engine = engines.get(engine_key) if engine_key else None
     if not engine:
-        return lower_intensity
+        return None
 
     autonomy = r.get("battery_autonomy_hours")
     # Tolerance so a battery that exactly covers the requirement isn't
@@ -510,9 +496,48 @@ def _recommended_action(r: dict, required_hours: float, i18n: dict) -> tuple:
         return _extended_battery(
             "report.rec_reason_storage" if storage_is_short else "report.rec_reason_largest_engine"
         )
-    # Nothing left to upgrade: only suggest dimming if the device can
-    # actually be dimmed.
-    return no_intensity_lever or lower_intensity
+    return None
+
+
+def _recommended_action(r: dict, required_hours: float, i18n: dict) -> tuple:
+    """What would actually close the gap, returned as (action, reason).
+
+    Profile first, because a configuration change costs nothing. When the
+    profile alone cannot get there, the two are recommended together
+    rather than sending the reader away with only half the answer - a
+    real Madrid study needed both, and the hardware-only advice left the
+    customer to discover that by re-running.
+    """
+    lower_intensity = (i18n["report.rec_lower_intensity"], i18n["report.rec_reason_builtin"])
+    profile = r.get("proposed_profile")
+    hardware = _hardware_action(r, required_hours, i18n)
+
+    if profile and profile.get("sufficient"):
+        return (
+            _profile_text(profile, i18n),
+            i18n["report.rec_reason_profile"]
+            .replace("{hours}", f"{profile['reachable_hours']:.1f}")
+            .replace("{daylight}", f"{profile['daylight_hours']:.1f}"),
+        )
+
+    if profile and hardware:
+        # Neither step reaches the requirement on its own. The profile's
+        # effect is exact, so it can be quoted; the combined total cannot
+        # be, because the hardware's effect needs re-simulating.
+        return (
+            i18n["report.rec_combined"]
+            .replace("{hardware}", hardware[0])
+            .replace("{profile}", _profile_text(profile, i18n)),
+            i18n["report.rec_reason_combined"]
+            .replace("{profile_hours}", f"{profile['reachable_hours']:.1f}")
+            .replace("{required}", f"{float(required_hours):g}"),
+        )
+
+    if hardware:
+        return hardware
+
+    # No hardware option: only suggest dimming if the device can be dimmed.
+    return _no_intensity_lever(r, i18n) or lower_intensity
 
 
 def _capability_hours(r: dict) -> float | None:

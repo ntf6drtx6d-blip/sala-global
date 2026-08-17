@@ -380,7 +380,10 @@ def _proposed_profile(device: dict, required_hours: float, lat: float) -> dict |
     if proposed_pct <= 0 or proposed_pct >= current_pct:
         return None  # no saving available
 
-    reachable = capability * (current_pct / proposed_pct)
+    # A day cannot hold more than 24 h of operation, so the scaled figure
+    # has to be clamped - otherwise a deep dimming step produces absurd
+    # claims (observed in a live report: "reaches 51.7 h/day").
+    reachable = min(24.0, capability * (current_pct / proposed_pct))
     if reachable < required_hours - 1e-6:
         return None  # even this profile cannot close the gap
 
@@ -478,14 +481,14 @@ def _recommended_action(r: dict, required_hours: float, i18n: dict) -> tuple:
     storage_is_short = autonomy is not None and float(autonomy) < float(required_hours) - 1e-6
     can_extend = str(r.get("battery_mode") or "Std") == "Std" and engine.get("batt_ext")
 
-    def _extended_battery():
+    def _extended_battery(reason_key="report.rec_reason_storage"):
         # Quote the actual capacities rather than a bare "extended
         # battery", so the reader can see how much it changes.
         return (
             i18n["report.rec_extended_battery"]
             .replace("{ext}", f"{float(engine['batt_ext']):.0f}")
             .replace("{std}", f"{float(engine.get('batt') or 0):.0f}"),
-            i18n["report.rec_reason_storage"],
+            i18n[reason_key],
         )
 
     if storage_is_short and can_extend:
@@ -499,9 +502,14 @@ def _recommended_action(r: dict, required_hours: float, i18n: dict) -> tuple:
                 i18n["report.rec_reason_recharge"],
             )
 
-    # Already on the largest engine.
+    # Already on the largest engine, so the extended battery is the only
+    # hardware left - regardless of whether storage was the binding limit.
+    # Saying "the battery does not cover the requested hours" here would be
+    # false whenever it does; explain it as the last remaining upgrade.
     if can_extend:
-        return _extended_battery()
+        return _extended_battery(
+            "report.rec_reason_storage" if storage_is_short else "report.rec_reason_largest_engine"
+        )
     # Nothing left to upgrade: only suggest dimming if the device can
     # actually be dimmed.
     return no_intensity_lever or lower_intensity

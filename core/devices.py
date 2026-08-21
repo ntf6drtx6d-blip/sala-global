@@ -40,6 +40,32 @@ SOLAR_ENGINES = {
         "fixed": False,
         "standby_power_w": None,
     },
+    # Fills the step between SE COMPACT and SE MAX: a load needing more
+    # daily energy than COMPACT can recharge, but nowhere near 720 Wp,
+    # previously had to buy MAX and leave half the panel unused. Carries
+    # SE MAX's battery on roughly half its panel, so the battery/panel
+    # ratio (8.6) matches MICRO/MINI/COMPACT rather than MAX (4.2) - it is
+    # the storage-heavy option: long ride-through rather than high daily
+    # throughput.
+    #
+    # Deliberately NOT the default engine for any device; it has to be
+    # chosen explicitly.
+    #
+    # NOTE: no extended-battery option is declared, because none has been
+    # confirmed for this engine. Add batt_ext only once S4GA confirms it.
+    "se_optima": {
+        "key": "se_optima",
+        "name": "SE-350 Solar Engine Optima",
+        "short_name": "SE-350 OPTIMA",
+        "pv": 350,
+        "batt": 3000,
+        "battery_type": "Lead Acid",
+        "cutoff_pct": 30,
+        "batt_ext": None,
+        "tilt_options": [15, 35, 55],
+        "fixed": False,
+        "standby_power_w": None,
+    },
     "se_max": {
         "key": "se_max",
         "name": "Solar Engine Max",
@@ -133,7 +159,7 @@ DEVICES = {
         "system_type": "external_engine",
         "default_power": 5.0,
         "default_engine": "se_micro",
-        "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_max"],
+        "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_optima", "se_max"],
         "supports_intensity_adjustment": False,
         "standby_power_w": None,
     },
@@ -144,7 +170,7 @@ DEVICES = {
         "system_type": "external_engine",
         "default_power": 320.0,
         "default_engine": "se_max",
-        "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_max"],
+        "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_optima", "se_max"],
         "supports_intensity_adjustment": True,
         "standby_power_w": None,
     },
@@ -155,7 +181,7 @@ DEVICES = {
         "system_type": "external_engine",
         "default_power": 160.0,
         "default_engine": "se_max",
-        "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_max"],
+        "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_optima", "se_max"],
         "supports_intensity_adjustment": True,
         "standby_power_w": None,
     },
@@ -166,7 +192,7 @@ DEVICES = {
         "system_type": "external_engine",
         "default_power": 3.0,
         "default_engine": "se_mini",
-        "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_max"],
+        "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_optima", "se_max"],
         "supports_intensity_adjustment": False,
         "standby_power_w": None,
     },
@@ -177,7 +203,7 @@ DEVICES = {
         "system_type": "external_engine",
         "default_power": 10.0,
         "default_engine": "se_mini",
-        "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_max"],
+        "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_optima", "se_max"],
         "supports_intensity_adjustment": False,
         "standby_power_w": None,
     },
@@ -188,7 +214,7 @@ DEVICES = {
         "system_type": "external_engine",
         "default_power": 35.0,
         "default_engine": "se_compact",
-        "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_max"],
+        "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_optima", "se_max"],
         "supports_intensity_adjustment": False,
         "standby_power_w": None,
     },
@@ -199,7 +225,7 @@ DEVICES = {
         "system_type": "external_engine",
         "default_power": 22.0,
         "default_engine": "se_compact",
-        "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_max"],
+        "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_optima", "se_max"],
         "supports_intensity_adjustment": False,
         "standby_power_w": None,
     },
@@ -210,7 +236,7 @@ DEVICES = {
         "system_type": "external_engine",
         "default_power": 15.0,
         "default_engine": "se_compact",
-        "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_max"],
+        "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_optima", "se_max"],
         "supports_intensity_adjustment": False,
         "standby_power_w": None,
     },

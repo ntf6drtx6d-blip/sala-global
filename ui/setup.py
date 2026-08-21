@@ -1083,9 +1083,25 @@ def render_setup(disabled=False):
                                 )
                             )
                             st.caption(t("ui.quantity_connected_note", lang))
-                        compatible = dspec["compatible_engines"]
+                        # Offer every engine in the catalogue rather than the
+                        # device row's compatible_engine_codes. Those codes are
+                        # written once when a device is first synced to the
+                        # database and never updated (the sync is ON CONFLICT
+                        # DO NOTHING), so an engine added later - SE OPTIMA -
+                        # would never appear against any existing device, no
+                        # matter how many times the app is redeployed.
+                        #
+                        # This restricts nothing that was actually restricted:
+                        # every device in the catalogue already lists every
+                        # engine. Sorted by panel size so the list reads from
+                        # smallest to largest.
+                        compatible = sorted(
+                            SOLAR_ENGINES.keys(),
+                            key=lambda k: float(SOLAR_ENGINES[k].get("pv") or 0),
+                        )
                         if engine_key not in compatible:
-                            engine_key = dspec["default_engine"]
+                            fallback = dspec.get("default_engine")
+                            engine_key = fallback if fallback in compatible else compatible[0]
 
                         engine_key = st.selectbox(
                             t("ui.solar_engine", lang),

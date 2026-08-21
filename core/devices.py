@@ -40,28 +40,27 @@ SOLAR_ENGINES = {
         "fixed": False,
         "standby_power_w": None,
     },
-    # Fills the step between SE COMPACT and SE MAX: a load needing more
-    # daily energy than COMPACT can recharge, but nowhere near 720 Wp,
-    # previously had to buy MAX and leave half the panel unused. Carries
-    # SE MAX's battery on roughly half its panel, so the battery/panel
-    # ratio (8.6) matches MICRO/MINI/COMPACT rather than MAX (4.2) - it is
-    # the storage-heavy option: long ride-through rather than high daily
-    # throughput.
+    # Half of SE MAX in both dimensions. Read against SE COMPACT it is the
+    # recharge-focused sibling: near-identical storage (1320 vs 1440 Wh)
+    # with roughly double the panel, which is what a load limited by daily
+    # recharge rather than by storage actually needs.
+    #
+    # Its battery/panel ratio (3.7) sits close to SE MAX (4.2) rather than
+    # the panel-starved MICRO/MINI/COMPACT (7.8-8.6), so it is a balanced
+    # design: in a temperate worst month the panel and the battery run out
+    # at about the same point, with neither substantially wasted.
     #
     # Deliberately NOT the default engine for any device; it has to be
     # chosen explicitly.
-    #
-    # NOTE: no extended-battery option is declared, because none has been
-    # confirmed for this engine. Add batt_ext only once S4GA confirms it.
     "se_optima": {
         "key": "se_optima",
         "name": "SE-350 Solar Engine Optima",
         "short_name": "SE-350 OPTIMA",
-        "pv": 350,
-        "batt": 3000,
+        "pv": 360,
+        "batt": 1320,
         "battery_type": "Lead Acid",
         "cutoff_pct": 30,
-        "batt_ext": None,
+        "batt_ext": 2640,
         "tilt_options": [15, 35, 55],
         "fixed": False,
         "standby_power_w": None,

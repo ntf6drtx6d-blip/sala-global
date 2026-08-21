@@ -957,7 +957,16 @@ def render_setup(disabled=False):
                 battery_mode = saved_cfg.get("battery_mode", "Std")
                 display_label = _simulation_label(did, lamp_variant, DEVICES)
                 quantity = max(1, int(saved_cfg.get("quantity", 1) or 1))
-                quantity_enabled = system_type == "external_engine" and dspec.get("code") == "SP-200"
+                # Quantity means "N fixtures sharing one solar engine", which
+                # is true of any engine-based device. It used to be pinned to
+                # the SP-200 product code, so every inset light added later
+                # through Admin > Device database (Stop Bar Inset Light among
+                # them) was stuck at a single unit.
+                #
+                # Built-in fixtures are deliberately excluded: each carries
+                # its own panel and battery, so N of them are N independent
+                # systems and simulating one already answers for all.
+                quantity_enabled = system_type == "external_engine"
 
                 if render_device_config_note:
                     st.markdown(

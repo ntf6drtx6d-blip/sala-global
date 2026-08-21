@@ -54,8 +54,8 @@ SOLAR_ENGINES = {
     # chosen explicitly.
     "se_optima": {
         "key": "se_optima",
-        "name": "SE-350 Solar Engine Optima",
-        "short_name": "SE-350 OPTIMA",
+        "name": "Solar Engine Optima",
+        "short_name": "SE OPTIMA",
         "pv": 360,
         "batt": 1320,
         "battery_type": "Lead Acid",

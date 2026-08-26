@@ -982,8 +982,12 @@ def render_setup(disabled=False):
                     is_papi_family = dspec.get("code") in {"PAPI", "A-PAPI"}
                     default_intensity_mode = "mixed" if is_papi_family else "fixed"
                     default_share_pct = 70 if is_papi_family else 50
-                    default_intensity_a = 100 if is_papi_family else 30
-                    default_intensity_b = 10 if is_papi_family else 100
+                    # Day bright, night dim - for every device, not just the
+                    # PAPI family. Non-PAPI devices defaulted to the reverse
+                    # (day 30%, night 100%), which is backwards for anything
+                    # that runs mainly after dark.
+                    default_intensity_a = 100
+                    default_intensity_b = 10
                     intensity_mode = str(saved_cfg.get("intensity_mode", default_intensity_mode))
                     fixed_intensity_pct = int(round(_safe_float(saved_cfg.get("intensity_pct", 100), 100)))
                     mixed_share_pct = _safe_float(saved_cfg.get("mixed_share_pct", default_share_pct), default_share_pct)
@@ -1024,11 +1028,21 @@ def render_setup(disabled=False):
                                     disabled=disabled,
                                 )
                             with c3:
+                                # Rendered as a real (disabled) number input
+                                # rather than a bold markdown label over a
+                                # styled div: only a genuine widget gets
+                                # Streamlit's own label sizing and input
+                                # height, so this column now lines up with the
+                                # other three instead of sitting proud of them.
+                                # Deliberately unkeyed - this value is derived
+                                # from the day share, and a keyed widget would
+                                # hold its first value in session state and
+                                # stop tracking the slider next to it.
                                 night_share_pct = float(max(0.0, 100.0 - mixed_share_pct))
-                                st.markdown(f"**{t('ui.night_time_share', lang)}**")
-                                st.markdown(
-                                    f"<div class='readonly-number'>{night_share_pct:.2f}</div>",
-                                    unsafe_allow_html=True,
+                                st.number_input(
+                                    t("ui.night_time_share", lang),
+                                    value=night_share_pct,
+                                    disabled=True,
                                 )
                             with c4:
                                 mixed_intensity_b = st.selectbox(

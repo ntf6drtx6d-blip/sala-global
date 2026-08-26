@@ -1,4 +1,4 @@
-<section class="report-page aging-page">
+<section class="report-page aging-page{% if report.aging.compact %} compact{% endif %}{% if report.aging.dense %} dense{% endif %}">
   <style>
     /* The shared .status-pill CSS assumes a wide hero-page context
        (max-width: 55% of a full-width row) and wraps long labels like
@@ -37,11 +37,89 @@
     .aging-page .info-row {
       font-size: 9px;
     }
+    .aging-page .device-swatch {
+      /* Keys this row to its line in the capacity chart below, which has
+         no legend of its own. */
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      border-radius: 2px;
+      margin-right: 5px;
+      vertical-align: baseline;
+    }
+    .aging-page .fade-drivers {
+      text-align: center;
+    }
+    .aging-page .fade-drivers .chart-image {
+      display: inline-block;
+      width: auto;
+      height: auto;
+      max-width: 100%;
+      max-height: var(--fade-h);
+    }
     .aging-page .section-stack {
       gap: 8px;
     }
+    /* Four or more devices no longer fit this fixed A4 sheet at the
+       normal spacing, and .report-page is overflow:hidden, so the
+       methodology note at the bottom was being cut off with no sign that
+       anything was missing. The charts are already drawn shorter in this
+       case (see _aging_page's `compact` flag); this reclaims the rest
+       from table and card spacing rather than from font sizes. */
+    .aging-page.compact .aging-summary-table td,
+    .aging-page.compact .aging-summary-table th {
+      padding: 2px 6px;
+    }
+    .aging-page.compact .aging-summary-table .cell-sub {
+      font-size: 7.5px;
+      margin-top: 1px;
+    }
+    .aging-page.compact .aging-summary-table .status-pill {
+      font-size: 8px;
+      padding: 2px 5px;
+    }
+    .aging-page.compact .card {
+      padding: 8px 10px;
+    }
+    .aging-page.compact .section-stack {
+      gap: 6px;
+    }
+    .aging-page.compact .table-caption {
+      margin-bottom: 2px;
+    }
+    .aging-page .device-swatch {
+      /* Keys this row to its line in the capacity chart below, which has
+         no legend of its own. */
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      border-radius: 2px;
+      margin-right: 5px;
+      vertical-align: baseline;
+    }
+    .aging-page .fade-drivers {
+      text-align: center;
+    }
+    .aging-page .fade-drivers .chart-image {
+      display: inline-block;
+      width: auto;
+      height: auto;
+      max-width: 100%;
+      max-height: var(--fade-h);
+    }
+    .aging-page .section-stack {
+      /* Set from report.aging.fit_scale - see build_aging_page_data. */
+      transform: scale(var(--aging-fit, 1));
+      transform-origin: top left;
+      width: calc(100% / var(--aging-fit, 1));
+    }
     .aging-page .grid.two-col {
       gap: 8px;
+      /* Cards sized to their own content instead of stretching to match
+         the tallest cell. "Why this matters" holds a few lines of text and
+         was being pulled down to the height of the chart beside it, which
+         left most of the card empty. */
+      align-items: start;
     }
   </style>
   {% include 'partials/_header.html' %}
@@ -52,7 +130,7 @@
     </div>
   </div>
 
-  <div class="section-stack">
+  <div class="section-stack" style="--aging-fit: {{ '%.3f'|format(report.aging.fit_scale) }};">
     <div class="grid two-col page-break-avoid">
       <article class="card">
         <div class="section-title">{{ report.i18n['report.aging_why_title'] }}</div>
@@ -85,7 +163,7 @@
         <tbody>
           {% for row in report.aging.summary_rows %}
           <tr>
-            <td>{{ row.name }}</td>
+            <td><span class="device-swatch" style="background: {{ row.color }}"></span>{{ row.name }}</td>
             <td>{{ row.battery_type }}</td>
             {% for cell in [row.as_new, row.mid_life, row.end_of_horizon] %}
             <td>

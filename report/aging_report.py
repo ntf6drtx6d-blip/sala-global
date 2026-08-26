@@ -3,14 +3,15 @@
 # Phase-1 Battery Aging page - data builder, charts, and a standalone
 # renderer for review.
 #
-# NOT wired into report/report.py's default render_report_html() /
-# build_report_data() flow, and report/templates/report.html does not
-# include partials/_aging_page.html anywhere. This module exists to be
-# reviewed and tested on its own; hooking it into the live report is a
-# separate, deliberate step once the design is signed off.
+# This page IS part of the live report: report/report.py calls
+# build_aging_page_data() and report/templates/report.html includes
+# partials/_aging_page.html. render_aging_page_html_standalone() below is
+# a review harness for working on the page on its own.
 
 from __future__ import annotations
 
+import math
+import textwrap
 from pathlib import Path
 
 import jinja2
@@ -76,6 +77,7 @@ def build_aging_page_data(aging: dict, device_short_names: dict, report_i18n: di
 
         summary_rows.append({
             "name": name,
+            "color": DEVICE_LINE_COLORS[len(summary_rows) % len(DEVICE_LINE_COLORS)],
             "battery_type": device_aging["battery_type"],
             "dominant_fade_mechanism": device_aging["dominant_fade_mechanism"],
             "as_new": _checkpoint_cell(checkpoints, 0),
@@ -93,22 +95,48 @@ def build_aging_page_data(aging: dict, device_short_names: dict, report_i18n: di
             "cycle_share_pct": device_aging["cycle_fade_share_pct"],
         })
 
+    # This page is a single fixed A4 sheet and .report-page is
+    # overflow:hidden, so anything that does not fit is cut off with no
+    # sign that it is missing - in practice the methodology note at the
+    # bottom. Three settings keep it on the sheet as the device count
+    # grows, in increasing order of severity:
+    #   compact - shorter charts and tighter table/card spacing
+    #   dense   - shorter charts still
+    #   fit_scale - a visual scale applied to the whole content stack
+    # The chart heights are real figure heights rather than a CSS
+    # scale-down, so their axis and device labels keep their size.
+    compact = len(summary_rows) >= 2
+    dense = len(summary_rows) >= 5
+
+    # Past three devices every extra table row costs more height than the
+    # charts have left to give, so the content stack is scaled to fit. A
+    # transform is visual only and does not change layout height, which is
+    # exactly what is wanted here: the page still clips at its fixed
+    # height, and the scaled content simply finishes above that line.
+    # The slope is calibrated against measured page heights for one
+    # through eight devices; the floor guards against silly sizes if a
+    # study ever carries more.
+    fit_scale = max(0.65, min(1.0, 1.0 - 0.06 * max(0, len(summary_rows) - 3)))
+
     return {
         "avg_site_temp_c": aging["avg_site_temp_c"],
         "monthly_temps_c": aging["monthly_temps_c"],
         "summary_rows": summary_rows,
-        "temperature_chart_html": _monthly_temperature_chart(aging["monthly_temps_c"], i18n),
-        "capacity_chart_html": _capacity_trajectory_chart(trajectories, i18n),
-        "fade_driver_chart_html": _fade_driver_pie_charts(fade_breakdowns, i18n),
+        "compact": compact,
+        "dense": dense,
+        "fit_scale": fit_scale,
+        "temperature_chart_html": _monthly_temperature_chart(aging["monthly_temps_c"], i18n, compact, dense),
+        "capacity_chart_html": _capacity_trajectory_chart(trajectories, i18n, compact, dense),
+        "fade_driver_chart_html": _fade_driver_pie_charts(fade_breakdowns, i18n, compact, dense),
     }
 
 
-def _monthly_temperature_chart(monthly_temps_c, report_i18n) -> str:
+def _monthly_temperature_chart(monthly_temps_c, report_i18n, compact: bool = False, dense: bool = False) -> str:
     """Monthly average ambient temperature (PVGIS MRcalc, avtemp=1) across
     the year - gives the reader the seasonal context behind the single
     annual-average figure the calendar-aging formula actually uses.
     Sized for a half-width column so the page fits on one A4 sheet."""
-    fig, ax = plt.subplots(figsize=(3.5, 2.05))
+    fig, ax = plt.subplots(figsize=(3.5, (1.35 if dense else 1.55) if compact else 2.05))
     x = list(range(12))
 
     ax.plot(x, monthly_temps_c, color="#f97316", linewidth=1.8, marker="o", markersize=3.2, solid_capstyle="round")
@@ -135,14 +163,20 @@ def _monthly_temperature_chart(monthly_temps_c, report_i18n) -> str:
     return _chart_html_from_figure(fig)
 
 
-def _capacity_trajectory_chart(trajectories, report_i18n) -> str:
+def _capacity_trajectory_chart(trajectories, report_i18n, compact: bool = False, dense: bool = False) -> str:
     """Capacity retained (%) vs. age, one line per device. Kept on a
     shared, naturally bounded 0-100% axis deliberately - unlike blackout
     days/year, capacity retention is always comparable across devices
     regardless of how severely any one of them fails, so this stays
     readable even when devices differ wildly in severity. Sized for a
     half-width column so the page fits on one A4 sheet."""
-    fig, ax = plt.subplots(figsize=(3.5, 2.5))
+    # No legend on the chart itself. It listed one full device name per
+    # line above the plot, which repeated the summary table directly above
+    # and grew without bound - at five devices it had squashed the plot to
+    # a sliver, and widening it to two columns instead stretched the PNG
+    # past the figure width. The table now carries a colour swatch per
+    # row and serves as the key, so all of that height goes to the plot.
+    fig, ax = plt.subplots(figsize=(3.5, (1.55 if dense else 1.75) if compact else 2.1))
 
     for idx, traj in enumerate(trajectories):
         color = DEVICE_LINE_COLORS[idx % len(DEVICE_LINE_COLORS)]
@@ -171,22 +205,33 @@ def _capacity_trajectory_chart(trajectories, report_i18n) -> str:
     ax.grid(axis="y", color="#dbe3ef", linewidth=0.6)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-    ax.legend(loc="lower left", frameon=False, fontsize=6.5, ncol=1, bbox_to_anchor=(0, 1.03))
-    fig.tight_layout(rect=[0, 0, 1, 0.80])
+    fig.tight_layout()
 
     return _chart_html_from_figure(fig)
 
 
-def _fade_driver_pie_charts(fade_breakdowns, report_i18n) -> str:
+def _fade_driver_pie_charts(fade_breakdowns, report_i18n, compact: bool = False, dense: bool = False) -> str:
     """One small pie per device: what share of its annual capacity fade
     comes from temperature (calendar aging) vs. daily cycling (cycle
     aging). A 2-slice pie is a natural fit for a single whole split into
     exactly two named causes, and small multiples keep it readable even
     with several devices. Sized for a half-width column."""
+    # Wrap into rows of at most three rather than one long row: in a
+    # half-width column, a single row of pies shrinks each one until the
+    # device names are unreadable as soon as there are more than a few
+    # devices.
     n = max(1, len(fade_breakdowns))
-    fig, axes = plt.subplots(1, n, figsize=(1.15 * n, 1.5))
-    if n == 1:
-        axes = [axes]
+    ncols = min(n, 3)
+    nrows = math.ceil(n / ncols)
+    wrap_width = 22 if ncols == 1 else (18 if ncols == 2 else 15)
+    # Fixed 3.5in width, matching the two sibling charts on this page.
+    # The card scales whatever it is given up to the column width, so a
+    # narrower figure is simply upscaled - which is what used to blow the
+    # pie labels and legend up to roughly twice the size of every other
+    # chart's text on the page.
+    row_height = (1.00 if dense else 1.15) if compact else 1.45
+    fig, axes = plt.subplots(nrows, ncols, figsize=(3.5, row_height * nrows))
+    axes = list(axes.flat) if hasattr(axes, "flat") else [axes]
 
     colors = ["#f97316", "#2563eb"]  # temperature, cycling
     for ax, breakdown in zip(axes, fade_breakdowns):
@@ -196,20 +241,40 @@ def _fade_driver_pie_charts(fade_breakdowns, report_i18n) -> str:
             colors=colors,
             autopct=lambda p: f"{p:.0f}" if p >= 12 else "",
             startangle=90,
-            textprops={"fontsize": 6.5, "color": "white", "fontweight": "bold"},
+            textprops={"fontsize": 7.0, "color": "white", "fontweight": "bold"},
             wedgeprops={"linewidth": 1.0, "edgecolor": "white"},
         )
-        short_name = breakdown["name"] if len(breakdown["name"]) <= 16 else breakdown["name"][:14] + "…"
-        ax.set_title(short_name, fontsize=6.5, pad=3)
+        # Wrap the name over as many lines as it needs. It used to be cut
+        # at 16 characters, which turned every real device label into
+        # "Stop Bar Inset..." and told the reader nothing about which pie
+        # belonged to which device.
+        ax.set_title(
+            textwrap.fill(str(breakdown["name"]), width=wrap_width),
+            fontsize=7.0, pad=4, linespacing=1.25,
+        )
+
+    for unused in axes[len(fade_breakdowns):]:
+        unused.axis("off")
 
     fig.legend(
         [report_i18n["report.chart_temperature"], report_i18n["report.chart_cycling"]],
-        loc="lower center", ncol=2, frameon=False, fontsize=6.5,
-        bbox_to_anchor=(0.5, -0.06),
+        loc="lower center", ncol=2, frameon=False, fontsize=7.0,
+        bbox_to_anchor=(0.5, -0.02),
     )
-    fig.tight_layout(rect=[0, 0.1, 1, 1])
+    fig.tight_layout(rect=[0, 0.08, 1, 1])
 
-    return _chart_html_from_figure(fig)
+    # savefig crops to the drawn content, so a pie - which only inks the
+    # middle of its axes - comes out far narrower than the 3.5in figure.
+    # The shared .chart-image rule then stretches it to the full column
+    # width, which is what blew these labels up to roughly twice the size
+    # of every other chart's text. Constraining by height instead lets the
+    # image settle at its intended scale (180dpi rendered at ~100dpi, the
+    # same reduction the sibling charts get) and keeps the aspect ratio.
+    display_height_px = round(row_height * nrows * 100)
+    return (
+        f'<div class="fade-drivers" style="--fade-h: {display_height_px}px">'
+        f"{_chart_html_from_figure(fig)}</div>"
+    )
 
 
 def render_aging_page_html_standalone(loc, required_hrs, results, device_short_names, footer_note: str = "") -> str:

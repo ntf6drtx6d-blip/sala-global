@@ -513,11 +513,30 @@ def _recommended_action(r: dict, required_hours: float, i18n: dict) -> tuple:
     hardware = _hardware_action(r, required_hours, i18n)
 
     if profile and profile.get("sufficient"):
+        profile_text = _profile_text(profile, i18n)
+        required_text = f"{float(required_hours):g}"
+        daylight_text = f"{profile['daylight_hours']:.1f}"
+
+        # State that it MEETS the requirement rather than quoting how far
+        # the profile could theoretically stretch. The scaled figure can
+        # run well past what was asked for - and past the hours of
+        # darkness actually available - which reads as an error.
+        if hardware:
+            # Dimming is not free operationally, so where equipment would
+            # also solve it, name both and let the customer choose.
+            return (
+                i18n["report.rec_profile_or_hardware"]
+                .replace("{profile}", profile_text)
+                .replace("{hardware}", hardware[0]),
+                i18n["report.rec_reason_profile_or_hardware"]
+                .replace("{required}", required_text)
+                .replace("{daylight}", daylight_text),
+            )
         return (
-            _profile_text(profile, i18n),
+            profile_text,
             i18n["report.rec_reason_profile"]
-            .replace("{hours}", f"{profile['reachable_hours']:.1f}")
-            .replace("{daylight}", f"{profile['daylight_hours']:.1f}"),
+            .replace("{required}", required_text)
+            .replace("{daylight}", daylight_text),
         )
 
     if profile and hardware:

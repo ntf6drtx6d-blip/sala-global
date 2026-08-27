@@ -1034,14 +1034,21 @@ def render_setup(disabled=False):
                                 # Streamlit's own label sizing and input
                                 # height, so this column now lines up with the
                                 # other three instead of sitting proud of them.
-                                # Deliberately unkeyed - this value is derived
-                                # from the day share, and a keyed widget would
-                                # hold its first value in session state and
-                                # stop tracking the slider next to it.
+                                #
+                                # The value is derived from the day share, so
+                                # it is written into session state just before
+                                # the widget is drawn rather than passed as
+                                # `value`. A keyed widget takes its value from
+                                # session state and would otherwise keep
+                                # showing the share it was first created with;
+                                # leaving it unkeyed instead collides with the
+                                # identical row rendered for the next device.
                                 night_share_pct = float(max(0.0, 100.0 - mixed_share_pct))
+                                rest_key = f"mixed_rest_{sim_key}"
+                                st.session_state[rest_key] = night_share_pct
                                 st.number_input(
                                     t("ui.night_time_share", lang),
-                                    value=night_share_pct,
+                                    key=rest_key,
                                     disabled=True,
                                 )
                             with c4:

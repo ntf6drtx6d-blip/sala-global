@@ -252,6 +252,148 @@ def _default_catalog_items():
     return items
 
 
+# One-shot data migrations.
+#
+# _sync_default_device_catalog inserts with ON CONFLICT DO NOTHING, so it
+# only ever seeds a row once and never corrects one that already exists.
+# That is deliberate - it must not stamp on catalogue edits made in the
+# admin panel - but it means a correction to core/devices.py alone has no
+# effect on any database that has already been seeded. Anything that has
+# to reach an existing deployment goes here instead: each entry runs once,
+# is recorded in schema_migrations, and is skipped forever after.
+#
+# Add to the end of _DATA_MIGRATIONS; never edit or renumber an existing
+# key, or deployments that already ran it will silently skip the new
+# version.
+
+
+def _ensure_migrations_table(cur):
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+            key TEXT PRIMARY KEY,
+            applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+
+
+def _rename_saved_lamp_variants(cur, runtime_id, renames):
+    """Rewrite a device's lamp-variant names inside already-saved studies.
+
+    Saved studies key each device as "<runtime_id>||<lamp variant>" in
+    selected_devices and per_device_config, and are restored straight back
+    into the configurator. Renaming a variant without this would leave
+    every existing study of that device pointing at a variant the
+    catalogue no longer has."""
+    key_map = {f"{runtime_id}||{old}": f"{runtime_id}||{new}" for old, new in renames.items()}
+
+    cur.execute("SELECT id, study_data FROM studies")
+    rows = cur.fetchall()
+
+    for row in rows:
+        data = row.get("study_data")
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except Exception:
+                continue
+        if not isinstance(data, dict):
+            continue
+
+        changed = False
+
+        selected = data.get("selected_devices")
+        if isinstance(selected, list):
+            renamed = [key_map.get(str(entry), entry) for entry in selected]
+            if renamed != selected:
+                data["selected_devices"] = renamed
+                changed = True
+
+        config = data.get("per_device_config")
+        if isinstance(config, dict):
+            renamed_config = {}
+            for key, value in config.items():
+                new_key = key_map.get(str(key))
+                # Keyed off the entry's own "<runtime_id>||<variant>" key,
+                # never off its lamp_variant field: the old names are
+                # shared with other devices, and matching on the field
+                # alone rewrote their studies too.
+                if new_key and isinstance(value, dict):
+                    old_variant = str(key).split("||", 1)[1]
+                    new_variant = renames[old_variant]
+                    value = dict(value)
+                    value["lamp_variant"] = new_variant
+                    label = value.get("display_label")
+                    if isinstance(label, str) and old_variant in label:
+                        value["display_label"] = label.replace(old_variant, new_variant)
+                renamed_config[new_key or key] = value
+            if renamed_config != config:
+                data["per_device_config"] = renamed_config
+                changed = True
+
+        if changed:
+            cur.execute(
+                "UPDATE studies SET study_data = %s WHERE id = %s",
+                (Jsonb(data), row["id"]),
+            )
+
+
+# Old name -> new name, for SP-301SL only. The unsuffixed names are shared
+# with SP-401SMI and SP-501SHI, which keep them; scoping every rewrite by
+# runtime_id is what keeps those two untouched.
+_SP301SL_VARIANT_RENAMES = {
+    "Runway edge light": "Runway edge light (ICAO)",
+    "Runway threshold/end light": "Runway threshold/end light (ICAO)",
+}
+
+
+def _migrate_sp301sl_lamp_variants(cur):
+    """Bring SP-301SL's lamp variants in line with the A/LED SP-301 sheet:
+    six variants become twelve, runway edge is corrected from 1.48W to
+    2.70W and TLOF from 1.33W to 1.32W."""
+    spec = next((d for d in DEVICES.values() if d.get("code") == "SP-301SL"), None)
+    if not spec:
+        return
+
+    cur.execute("SELECT id, runtime_id, metadata FROM device_catalog WHERE code = 'SP-301SL'")
+    row = cur.fetchone()
+    if not row:
+        # Nothing seeded yet - the seeder will write the current values.
+        return
+
+    metadata = dict(row.get("metadata") or {})
+    metadata["lamp_variants"] = spec["lamp_variants"]
+    metadata["default_lamp_variant"] = spec["default_lamp_variant"]
+    cur.execute(
+        """
+        UPDATE device_catalog
+        SET metadata = %s, default_power_w = %s, updated_at = NOW()
+        WHERE id = %s
+        """,
+        (Jsonb(metadata), spec["default_power"], row["id"]),
+    )
+
+    runtime_id = row.get("runtime_id")
+    if runtime_id is not None:
+        _rename_saved_lamp_variants(cur, int(runtime_id), _SP301SL_VARIANT_RENAMES)
+
+
+_DATA_MIGRATIONS = (
+    ("2026_08_sp301sl_lamp_variants", _migrate_sp301sl_lamp_variants),
+)
+
+
+def _run_data_migrations(cur):
+    _ensure_migrations_table(cur)
+    for key, migrate in _DATA_MIGRATIONS:
+        cur.execute("SELECT 1 FROM schema_migrations WHERE key = %s", (key,))
+        if cur.fetchone():
+            continue
+        migrate(cur)
+        cur.execute("INSERT INTO schema_migrations (key) VALUES (%s) ON CONFLICT DO NOTHING", (key,))
+
+
 def _sync_default_device_catalog(cur):
     for item in _default_catalog_items():
         cur.execute(
@@ -400,6 +542,7 @@ def init_db():
         cur.execute("CREATE INDEX IF NOT EXISTS idx_device_catalog_entity_type ON device_catalog(entity_type)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_device_catalog_manufacturer ON device_catalog(manufacturer)")
         _sync_default_device_catalog(cur)
+        _run_data_migrations(cur)
 
 
 def create_user(email, password_hash, role="user", full_name=None, organization=None):

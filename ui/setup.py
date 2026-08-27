@@ -395,6 +395,7 @@ def _default_multiselect_labels():
 
 def _variant_short_label(lamp_type: str) -> str:
     mapping = {
+        # The unsuffixed names are still SP-401SMI's and SP-501SHI's.
         "Runway edge light": "RWY edge",
         "Runway threshold/end light": "THR/END",
         "Taxiway edge light": "TWY edge",
@@ -402,6 +403,16 @@ def _variant_short_label(lamp_type: str) -> str:
         "Obstruction Type A LI light": "OBS LI",
         "TLOF light": "TLOF",
         "FATO light": "FATO",
+        # SP-301SL carries the regulator in the name wherever the same
+        # optic exists under more than one standard.
+        "Runway edge light (ICAO)": "RWY edge (ICAO)",
+        "Runway edge light (MOS)": "RWY edge (MOS)",
+        "Runway edge light, yellow (FAA)": "RWY edge yellow (FAA)",
+        "Runway threshold/end light (ICAO)": "THR/END (ICAO)",
+        "Runway threshold/end light (MOS)": "THR/END (MOS)",
+        "Runway threshold light (ICAO, MOS)": "THR",
+        "Runway end light (ICAO, MOS)": "END",
+        "Holding point light (MOS)": "Holding point",
     }
     return mapping.get(lamp_type, lamp_type)
 

@@ -149,15 +149,15 @@ DEVICES = {
         "lamp_variants": {
             "Runway edge light (ICAO)": {"power_w": 2.7},
             "Runway edge light (MOS)": {"power_w": 3.84},
-            "Taxiway edge light": {"power_w": 0.2},
-            "Runway threshold/end light (ICAO)": {"power_w": 0.73},
-            "Runway threshold/end light (MOS)": {"power_w": 0.99},
             "Runway threshold light (ICAO, MOS)": {"power_w": 0.71},
             "Runway end light (ICAO, MOS)": {"power_w": 0.26},
+            "Runway threshold/end light (ICAO)": {"power_w": 0.73},
+            "Runway threshold/end light (MOS)": {"power_w": 0.99},
+            "Taxiway edge light": {"power_w": 0.2},
             "Obstruction Type A LI light": {"power_w": 0.6},
+            "FATO light": {"power_w": 4.61},
             "TLOF light": {"power_w": 1.32},
             "Holding point light (MOS)": {"power_w": 0.15},
-            "FATO light": {"power_w": 4.61},
         },
     },
     4: {
@@ -265,11 +265,58 @@ def get_device_by_id(device_id: int):
     return DEVICES.get(device_id)
 
 
+# Order lamp variants are presented in, anywhere a device's list is shown.
+#
+# This cannot be left to the order they are declared in: they are stored in
+# a jsonb column, and Postgres orders object keys by length and then
+# bytewise, so what comes back is effectively arbitrary ("TLOF light"
+# first because it is the shortest name).
+_LAMP_VARIANT_GROUPS = (
+    # (group, predicate) - first match wins, so the threshold/end family
+    # is claimed before the runway rule can take it.
+    ("threshold_only", lambda w: "threshold" in w and "end" not in w),
+    ("end_only", lambda w: "end" in w and "threshold" not in w),
+    ("threshold_end", lambda w: "threshold" in w and "end" in w),
+    ("runway", lambda w: bool(w & {"runway", "rwy"})),
+    ("taxiway", lambda w: bool(w & {"taxiway", "twy"})),
+    ("obstruction", lambda w: bool(w & {"obstruction", "obs"})),
+    ("fato", lambda w: "fato" in w),
+    ("tlof", lambda w: "tlof" in w),
+)
+
+_LAMP_VARIANT_ORDER = (
+    "runway",
+    "threshold_only",
+    "end_only",
+    "threshold_end",
+    "taxiway",
+    "obstruction",
+    "fato",
+    "tlof",
+)
+
+
+def _lamp_variant_sort_key(name: str):
+    # Split on non-letters so "threshold/end" gives both words and a
+    # trailing "(ICAO, MOS)" cannot be mistaken for one.
+    words = {w for w in "".join(c if c.isalpha() else " " for c in str(name).lower()).split() if w}
+    for group, matches in _LAMP_VARIANT_GROUPS:
+        if matches(words):
+            return (_LAMP_VARIANT_ORDER.index(group), str(name).lower())
+    # Anything unrecognised sorts last, alphabetically, rather than
+    # disappearing or landing in the middle of a named group.
+    return (len(_LAMP_VARIANT_ORDER), str(name).lower())
+
+
+def sort_lamp_variant_names(names) -> list[str]:
+    return sorted(names or [], key=_lamp_variant_sort_key)
+
+
 def get_lamp_variants(device_code: str) -> list[str]:
     device = get_device_by_code(device_code)
     if not device:
         return []
-    return list(device.get("lamp_variants", {}).keys())
+    return sort_lamp_variant_names(device.get("lamp_variants", {}).keys())
 
 
 def get_default_lamp_variant(device_code: str):

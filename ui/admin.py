@@ -28,6 +28,7 @@ from core.db import (
 )
 from core.auth import hash_password
 from core.catalog import get_cached_runtime_catalog, runtime_device_label, invalidate_runtime_catalog_cache
+from core.devices import sort_lamp_variant_names
 from core.person import normalize_person_name, split_person_name
 from core.notify import notify_user_access_approved
 from core.stats import (
@@ -222,7 +223,10 @@ def _lamp_variants_to_rows(lamp_variants):
     if not isinstance(lamp_variants, dict):
         return []
     rows = []
-    for name, config in lamp_variants.items():
+    # Presented in the shared running order rather than the order the
+    # database hands back, which for a jsonb column is by key length.
+    for name in sort_lamp_variant_names(lamp_variants.keys()):
+        config = lamp_variants.get(name)
         try:
             power_w = float((config or {}).get("power_w", 0.0))
         except Exception:

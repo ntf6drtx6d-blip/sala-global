@@ -5,6 +5,7 @@ import streamlit as st
 import folium
 
 from core.catalog import get_cached_runtime_catalog
+from core.devices import sort_lamp_variant_names
 from core.geocoding import search_airport, country_from_coordinates
 from core.i18n import t
 from ui.map_embed import render_folium_map
@@ -893,7 +894,7 @@ def render_setup(disabled=False):
         for did in selected_ids:
             dspec = DEVICES[did]
             system_type = dspec["system_type"]
-            variants = list(dspec.get("lamp_variants", {}).keys())
+            variants = sort_lamp_variant_names(dspec.get("lamp_variants", {}).keys())
 
             if variants and did not in st.session_state["selected_lamp_types"]:
                 st.session_state["selected_lamp_types"][did] = _default_lamp_selection(did)

@@ -348,19 +348,22 @@ _SP301SL_VARIANT_RENAMES = {
 }
 
 
-def _migrate_sp301sl_lamp_variants(cur):
-    """Bring SP-301SL's lamp variants in line with the A/LED SP-301 sheet:
-    six variants become twelve, runway edge is corrected from 1.48W to
-    2.70W and TLOF from 1.33W to 1.32W."""
+def _write_sp301sl_variants(cur):
+    """Force SP-301SL's stored lamp variants back to the set defined in
+    core/devices.py. Returns its runtime_id, or None if there is no row
+    yet (a database seeded after this point gets the current set anyway).
+
+    This deliberately overwrites rather than merges: it is the only way to
+    remove a variant, and it is also the repair path for values mangled by
+    the admin editor's old 0.1 power step."""
     spec = next((d for d in DEVICES.values() if d.get("code") == "SP-301SL"), None)
     if not spec:
-        return
+        return None
 
     cur.execute("SELECT id, runtime_id, metadata FROM device_catalog WHERE code = 'SP-301SL'")
     row = cur.fetchone()
     if not row:
-        # Nothing seeded yet - the seeder will write the current values.
-        return
+        return None
 
     metadata = dict(row.get("metadata") or {})
     metadata["lamp_variants"] = spec["lamp_variants"]
@@ -373,14 +376,30 @@ def _migrate_sp301sl_lamp_variants(cur):
         """,
         (Jsonb(metadata), spec["default_power"], row["id"]),
     )
+    return row.get("runtime_id")
 
-    runtime_id = row.get("runtime_id")
+
+def _migrate_sp301sl_lamp_variants(cur):
+    """Bring SP-301SL's lamp variants in line with the A/LED SP-301 sheet:
+    six variants become eleven, runway edge is corrected from 1.48W to
+    2.70W and TLOF from 1.33W to 1.32W."""
+    runtime_id = _write_sp301sl_variants(cur)
     if runtime_id is not None:
         _rename_saved_lamp_variants(cur, int(runtime_id), _SP301SL_VARIANT_RENAMES)
 
 
+def _migrate_sp301sl_drop_faa_variant(cur):
+    """Drop "Runway edge light, yellow (FAA)" - SP-301 does not carry it.
+
+    Re-asserting the whole variant set also repairs any power mangled by
+    the admin editor, which until now snapped every figure to a 0.1 grid
+    (1.32W became 1.30, 0.99 became 0.90) as soon as a row was edited."""
+    _write_sp301sl_variants(cur)
+
+
 _DATA_MIGRATIONS = (
     ("2026_08_sp301sl_lamp_variants", _migrate_sp301sl_lamp_variants),
+    ("2026_08_sp301sl_drop_faa_variant", _migrate_sp301sl_drop_faa_variant),
 )
 
 

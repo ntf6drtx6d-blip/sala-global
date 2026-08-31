@@ -149,7 +149,6 @@ DEVICES = {
         "lamp_variants": {
             "Runway edge light (ICAO)": {"power_w": 2.7},
             "Runway edge light (MOS)": {"power_w": 3.84},
-            "Runway edge light, yellow (FAA)": {"power_w": 0.15},
             "Taxiway edge light": {"power_w": 0.2},
             "Runway threshold/end light (ICAO)": {"power_w": 0.73},
             "Runway threshold/end light (MOS)": {"power_w": 0.99},

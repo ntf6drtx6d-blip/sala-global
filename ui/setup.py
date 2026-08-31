@@ -407,7 +407,6 @@ def _variant_short_label(lamp_type: str) -> str:
         # optic exists under more than one standard.
         "Runway edge light (ICAO)": "RWY edge (ICAO)",
         "Runway edge light (MOS)": "RWY edge (MOS)",
-        "Runway edge light, yellow (FAA)": "RWY edge yellow (FAA)",
         "Runway threshold/end light (ICAO)": "THR/END (ICAO)",
         "Runway threshold/end light (MOS)": "THR/END (MOS)",
         "Runway threshold light (ICAO, MOS)": "THR",

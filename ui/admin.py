@@ -414,7 +414,11 @@ def _catalog_form_payload(prefix, lang, existing=None):
                 "Power (W)": st.column_config.NumberColumn(
                     t("admin.default_power_w", lang),
                     min_value=0.0,
-                    step=0.1,
+                    # Must match the two decimals the column displays.
+                    # A 0.1 step snaps every value to the step grid, which
+                    # silently turned 1.32 W into 1.30 and 0.99 into 0.90
+                    # the moment the row was touched.
+                    step=0.01,
                     format="%.2f",
                     required=True,
                 ),

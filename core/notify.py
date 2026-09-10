@@ -35,6 +35,16 @@ _logger = logging.getLogger(__name__)
 DEFAULT_APP_URL = "https://app.sala-global.com"
 DEFAULT_SUPPORT_SALES_EMAIL = "supportsales@solutions4ga.com"
 INTERNAL_EMAIL_DOMAINS = {"sala-global.com", "solutions4ga.com"}
+
+# S4GA people copied on the FS-completion alert for accounts they look
+# after, on top of support/sales who always get it.
+#
+# Keyed by the customer's email domain to cover a whole company, or by a
+# full address for one person at a domain that is not exclusively theirs.
+# A full address wins over a domain. Add one line per account.
+ACCOUNT_OWNER_RECIPIENTS = {
+    "amsaustralia.com": ("lkornacki@solutions4ga.com",),
+}
 _LOGO_PATH = Path(__file__).resolve().parent.parent / "sala_logo.png"
 _LOGO_CID = "sala_logo"
 
@@ -72,6 +82,21 @@ def get_support_sales_email() -> str:
 
 def get_app_url() -> str:
     return _app_url()
+
+
+def account_owner_emails(author_email: str) -> list[str]:
+    """S4GA addresses to copy for whoever ran this study - matched on the
+    full address first, then on their domain. Empty for accounts nobody
+    is listed against, which is the normal case."""
+    address = str(author_email or "").strip().lower()
+    if "@" not in address:
+        return []
+
+    domain = address.rsplit("@", 1)[-1]
+    owners = ACCOUNT_OWNER_RECIPIENTS.get(address)
+    if owners is None:
+        owners = ACCOUNT_OWNER_RECIPIENTS.get(domain, ())
+    return [str(owner).strip() for owner in owners if str(owner).strip()]
 
 
 def is_internal_email(email: str) -> bool:
@@ -170,21 +195,43 @@ def _email_shell(preheader: str, heading: str, body_html: str, has_logo: bool) -
 </html>"""
 
 
-def send_email(to_email: str, subject: str, text_body: str, html_body: str | None = None) -> bool:
+def _recipient_list(to_email) -> list[str]:
+    """One address, a comma-separated string, or any iterable of them.
+    Blanks and repeats are dropped, comparing case-insensitively, so the
+    same person listed twice does not get two copies."""
+    candidates = to_email.split(",") if isinstance(to_email, str) else list(to_email or [])
+
+    recipients = []
+    seen = set()
+    for candidate in candidates:
+        address = str(candidate or "").strip()
+        if not address or address.lower() in seen:
+            continue
+        seen.add(address.lower())
+        recipients.append(address)
+    return recipients
+
+
+def send_email(to_email, subject: str, text_body: str, html_body: str | None = None) -> bool:
     """Returns True on success, False if unconfigured or sending failed.
-    Never raises - a broken mail server should not break the caller."""
-    if not to_email:
+    Never raises - a broken mail server should not break the caller.
+
+    to_email takes several addresses as well as one; they all go on a
+    single message so each recipient can see who else received it."""
+    recipients = _recipient_list(to_email)
+    if not recipients:
         return False
 
+    to_header = ", ".join(recipients)
     config = _smtp_config()
     if not config:
-        _logger.warning("SMTP not configured (SMTP_HOST missing); skipping email to %s.", to_email)
+        _logger.warning("SMTP not configured (SMTP_HOST missing); skipping email to %s.", to_header)
         return False
 
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = config["from_email"] or "no-reply@sala-global.com"
-    msg["To"] = to_email
+    msg["To"] = to_header
     msg.set_content(text_body)
 
     if html_body:
@@ -203,7 +250,7 @@ def send_email(to_email: str, subject: str, text_body: str, html_body: str | Non
             server.send_message(msg)
         return True
     except Exception:
-        _logger.exception("Failed to send email to %s.", to_email)
+        _logger.exception("Failed to send email to %s.", to_header)
         return False
 
 
@@ -386,6 +433,10 @@ def notify_fs_completed(
     if not to_email or not study_id:
         return False
 
+    # Support/sales always; whoever looks after this customer's account as
+    # well, on the same message rather than a second copy.
+    recipients = [to_email, *account_owner_emails(author_email)]
+
     status_colors = {
         "PASS": (_GREEN, _GREEN_BG),
         "FAIL": (_RED, _RED_BG),
@@ -449,4 +500,4 @@ def notify_fs_completed(
         text_lines += [f"  - {item.get('name')}: {item.get('status')}" for item in equipment]
     text_lines += ["", f"View / download: {download_url}"]
 
-    return send_email(to_email, subject, "\n".join(text_lines), html_out)
+    return send_email(recipients, subject, "\n".join(text_lines), html_out)

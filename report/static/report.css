@@ -581,52 +581,6 @@ body {
   margin-top: 8px;
 }
 
-.analyzed-devices-card {
-  margin-top: 8px;
-  padding: 10px 12px;
-  gap: 8px;
-}
-
-.device-name-list {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 3px 12px;
-  margin-top: 2px;
-}
-
-.device-name-list-compact {
-  gap: 2px 10px;
-}
-
-.device-name-list-dense {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 2px 8px;
-}
-
-.device-name-item {
-  color: #12355b;
-  font-size: 10.5px;
-  line-height: 1.18;
-  font-weight: 700;
-  padding-left: 9px;
-  position: relative;
-  overflow-wrap: anywhere;
-}
-
-.device-name-list-dense .device-name-item {
-  font-size: 9.5px;
-  line-height: 1.14;
-}
-
-.device-name-item::before {
-  content: "•";
-  position: absolute;
-  left: 0;
-  top: 0;
-  color: #98b8f5;
-  font-weight: 900;
-}
-
 .dataset-highlight {
   border: 1.4px solid #bfdbfe;
   border-radius: 14px;
@@ -1281,6 +1235,20 @@ body {
 /* Independent-methodology trust strip on page 1. Deliberately quiet in
    weight but full width, so it reads as a credential line rather than as
    another result card competing with the hero above it. */
+.cover-stack {
+  /* Holds page one's content so it can be scaled to fit when the device
+     list is long - see cover_fit_scale in report/data_builder.py. The
+     transform is visual only and does not change layout height, which is
+     what is wanted: the sheet still clips at its fixed height, and the
+     scaled content simply ends above that line instead of being cut. */
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transform: scale(var(--cover-fit, 1));
+  transform-origin: top left;
+  width: calc(100% / var(--cover-fit, 1));
+}
+
 .cover-page {
   /* Page one stacks more blocks than any other sheet and is fixed height
      with overflow:hidden, so it is the first to run out of room. A

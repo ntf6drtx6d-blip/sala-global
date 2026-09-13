@@ -12,6 +12,7 @@
     <section class="report-page cover-page">
       {% include 'partials/_header.html' %}
 
+      <div class="cover-stack" style="--cover-fit: {{ '%.3f'|format(report.cover_fit_scale) }};">
       <div class="page-title-wrap">
         <div>
           <div class="eyebrow">{{ report.i18n['report.cover_eyebrow'] }}</div>
@@ -156,14 +157,15 @@
         </div>
       </div>
 
-      <article class="card analyzed-devices-card page-break-avoid">
-        <div class="eyebrow">{{ report.i18n['report.analyzed_devices'] }}</div>
-        <div class="device-name-list {% if report.device_names|length > 10 %}device-name-list-dense{% elif report.device_names|length > 6 %}device-name-list-compact{% endif %}">
-          {% for name in report.device_names %}
-            <div class="device-name-item">{{ name }}</div>
-          {% endfor %}
-        </div>
-      </article>
+      {#
+        No "devices analyzed" card here. It repeated, verbatim, the device
+        names already labelling every row of the gauge directly above, and
+        it grew a line per device on a fixed-height sheet - so from four
+        devices up the bottom of the list was being cut off by the page's
+        overflow:hidden with nothing to show it had happened. The gauge is
+        the list, and it carries each device's result as well.
+      #}
+      </div>
 
       <div class="page-footer"><span>{{ report.footer_note }}</span><span>{{ report.i18n['report.page'] }} 1 of {{ report.total_pages }}</span></div>
     </section>

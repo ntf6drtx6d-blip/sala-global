@@ -1071,11 +1071,19 @@ def build_report_data(loc, required_hours, results, overall, user_name, user_org
         # rather than printing it unconditionally.
         "show_availability_hero": bool(devices) and all(d["annual_blackout_days"] == 0 for d in devices),
         "devices": devices,
+        # Page one is a fixed-height sheet with overflow:hidden. Its hero
+        # and study-overview cards are a constant ~470px whatever the
+        # study contains, so once the per-device gauge passes six rows the
+        # page runs out of room and the bottom is cut off silently. Past
+        # that the content block is scaled to fit - visual only, so the
+        # page still clips at the same place but the content now finishes
+        # above it. Calibrated against measured page heights for one to
+        # ten devices in the longest-wrapping language.
+        "cover_fit_scale": max(0.80, min(1.0, 1.0 - 0.025 * max(0, total - 6))),
         "devices_total": total,
         "devices_pass_count": pass_count,
         "devices_near_count": near_count,
         "devices_fail_count": fail_count,
-        "device_names": [d["name"] for d in devices],
         "contains_s4ga": any(d["input_source_brand"] == "S4GA" for d in devices),
         "contains_avlite": any(d["input_source_brand"] == "Avlite" for d in devices),
         "max_blackout_days": max_blackout,

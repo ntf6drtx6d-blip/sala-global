@@ -80,11 +80,25 @@
         previously only visible as a logo in the header and a line in the
         footer.
       #}
-      <div class="independent-strip page-break-avoid">
-        {% if report.logo_jrc %}<img src="{{ report.logo_jrc }}" alt="JRC" class="independent-logo" />{% endif %}
-        <div class="independent-text">
-          <div class="independent-title">{{ report.i18n['report.independent_badge_title'] }}</div>
-          <div class="independent-body">{{ report.i18n['report.independent_badge_body'] }}</div>
+      {#
+        Two assurance statements sharing one frame, divided by a rule.
+        They are deliberately worded and marked so they cannot be read as
+        the same claim: the first says the modelling comes from someone
+        other than us, the second cites a standard SALA wrote itself and
+        names SALA twice in doing so. One frame because page one has no
+        room for two, not because the claims are equivalent.
+      #}
+      <div class="assurance-strip page-break-avoid">
+        <div class="assurance-row">
+          {% if report.logo_jrc %}<img src="{{ report.logo_jrc }}" alt="JRC" class="independent-logo" />{% endif %}
+          <div class="independent-text">
+            <div class="independent-title">{{ report.i18n['report.independent_badge_title'] }}</div>
+            <div class="independent-body">{{ report.i18n['report.independent_badge_body'] }}</div>
+          </div>
+        </div>
+        <div class="assurance-row assurance-row-standard">
+          <span class="standard-chip">SD-101</span>
+          <span class="standard-body">{{ report.i18n['report.standard_badge_body'] }}</span>
         </div>
       </div>
 

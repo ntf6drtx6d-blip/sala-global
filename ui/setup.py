@@ -1145,6 +1145,14 @@ def render_setup(disabled=False):
                             key=f"power_{sim_key}",
                             disabled=disabled,
                         )
+                        # This device has no brilliancy steps, so the figure
+                        # typed here IS its consumption at full output -
+                        # there is no separate 100% rating to hold onto.
+                        # Keeping the catalogue value instead made the report
+                        # print "consumption at 100% intensity: 35 W" next to
+                        # a study actually run at the 62 W the user entered,
+                        # which reads as the override having been ignored.
+                        base_power = float(power)
 
                     if system_type == "external_engine":
                         if quantity_enabled:

@@ -25,6 +25,20 @@
           <div class="info-row"><span>{{ report.i18n['report.cutoff'] }}</span><strong>{{ '%.0f'|format(device.cutoff_pct) }}%</strong></div>
           <div class="info-row"><span>{{ report.i18n['ui.simulation_intensity'] }}</span><strong>{{ device.simulation_intensity }}</strong></div>
           <div class="info-row"><span>{{ report.i18n['ui.consumption_100_intensity'] }}</span><strong>{{ '%.2f'|format(device.consumption_100_intensity_wh_per_hour) }} Wh</strong></div>
+          {% if device.group_members %}
+          {#
+            Several devices on one solar engine. The verdict above covers
+            all of them together - they share a battery, so they go dark
+            together - and this says where the load comes from.
+          #}
+          <div class="info-row group-members-head"><span>{{ report.i18n['report.shared_engine_load'] }}</span></div>
+          {% for member in device.group_members %}
+          <div class="info-row group-member">
+            <span>{{ member.device_name }}{% if member.quantity > 1 %} × {{ member.quantity }}{% endif %}</span>
+            <strong>{{ '%.2f'|format(member.power) }} W</strong>
+          </div>
+          {% endfor %}
+          {% endif %}
         </div>
       </article>
 

@@ -165,6 +165,39 @@ def _devices_missing_lamp_variant() -> list[str]:
     ]
 
 
+POWER_GROUP_IDS = ("A", "B", "C")
+
+
+def power_group_sharing_enabled() -> bool:
+    """Shared solar engines are an S4GA-internal tool for now: it changes
+    what a result row means (one verdict for several devices), so it stays
+    off for customer accounts until it has been used in anger."""
+    from core.notify import is_internal_email
+
+    return is_internal_email(st.session_state.get("auth_email", "") or "")
+
+
+def power_group_engine_conflicts(per_device_config=None) -> list[str]:
+    """Groups whose members disagree about the engine or battery option.
+
+    Devices on one engine are simulated as a single load carried by that
+    engine, so the engine has to be one engine. Without this the first
+    member's choice would silently win and the study would be answering a
+    question nobody asked."""
+    config = per_device_config if per_device_config is not None else st.session_state.get("per_device_config", {})
+    seen = {}
+    for cfg in (config or {}).values():
+        if not isinstance(cfg, dict):
+            continue
+        group_id = str(cfg.get("power_group") or "").strip()
+        if not group_id:
+            continue
+        seen.setdefault(group_id, set()).add(
+            (cfg.get("engine_key"), cfg.get("battery_mode", "Std"))
+        )
+    return sorted(group_id for group_id, choices in seen.items() if len(choices) > 1)
+
+
 def _refresh_study_ready():
     missing_variant_devices = _devices_missing_lamp_variant()
     st.session_state.study_ready_missing_variant_devices = missing_variant_devices
@@ -182,8 +215,15 @@ def _refresh_study_ready():
     elif mode == "Custom hours per day":
         mode_ready = required_hours is not None and float(required_hours) > 0
 
+    group_conflicts = power_group_engine_conflicts()
+    st.session_state.study_ready_power_group_conflicts = group_conflicts
+
     st.session_state.study_ready = bool(
-        len(selected_simulation_keys) > 0 and not missing_variant_devices and study_point_confirmed and mode_ready
+        len(selected_simulation_keys) > 0
+        and not missing_variant_devices
+        and not group_conflicts
+        and study_point_confirmed
+        and mode_ready
     )
 
 
@@ -968,6 +1008,10 @@ def render_setup(disabled=False):
                 battery_mode = saved_cfg.get("battery_mode", "Std")
                 display_label = _simulation_label(did, lamp_variant, DEVICES)
                 quantity = max(1, int(saved_cfg.get("quantity", 1) or 1))
+                # Only engine-powered devices can share an engine; built-in
+                # devices carry their own panel and battery, so this stays
+                # empty for them rather than being left undefined.
+                power_group = ""
                 # Quantity means "N fixtures sharing one solar engine", which
                 # is true of any engine-based device. It used to be pinned to
                 # the SP-200 product code, so every inset light added later
@@ -1115,6 +1159,27 @@ def render_setup(disabled=False):
                                 )
                             )
                             st.caption(t("ui.quantity_connected_note", lang))
+
+                        if power_group_sharing_enabled():
+                            shared_label = t("ui.power_group_shared", lang)
+                            group_options = [""] + list(POWER_GROUP_IDS)
+                            current_group = str(saved_cfg.get("power_group") or "")
+                            if current_group not in group_options:
+                                current_group = ""
+                            power_group = st.selectbox(
+                                t("ui.power_group", lang),
+                                group_options,
+                                index=group_options.index(current_group),
+                                format_func=lambda opt: (
+                                    t("ui.power_group_own", lang) if not opt else f"{shared_label} {opt}"
+                                ),
+                                key=f"power_group_{sim_key}",
+                                disabled=disabled,
+                            )
+                            if power_group:
+                                st.caption(t("ui.power_group_help", lang))
+                        else:
+                            power_group = ""
                         # Offer every engine in the catalogue rather than the
                         # device row's compatible_engine_codes. Those codes are
                         # written once when a device is first synced to the
@@ -1190,6 +1255,7 @@ def render_setup(disabled=False):
                     per_device_config[sim_key] = {
                         "device_id": did,
                         "lamp_variant": lamp_variant,
+                        "power_group": (power_group or None),
                         "display_label": display_label,
                         "catalog_signature": catalog_signature,
                         "power": float(power),

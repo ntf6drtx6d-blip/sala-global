@@ -668,6 +668,11 @@ def refresh_study_ready_from_state():
     ]
     st.session_state.study_ready_missing_variant_devices = missing_variant_devices
 
+    from ui.setup import power_group_engine_conflicts
+
+    group_conflicts = power_group_engine_conflicts()
+    st.session_state.study_ready_power_group_conflicts = group_conflicts
+
     selected_simulation_keys = st.session_state.get("selected_simulation_keys", [])
     study_point_confirmed = bool(st.session_state.get("study_point_confirmed", False))
     mode = st.session_state.get("operating_profile_mode")
@@ -682,7 +687,11 @@ def refresh_study_ready_from_state():
         mode_ready = required_hours is not None and float(required_hours) > 0
 
     st.session_state.study_ready = bool(
-        len(selected_simulation_keys) > 0 and not missing_variant_devices and study_point_confirmed and mode_ready
+        len(selected_simulation_keys) > 0
+        and not missing_variant_devices
+        and not group_conflicts
+        and study_point_confirmed
+        and mode_ready
     )
 
 
@@ -1157,6 +1166,12 @@ def render_top_action_bar():
             elif ready:
                 st.markdown(
                     f'<div class="secondary-note">{t("ui.setup_complete_ready", lang)}</div>',
+                    unsafe_allow_html=True,
+                )
+            elif st.session_state.get("study_ready_power_group_conflicts"):
+                groups_list = ", ".join(st.session_state["study_ready_power_group_conflicts"])
+                st.markdown(
+                    f'<div class="secondary-note">{t("ui.power_group_engine_mismatch", lang, groups=groups_list)}</div>',
                     unsafe_allow_html=True,
                 )
             elif st.session_state.get("study_ready_missing_variant_devices"):

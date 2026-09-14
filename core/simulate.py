@@ -162,6 +162,7 @@ def resolve_device_config(device_id, per_device_config=None):
         "system_type": "external_engine",
         "engine_key": engine_key,
         "engine_name": eng["short_name"],
+        "power_group": (str(user_cfg.get("power_group") or "").strip() or None),
         "power": power * quantity,
         "base_power_100": base_power_100 * quantity,
         "supports_intensity_adjustment": supports_intensity_adjustment,
@@ -658,6 +659,85 @@ def get_empty_battery_stats_for_required_mode(lat, lon, resolved, required_hrs, 
     return monthly, pct_by_month, days_by_month, overall_pct
 
 
+def _combine_power_group(group_id, items):
+    """Fold several devices wired to one solar engine into a single load.
+
+    Exact rather than approximate: the daily energy budget depends on the
+    panel, battery, tilt and site, never on the load, and required
+    operating hours are a study-level setting shared by everything in the
+    study. So devices on one engine differ only in how many watts they
+    draw, and the engine sees their sum.
+    """
+    resolved_list = [resolved for _, _, resolved in items]
+    members = [
+        {
+            "device_name": r["device_name"],
+            "device_code": r.get("device_code"),
+            "lamp_variant": r.get("lamp_variant"),
+            "quantity": int(r.get("quantity", 1) or 1),
+            "unit_power": float(r.get("unit_power", r["power"])),
+            "power": float(r["power"]),
+            "effective_intensity_pct": float(r.get("effective_intensity_pct", 100.0)),
+            "supports_intensity_adjustment": bool(r.get("supports_intensity_adjustment")),
+        }
+        for r in resolved_list
+    ]
+
+    total_power = sum(m["power"] for m in members)
+    total_base = sum(float(r.get("base_power_100", r["power"])) for r in resolved_list)
+
+    combined = dict(resolved_list[0])
+    combined.update({
+        # Named for the engine and its members, and since results are keyed
+        # by device_name this is also what makes the group one result.
+        "device_name": "{} — {}".format(
+            resolved_list[0]["engine_name"],
+            " + ".join(m["device_name"] for m in members),
+        ),
+        # Blank rather than the first member's: a group is not that
+        # product, and the per-code rules downstream (battery chemistry,
+        # dimming behaviour) must not fire on one member's identity.
+        "device_code": "",
+        "lamp_variant": None,
+        "power": total_power,
+        "unit_power": total_power,
+        "base_power_100": total_base,
+        # Keeps power == base_power_100 x effective/100 true for the group,
+        # so the report's intensity maths works on it unchanged.
+        "effective_intensity_pct": (total_power / total_base * 100.0) if total_base > 0 else 100.0,
+        "standby_power_w": sum(float(r.get("standby_power_w", 0.0) or 0.0) for r in resolved_list),
+        "quantity": 1,
+        # Dimming is only a lever for the group if something in it dims.
+        "supports_intensity_adjustment": any(m["supports_intensity_adjustment"] for m in members),
+        "power_group": group_id,
+        "group_members": members,
+    })
+    return ("standard", f"group:{group_id}", combined)
+
+
+def _merge_power_groups(work_items):
+    """Devices sharing one solar engine must be simulated as one load.
+
+    Without this each entry is given an engine of its own, so two signs on
+    one SE OPTIMA would be modelled with two panels and two batteries -
+    comfortably passing a test the real installation would fail.
+    """
+    singles = []
+    groups = {}
+    for item in work_items:
+        source_type, _, resolved = item
+        group_id = resolved.get("power_group") if source_type == "standard" else None
+        if group_id and resolved.get("system_type") == "external_engine":
+            groups.setdefault(group_id, []).append(item)
+        else:
+            singles.append(item)
+
+    for group_id, items in groups.items():
+        # A group of one is just a device on its own engine.
+        singles.append(items[0] if len(items) == 1 else _combine_power_group(group_id, items))
+    return singles
+
+
 def simulate_for_devices(
     loc,
     required_hrs,
@@ -697,6 +777,8 @@ def simulate_for_devices(
         else:
             resolved = resolve_device_config(did, per_device_config)
             work_items.append(("standard", did, resolved))
+
+    work_items = _merge_power_groups(work_items)
 
     remaining_items = []
     for source_type, did, resolved in work_items:
@@ -926,6 +1008,8 @@ def simulate_for_devices(
             "effective_intensity_pct": resolved.get("effective_intensity_pct", 100.0),
             "standby_power_w": resolved.get("standby_power_w", 0.0),
             "lamp_variant": resolved.get("lamp_variant"),
+            "power_group": resolved.get("power_group"),
+            "group_members": resolved.get("group_members"),
             "monthly_energy_wh": monthly_energy_wh,
             "empty_battery_pct_by_month": empty_battery_pct_by_month,
             "empty_battery_days_by_month": empty_battery_days_by_month,

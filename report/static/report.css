@@ -1235,6 +1235,16 @@ body {
 /* Independent-methodology trust strip on page 1. Deliberately quiet in
    weight but full width, so it reads as a credential line rather than as
    another result card competing with the hero above it. */
+.group-members-head {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: var(--border) solid var(--line);
+}
+
+.group-member span {
+  padding-left: 8px;
+}
+
 .cover-stack {
   /* Holds page one's content so it can be scaled to fit when the device
      list is long - see cover_fit_scale in report/data_builder.py. The

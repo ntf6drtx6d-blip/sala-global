@@ -913,6 +913,11 @@ def build_report_data(loc, required_hours, results, overall, user_name, user_org
             "capability_hours": _capability_hours(r),
             "device_code": r.get("device_code", ""),
             "lamp_variant": r.get("lamp_variant"),
+            # Present only when several devices share one solar engine, in
+            # which case the row is the engine and these are what it
+            # carries. The reader needs the breakdown to see where the
+            # load comes from, since the verdict covers all of them at once.
+            "group_members": r.get("group_members") or None,
             "effective_intensity_pct": float(r.get("effective_intensity_pct", 100.0) or 100.0),
             "supports_intensity_adjustment": bool(r.get("supports_intensity_adjustment")),
             "system_type_raw": r.get("system_type", ""),

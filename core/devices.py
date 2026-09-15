@@ -162,7 +162,7 @@ DEVICES = {
             "Runway threshold/end light (ICAO)": {"power_w": 0.91},
             "Runway threshold/end light (MOS)": {"power_w": 0.85},
             "Taxiway edge light": {"power_w": 0.32},
-            "Obstruction Type A LI light": {"power_w": 0.7},
+            "Obstruction Type A LI light": {"power_w": 0.842},
             "FATO light": {"power_w": 4.61},
             "TLOF light": {"power_w": 1.53},
             "Holding point light (MOS)": {"power_w": 0.15},

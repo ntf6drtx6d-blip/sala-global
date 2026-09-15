@@ -464,6 +464,15 @@ def _migrate_sp301sl_measured_power(cur):
     _write_sp301sl_variants(cur)
 
 
+def _migrate_sp301sl_obstruction_power(cur):
+    """Obstruction Type A LI corrected to its measured 0.842 W.
+
+    A separate entry rather than a change to the one above: that one may
+    already have run, and a migration that has run never runs again.
+    """
+    _write_sp301sl_variants(cur)
+
+
 def _migrate_sp301sl_panel_and_cutoff(cur):
     """SP-301SL moves to the 6 Wp panel, and its LiFePO4 cut-off to 30%.
 
@@ -501,6 +510,7 @@ _DATA_MIGRATIONS = (
     ("2026_09_se_optima_identity", _migrate_se_optima_identity),
     ("2026_09_sp301sl_panel_and_cutoff", _migrate_sp301sl_panel_and_cutoff),
     ("2026_09_sp301sl_measured_power", _migrate_sp301sl_measured_power),
+    ("2026_09_sp301sl_obstruction_power", _migrate_sp301sl_obstruction_power),
 )
 
 

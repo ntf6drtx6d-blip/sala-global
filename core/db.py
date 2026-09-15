@@ -453,10 +453,42 @@ def _migrate_se_optima_identity(cur):
     )
 
 
+def _migrate_sp301sl_panel_and_cutoff(cur):
+    """SP-301SL moves to the 6 Wp panel, and its LiFePO4 cut-off to 30%.
+
+    The panel is the tested one: measured at 75-88% of nominal in the
+    field, against the roughly 75% performance ratio PVGIS models, so the
+    study does not claim more than the panel demonstrated.
+    """
+    spec = next((d for d in DEVICES.values() if d.get("code") == "SP-301SL"), None)
+    if not spec:
+        return
+
+    cur.execute("SELECT id FROM device_catalog WHERE code = 'SP-301SL'")
+    row = cur.fetchone()
+    if not row:
+        return
+
+    cur.execute(
+        """
+        UPDATE device_catalog
+        SET panel_wp = %s,
+            battery_wh = %s,
+            battery_type = %s,
+            cutoff_pct = %s,
+            updated_at = NOW()
+        WHERE id = %s
+        """,
+        (spec.get("pv"), spec.get("batt"), spec.get("battery_type"),
+         spec.get("cutoff_pct"), row["id"]),
+    )
+
+
 _DATA_MIGRATIONS = (
     ("2026_08_sp301sl_lamp_variants", _migrate_sp301sl_lamp_variants),
     ("2026_08_sp301sl_drop_faa_variant", _migrate_sp301sl_drop_faa_variant),
     ("2026_09_se_optima_identity", _migrate_se_optima_identity),
+    ("2026_09_sp301sl_panel_and_cutoff", _migrate_sp301sl_panel_and_cutoff),
 )
 
 

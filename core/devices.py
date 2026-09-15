@@ -133,10 +133,13 @@ DEVICES = {
         "manufacturer": "S4GA",
         "system_type": "builtin",
         "default_power": 2.7,
-        "pv": 5,
+        # 6 Wp panel, measured in the field at 75-88% of nominal - at or
+        # above the ~75% performance ratio PVGIS models for this class of
+        # site, so the study stays on the conservative side of the test.
+        "pv": 6,
         "batt": 54,
         "battery_type": "LiFePO4",
-        "cutoff_pct": 20,
+        "cutoff_pct": 30,
         "tilt": 33,
         "fixed": True,
         "supports_intensity_adjustment": True,

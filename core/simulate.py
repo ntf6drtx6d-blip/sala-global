@@ -205,11 +205,11 @@ def _infer_battery_basis(resolved):
         if "NIMH" in raw_type:
             return "NiMH", 20.0
         if "LIFEPO4" in raw_type or "LFP" in raw_type:
-            return "LiFePO4", 20.0
+            return "LiFePO4", 30.0
         return "Lead Acid (SLA)" if "SLA" in raw_type else "Lead Acid", 30.0
 
     if "SP-301" in code:
-        return "LiFePO4", 20.0
+        return "LiFePO4", 30.0
 
     return "Lead Acid", 30.0
 

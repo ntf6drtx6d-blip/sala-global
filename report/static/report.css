@@ -1235,6 +1235,20 @@ body {
 /* Independent-methodology trust strip on page 1. Deliberately quiet in
    weight but full width, so it reads as a credential line rather than as
    another result card competing with the hero above it. */
+.gauge-name {
+  /* Long names - a shared engine's row carries its own name plus every
+     device on it - used to be cut to one line with an ellipsis, which hid
+     exactly the part that says which devices these are. Two lines, then
+     ellipsis, so a pathological name still cannot grow the row without
+     limit. */
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.25;
+}
+
 .group-members-head {
   margin-top: 4px;
   padding-top: 4px;

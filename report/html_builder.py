@@ -201,8 +201,12 @@ def _device_aging_chart(checkpoints: list[dict], report_i18n: dict[str, str]) ->
         ax2.bar(ages, blackout_days, width=0.6, color="#93c5fd", alpha=0.7,
                 edgecolor="#2563eb", linewidth=0.7, label=report_i18n["report.chart_days_at_age"])
 
-    ax.set_ylabel(report_i18n["report.chart_capacity_retained_pct"])
-    ax.set_xlabel(report_i18n["report.chart_age_years"])
+    # Both axis titles are set small deliberately. Rotated vertically, a
+    # default-size title is taller than this 2.05in figure, so the ends of
+    # the right-hand one were being cut off - it read "% battery days /
+    # year (of 3" with the 0 and the 65) clipped away.
+    ax.set_ylabel(report_i18n["report.chart_capacity_retained_pct"], fontsize=8)
+    ax.set_xlabel(report_i18n["report.chart_age_years"], fontsize=8)
     ax.set_ylim(0, 116)
     ax.set_xlim(-0.3, max(ages) + 0.5)
     ax.set_xticks(ages)
@@ -217,7 +221,7 @@ def _device_aging_chart(checkpoints: list[dict], report_i18n: dict[str, str]) ->
         # own data makes every device's worst bar look equally "full",
         # whether it represents 5 blacked-out days or 300. A shared scale
         # is what actually makes severity comparable across devices.
-        ax2.set_ylabel(report_i18n["report.chart_days_per_year_axis"], color="#2563eb")
+        ax2.set_ylabel(report_i18n["report.chart_days_per_year_axis"], color="#2563eb", fontsize=8)
         ax2.set_ylim(0, 365)
         ax2.set_yticks([0, 100, 200, 300, 365])
         ax2.spines["top"].set_visible(False)

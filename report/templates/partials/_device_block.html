@@ -25,11 +25,22 @@
           <div class="info-row"><span>{{ report.i18n['report.cutoff'] }}</span><strong>{{ '%.0f'|format(device.cutoff_pct) }}%</strong></div>
           <div class="info-row"><span>{{ report.i18n['ui.simulation_intensity'] }}</span><strong>{{ device.simulation_intensity }}</strong></div>
           <div class="info-row"><span>{{ report.i18n['ui.consumption_100_intensity'] }}</span><strong>{{ '%.2f'|format(device.consumption_100_intensity_wh_per_hour) }} Wh</strong></div>
+        </div>
+      </article>
+
+      <article class="card basis-card">
+        <div class="section-title">{{ report.i18n['report.solar'] }}</div>
+        <div class="info-list">
           {% if device.group_members %}
           {#
             Several devices on one solar engine. The verdict above covers
             all of them together - they share a battery, so they go dark
             together - and this says where the load comes from.
+
+            It sits under Solar, not Battery: this is the engine's card,
+            and the battery card is already the taller of the two, so
+            putting three more rows there pushed the device page past the
+            bottom of the sheet and cut off the chart below it.
           #}
           <div class="info-row group-members-head"><span>{{ report.i18n['report.shared_engine_load'] }}</span></div>
           {% for member in device.group_members %}
@@ -39,12 +50,6 @@
           </div>
           {% endfor %}
           {% endif %}
-        </div>
-      </article>
-
-      <article class="card basis-card">
-        <div class="section-title">{{ report.i18n['report.solar'] }}</div>
-        <div class="info-list">
           <div class="info-row"><span>{{ report.i18n['report.configuration'] }}</span><strong>{{ device.solar_configuration or 'Configured array' }}</strong></div>
           <div class="info-row"><span>{{ report.i18n['report.nominal_power'] }}</span><strong>{{ '%.1f'|format(device.nominal_power_wp) }} Wp</strong></div>
           {% if device.is_single_panel %}

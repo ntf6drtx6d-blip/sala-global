@@ -397,9 +397,66 @@ def _migrate_sp301sl_drop_faa_variant(cur):
     _write_sp301sl_variants(cur)
 
 
+def _migrate_se_optima_identity(cur):
+    """Re-assert SE OPTIMA's name and ratings from core/devices.py.
+
+    The engine was seeded under its working name and specification and
+    then corrected - "SE-350 OPTIMA" became "SE OPTIMA", and the panel and
+    battery figures were revised - but the seeder only ever inserts, so
+    the database kept the first version. The report takes engine names
+    from the database, which is why an upgrade recommendation still read
+    "SE-350 OPTIMA", a product that does not exist.
+    """
+    engine = SOLAR_ENGINES.get("se_optima")
+    if not engine:
+        return
+
+    cur.execute("SELECT id, metadata FROM device_catalog WHERE code = 'se_optima'")
+    row = cur.fetchone()
+    if not row:
+        # Not seeded yet; the seeder will write the current values.
+        return
+
+    metadata = dict(row.get("metadata") or {})
+    metadata["short_name"] = engine.get("short_name")
+    metadata["battery_wh_external"] = engine.get("batt_ext")
+    metadata["fixed_tilt_mechanics"] = engine.get("fixed")
+
+    tilt_options = [float(x) for x in (engine.get("tilt_options") or [])]
+    cur.execute(
+        """
+        UPDATE device_catalog
+        SET name = %s,
+            metadata = %s,
+            panel_wp = %s,
+            battery_wh = %s,
+            battery_type = %s,
+            cutoff_pct = %s,
+            panel_tilt_options = %s,
+            panel_tilt_deg = %s,
+            has_external_battery_option = %s,
+            updated_at = NOW()
+        WHERE id = %s
+        """,
+        (
+            engine.get("name"),
+            Jsonb(metadata),
+            engine.get("pv"),
+            engine.get("batt"),
+            engine.get("battery_type"),
+            engine.get("cutoff_pct"),
+            Jsonb(tilt_options),
+            tilt_options[0] if tilt_options else None,
+            engine.get("batt_ext") is not None,
+            row["id"],
+        ),
+    )
+
+
 _DATA_MIGRATIONS = (
     ("2026_08_sp301sl_lamp_variants", _migrate_sp301sl_lamp_variants),
     ("2026_08_sp301sl_drop_faa_variant", _migrate_sp301sl_drop_faa_variant),
+    ("2026_09_se_optima_identity", _migrate_se_optima_identity),
 )
 
 

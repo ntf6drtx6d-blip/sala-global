@@ -715,6 +715,38 @@ def _combine_power_group(group_id, items):
     return ("standard", f"group:{group_id}", combined)
 
 
+def plan_simulation_batches(selected_ids, per_device_config=None):
+    """Split a study into the units that actually get simulated together.
+
+    The app walks a study one device at a time so it can report progress
+    per device, calling simulate_for_devices once per key. That is fine
+    until devices share a solar engine: _merge_power_groups can only merge
+    what it is handed in a single call, so one key at a time left every
+    group a group of one and each sign quietly got an engine of its own.
+
+    Members of a group are returned in one batch, at the position of the
+    first of them, so the study keeps the order the user chose.
+    """
+    per_device_config = per_device_config or {}
+    batches = []
+    group_batch_index = {}
+
+    for did in selected_ids or []:
+        cfg = per_device_config.get(str(did))
+        group_id = ""
+        if isinstance(cfg, dict):
+            group_id = str(cfg.get("power_group") or "").strip()
+
+        if group_id and group_id in group_batch_index:
+            batches[group_batch_index[group_id]].append(did)
+            continue
+        if group_id:
+            group_batch_index[group_id] = len(batches)
+        batches.append([did])
+
+    return batches
+
+
 def _merge_power_groups(work_items):
     """Devices sharing one solar engine must be simulated as one load.
 

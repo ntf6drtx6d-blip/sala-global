@@ -944,7 +944,15 @@ def _trigger_simulation():
     st.session_state.simulation_timing = {}
     st.session_state.partial_results = {}
     st.session_state.partial_overall = "RUNNING"
-    selected_devices = list(st.session_state.get("selected_simulation_keys") or st.session_state.get("selected_ids", []))
+    # Each entry is a batch of keys simulated together, so devices sharing
+    # a solar engine stay in one call - see plan_simulation_batches. Almost
+    # always one key per batch; progress counts simulated units either way.
+    from core.simulate import plan_simulation_batches
+
+    selected_devices = plan_simulation_batches(
+        list(st.session_state.get("selected_simulation_keys") or st.session_state.get("selected_ids", [])),
+        st.session_state.get("per_device_config", {}),
+    )
     st.session_state.active_simulation_job = {
         "status": "RUNNING",
         "selected_devices": selected_devices,
@@ -1044,11 +1052,16 @@ def render_top_action_bar():
             total_devices = max(1, int(active_job.get("total_devices", 0) or len(active_job.get("selected_devices", [])) or 1))
             completed_devices = list(active_job.get("completed_device_keys", []))
             selected_devices = list(active_job.get("selected_devices", []))
-            current_device_name = (
-                str(selected_devices[current_index])
-                if 0 <= current_index < len(selected_devices)
-                else t("ui.finalizing_results", lang)
-            )
+            if 0 <= current_index < len(selected_devices):
+                current_entry = selected_devices[current_index]
+                # Entries are batches; a shared-engine batch holds several.
+                current_device_name = (
+                    " + ".join(str(k) for k in current_entry)
+                    if isinstance(current_entry, (list, tuple))
+                    else str(current_entry)
+                )
+            else:
+                current_device_name = t("ui.finalizing_results", lang)
             action_state["stage_text"].markdown(
                 f"""
                 <div class='secondary-note'><b>{t('ui.current_step', lang)}</b> {stage}</div>

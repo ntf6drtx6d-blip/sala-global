@@ -311,8 +311,15 @@ def _run_simulation(progress_callback=None):
     if current_index >= total_devices:
         current_index = total_devices - 1
 
-    current_device_key = selected_devices[current_index]
-    current_device_label = str(current_device_key)
+    # Entries are batches of keys simulated together (see
+    # plan_simulation_batches). Older jobs saved before that change hold
+    # bare keys, so accept both.
+    current_batch = selected_devices[current_index]
+    if not isinstance(current_batch, (list, tuple)):
+        current_batch = [current_batch]
+    current_batch = list(current_batch)
+    current_device_key = current_batch[0]
+    current_device_label = " + ".join(str(k) for k in current_batch)
     partial_results = dict(st.session_state.get("partial_results") or {})
     st.session_state.running = True
     st.session_state.run_stage = t("ui.preparing_simulation", lang)
@@ -420,7 +427,9 @@ def _run_simulation(progress_callback=None):
     chunk_results, chunk_overall, worst_name, worst_gap, slope = simulate_for_devices(
         loc=loc,
         required_hrs=st.session_state.required_hours,
-        selected_ids=[current_device_key],
+        # The whole batch in one call - devices sharing an engine can only
+        # be merged into a single load if they arrive together.
+        selected_ids=current_batch,
         per_device_config=st.session_state.per_device_config,
         az_override=None,
         progress_callback=simulation_progress,

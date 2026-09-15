@@ -453,6 +453,17 @@ def _migrate_se_optima_identity(cur):
     )
 
 
+def _migrate_sp301sl_measured_power(cur):
+    """Adopt SP-301S's measured battery-side consumption.
+
+    The figures in use until now were taken at the lamp input, so they
+    left out the conversion loss between battery and lamp - which is why
+    almost every one of them rises here. FATO and the MOS holding point
+    have no battery-side measurement yet and keep their old values.
+    """
+    _write_sp301sl_variants(cur)
+
+
 def _migrate_sp301sl_panel_and_cutoff(cur):
     """SP-301SL moves to the 6 Wp panel, and its LiFePO4 cut-off to 30%.
 
@@ -489,6 +500,7 @@ _DATA_MIGRATIONS = (
     ("2026_08_sp301sl_drop_faa_variant", _migrate_sp301sl_drop_faa_variant),
     ("2026_09_se_optima_identity", _migrate_se_optima_identity),
     ("2026_09_sp301sl_panel_and_cutoff", _migrate_sp301sl_panel_and_cutoff),
+    ("2026_09_sp301sl_measured_power", _migrate_sp301sl_measured_power),
 )
 
 

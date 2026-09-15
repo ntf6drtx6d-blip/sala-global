@@ -132,7 +132,7 @@ DEVICES = {
         "name": "STD SP-301SL",
         "manufacturer": "S4GA",
         "system_type": "builtin",
-        "default_power": 2.7,
+        "default_power": 3.26,
         # 6 Wp panel, measured in the field at 75-88% of nominal - at or
         # above the ~75% performance ratio PVGIS models for this class of
         # site, so the study stays on the conservative side of the test.
@@ -144,22 +144,27 @@ DEVICES = {
         "fixed": True,
         "supports_intensity_adjustment": True,
         "standby_power_w": None,
-        # Figures are the A/LED SP-301 wattage column (volts x drive
-        # current); the regulator suffix is carried in the name only where
-        # the same optic exists under more than one standard, so Taxiway,
+        # Battery-side draw, which is what the simulation needs: these are
+        # measured at the battery rather than at the lamp input, so the
+        # conversion loss is already in them. FATO and the MOS holding
+        # point have no battery-side measurement yet and keep their
+        # lamp-input figures - understated by roughly the converter loss.
+        #
+        # The regulator suffix is carried in the name only where the same
+        # optic exists under more than one standard, so Taxiway,
         # Obstruction, TLOF and FATO stay unsuffixed.
         "default_lamp_variant": "Runway edge light (ICAO)",
         "lamp_variants": {
-            "Runway edge light (ICAO)": {"power_w": 2.7},
-            "Runway edge light (MOS)": {"power_w": 3.84},
-            "Runway threshold light (ICAO, MOS)": {"power_w": 0.71},
-            "Runway end light (ICAO, MOS)": {"power_w": 0.26},
-            "Runway threshold/end light (ICAO)": {"power_w": 0.73},
-            "Runway threshold/end light (MOS)": {"power_w": 0.99},
-            "Taxiway edge light": {"power_w": 0.2},
-            "Obstruction Type A LI light": {"power_w": 0.6},
+            "Runway edge light (ICAO)": {"power_w": 3.26},
+            "Runway edge light (MOS)": {"power_w": 4.9},
+            "Runway threshold light (ICAO, MOS)": {"power_w": 0.86},
+            "Runway end light (ICAO, MOS)": {"power_w": 0.36},
+            "Runway threshold/end light (ICAO)": {"power_w": 0.91},
+            "Runway threshold/end light (MOS)": {"power_w": 0.85},
+            "Taxiway edge light": {"power_w": 0.32},
+            "Obstruction Type A LI light": {"power_w": 0.7},
             "FATO light": {"power_w": 4.61},
-            "TLOF light": {"power_w": 1.32},
+            "TLOF light": {"power_w": 1.53},
             "Holding point light (MOS)": {"power_w": 0.15},
         },
     },

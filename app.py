@@ -490,6 +490,14 @@ def _clear_setup_widget_state_before_study_restore(selected_devices, base_device
         "quantity_",
         "engine_",
         "battery_mode_",
+        # Without this the engine-sharing dropdown keeps whatever was last
+        # in session state instead of what the study was saved with. Every
+        # other per-device widget is cleared here for exactly that reason;
+        # this one was missed, and because the saved config is rewritten
+        # from the widget's value, a stale "Own engine" did not merely
+        # display wrongly - it erased the sharing and the study re-ran with
+        # an engine per device.
+        "power_group_",
     )
     saved_keys = {str(item) for item in (selected_devices or [])}
     saved_keys.update(str(item) for item in (base_device_ids or []))

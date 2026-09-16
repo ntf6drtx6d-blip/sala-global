@@ -408,6 +408,7 @@ def _clear_device_widget_state(sim_key, device_id):
         "quantity_",
         "engine_",
         "battery_mode_",
+        "power_group_",
     ]
     for prefix in dynamic_prefixes:
         st.session_state.pop(f"{prefix}{sim_key}", None)

@@ -418,6 +418,15 @@ def restore_study_from_query_id():
             st.session_state.active_simulation_job = None
             st.session_state.simulation_resume_required = False
             st.session_state.simulation_auto_continue = False
+
+    # Show the study that was just loaded. An admin session opens on the
+    # dashboard, and restoring a study put it into session state without
+    # ever moving off that page - so "Open study" appeared to do nothing
+    # but return you to the front page, with the study silently loaded
+    # behind it. Set before the dashboard default is applied further down,
+    # which only fills in when the key is absent.
+    st.session_state.admin_active_page = "feasibility"
+
     refresh_study_ready_from_state()
 
 

@@ -1,4 +1,6 @@
 from datetime import UTC
+from functools import lru_cache
+from pathlib import Path
 import math
 import re
 from pvgis_client import pvcalc_monthly_wh_per_day
@@ -559,6 +561,35 @@ def _recommended_action(r: dict, required_hours: float, i18n: dict) -> tuple:
     return _no_intensity_lever(r, i18n) or lower_intensity
 
 
+@lru_cache(maxsize=1)
+def _build_stamp() -> str:
+    """Short commit and date of the running code, for the report footer.
+
+    Read from the environment first - a container usually has no .git -
+    then from git, and finally give up quietly. A missing stamp must never
+    stop a report being produced.
+    """
+    import os
+    import subprocess
+
+    for env_var in ("RENDER_GIT_COMMIT", "GIT_COMMIT", "SOURCE_VERSION"):
+        commit = (os.getenv(env_var) or "").strip()
+        if commit:
+            return f"build {commit[:7]}"
+
+    try:
+        root = Path(__file__).resolve().parent.parent
+        commit = subprocess.run(
+            ["git", "-C", str(root), "log", "-1", "--format=%h %cd", "--date=format:%Y-%m-%d %H:%M"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if commit.returncode == 0 and commit.stdout.strip():
+            return f"build {commit.stdout.strip()}"
+    except Exception:
+        pass
+    return ""
+
+
 def _capability_hours(r: dict) -> float | None:
     """Hours/day this device sustains in its weakest month, i.e. every day
     of the year, with no battery depletion.
@@ -1076,15 +1107,18 @@ def build_report_data(loc, required_hours, results, overall, user_name, user_org
         # rather than printing it unconditionally.
         "show_availability_hero": bool(devices) and all(d["annual_blackout_days"] == 0 for d in devices),
         "devices": devices,
-        # Page one is a fixed-height sheet with overflow:hidden. Its hero
-        # and study-overview cards are a constant ~470px whatever the
-        # study contains, so once the per-device gauge passes six rows the
-        # page runs out of room and the bottom is cut off silently. Past
-        # that the content block is scaled to fit - visual only, so the
-        # page still clips at the same place but the content now finishes
-        # above it. Calibrated against measured page heights for one to
-        # ten devices in the longest-wrapping language.
-        "cover_fit_scale": max(0.80, min(1.0, 1.0 - 0.025 * max(0, total - 6))),
+        # Fallback only. report.html measures the rendered page and sets
+        # the real scale; this is what the sheet gets if that script does
+        # not run. It is deliberately pessimistic - sized for every device
+        # name wrapping to two lines, the worst case - because the cost of
+        # guessing low is slightly small text, while guessing high hides
+        # rows off the bottom of a fixed-height sheet. The script clears
+        # this before measuring, so an over-shrunk page is restored to full
+        # size rather than shrunk twice.
+        #
+        # Calibrated on measured page heights for two to ten devices with
+        # all names wrapped: five devices need 0.988, ten need 0.843.
+        "cover_fit_scale": max(0.65, min(1.0, 1.0 - 0.030 * max(0, total - 4))),
         "devices_total": total,
         "devices_pass_count": pass_count,
         "devices_near_count": near_count,
@@ -1128,6 +1162,11 @@ def build_report_data(loc, required_hours, results, overall, user_name, user_org
             if any(d["input_source_brand"] == "Avlite" for d in devices) else None,
         ],
         "total_pages": total_pages,
+        # Which build produced this PDF. Three times now a report has been
+        # investigated without knowing whether the running code contained
+        # the fix being looked for; this answers that from the document
+        # itself.
+        "build_stamp": _build_stamp(),
         "footer_note": {
             "en": "Prepared using SALA standardized off-grid feasibility methodology based on PVGIS.",
             "es": "Preparado con la metodología estandarizada de viabilidad off-grid de SALA basada en PVGIS.",

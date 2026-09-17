@@ -35,5 +35,5 @@
     <p class="chart-explainer">{{ report.i18n['report.rec_footer_note'] }}</p>
   </article>
 
-  <div class="page-footer"><span>{{ report.footer_note }}</span><span>{{ report.i18n['report.page'] }} {{ 4 + report.devices|length + aging_offset }} of {{ report.total_pages }}</span></div>
+  <div class="page-footer"><span>{{ report.footer_note }}{% if report.build_stamp %} <span class="build-stamp">· {{ report.build_stamp }}</span>{% endif %}</span><span>{{ report.i18n['report.page'] }} {{ 4 + report.devices|length + aging_offset }} of {{ report.total_pages }}</span></div>
 </section>

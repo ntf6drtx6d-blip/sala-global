@@ -82,5 +82,5 @@
       {% endif %}
     </article>
   </article>
-  <div class="page-footer"><span>{{ report.footer_note }}</span><span>{{ report.i18n['report.page'] }} {{ device.page_number }} of {{ report.total_pages }}</span></div>
+  <div class="page-footer"><span>{{ report.footer_note }}{% if report.build_stamp %} <span class="build-stamp">· {{ report.build_stamp }}</span>{% endif %}</span><span>{{ report.i18n['report.page'] }} {{ device.page_number }} of {{ report.total_pages }}</span></div>
 </section>

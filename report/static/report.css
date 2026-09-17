@@ -1249,6 +1249,13 @@ body {
   line-height: 1.25;
 }
 
+.build-stamp {
+  /* Quiet: it is for diagnosing which code produced a PDF, not for the
+     reader of the study. */
+  opacity: 0.55;
+  font-size: 0.85em;
+}
+
 .group-members-head {
   margin-top: 4px;
   padding-top: 4px;

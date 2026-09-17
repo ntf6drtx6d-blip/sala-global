@@ -313,5 +313,77 @@
       <div class="page-footer"><span>{{ report.footer_note }}</span><span>{{ report.i18n['report.page'] }} {{ 5 + report.devices|length + aging_offset + rec_offset }} of {{ report.total_pages }}</span></div>
     </section>
   </main>
+  <script>
+    /*
+      Fit each sheet's content to the sheet, by measuring it.
+
+      Every page here is a fixed height with overflow:hidden, so anything
+      that does not fit is cut off with nothing to show it went missing.
+      What overflows is driven by things Python cannot know when it builds
+      the page - how many lines a device name wraps to at the rendered
+      font, how much longer a translation runs - so the estimates that
+      used to set these scales were guesses, and a six-device study with
+      long names silently lost its last two rows.
+
+      This measures instead. Any existing scale is removed first, so a
+      guess made server-side is corrected rather than compounded, and a
+      page that already fits is left untouched at full size.
+    */
+    window.__salaFitPages = function () {
+      var pages = document.querySelectorAll('.report-page');
+      for (var i = 0; i < pages.length; i++) {
+        var page = pages[i];
+        var footer = page.querySelector('.page-footer');
+        if (!footer) continue;
+
+        var stack = page.querySelector(':scope > .cover-stack, :scope > .section-stack');
+        if (!stack) {
+          /* Pages that keep their blocks as direct children - the device
+             and methodology sheets - have nothing to scale. Give them a
+             wrapper, carrying the page's own column layout and gap so
+             nothing shifts when it fits already. */
+          var movable = [];
+          for (var c = 0; c < page.children.length; c++) {
+            var child = page.children[c];
+            if (child === footer) continue;
+            if (child.classList.contains('report-header')) continue;
+            if (child.tagName === 'STYLE' || child.tagName === 'SCRIPT') continue;
+            movable.push(child);
+          }
+          if (!movable.length) continue;
+          var pageStyle = window.getComputedStyle(page);
+          stack = document.createElement('div');
+          stack.className = 'fitted-stack';
+          stack.style.display = 'flex';
+          stack.style.flexDirection = 'column';
+          stack.style.gap = pageStyle.gap && pageStyle.gap !== 'normal' ? pageStyle.gap : '0px';
+          movable[0].parentNode.insertBefore(stack, movable[0]);
+          for (var m = 0; m < movable.length; m++) stack.appendChild(movable[m]);
+        }
+
+        stack.style.transform = 'none';
+        stack.style.width = '100%';
+
+        /* A few pixels of clearance above the footer. Scaling to an exact
+           fit leaves none, and sub-pixel rounding then puts the last block
+           a pixel or two back over the line. */
+        var available = footer.getBoundingClientRect().top - stack.getBoundingClientRect().top - 4;
+        var height = stack.getBoundingClientRect().height;
+        if (height <= 0 || available <= 0 || height <= available) continue;
+
+        /* Floored: past this a sheet is unreadable, and losing a little
+           is better than shrinking everything to nothing. */
+        var scale = Math.max(0.55, available / height);
+        stack.style.transformOrigin = 'top left';
+        stack.style.transform = 'scale(' + scale + ')';
+        stack.style.width = (100 / scale) + '%';
+      }
+    };
+    if (document.readyState === 'complete') {
+      window.__salaFitPages();
+    } else {
+      window.addEventListener('load', window.__salaFitPages);
+    }
+  </script>
 </body>
 </html>

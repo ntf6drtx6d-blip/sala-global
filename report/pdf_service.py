@@ -45,6 +45,14 @@ async def _render_pdf_bytes(html: str) -> bytes:
               if (charts.length) {
                 await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
               }
+              // Only now are fonts, images and charts settled, so this is
+              // the first moment the page's real heights can be measured.
+              // The same routine runs on load for anyone viewing the HTML;
+              // running it again here is what makes the PDF correct.
+              if (typeof window.__salaFitPages === 'function') {
+                window.__salaFitPages();
+                await new Promise(resolve => requestAnimationFrame(resolve));
+              }
             }
             """
         )

@@ -379,10 +379,20 @@
         stack.style.width = (100 / scale) + '%';
       }
     };
-    if (document.readyState === 'complete') {
+    /* Run once everything that affects height has settled, and again if
+       fonts arrive afterwards - a different face changes where names wrap,
+       which changes the height this measures. Re-running is safe: the
+       routine clears its own previous scale before measuring. */
+    function runFit() {
       window.__salaFitPages();
+      if (document.fonts && document.fonts.ready) {
+        document.fonts.ready.then(function () { window.__salaFitPages(); });
+      }
+    }
+    if (document.readyState === 'complete') {
+      runFit();
     } else {
-      window.addEventListener('load', window.__salaFitPages);
+      window.addEventListener('load', runFit);
     }
   </script>
 </body>

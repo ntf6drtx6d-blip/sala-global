@@ -15,3 +15,6 @@ __pycache__/
 
 *.pdf
 data/
+
+# Local secrets - never commit (Render API key used for deploys)
+.render_env

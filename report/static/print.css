@@ -11,7 +11,20 @@ body {
 }
 
 .report-shell {
-  width: auto;
+  /* Pinned to the paper's content width - A4 less the 12mm side margins -
+     rather than left to fill the viewport.
+
+     This stylesheet is not inside an @media print block, so "auto" also
+     applied while the page was being measured, in a browser whose viewport
+     is 1280px wide. Device labels did not wrap at that width and the page
+     measured far shorter than it prints, so the fitting script chose a
+     scale that was much too generous - 0.96 where 0.84 was needed - and
+     the bottom of the gauge went under the footer once Chromium laid the
+     document out again at paper width for the PDF.
+
+     Fixing the width means the layout that is measured is the layout that
+     prints. */
+  width: var(--page-width);
   margin: 0;
   padding: 0;
 }

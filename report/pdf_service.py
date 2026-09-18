@@ -20,7 +20,11 @@ def _prepare_env() -> None:
 async def _render_pdf_bytes(html: str) -> bytes:
     async with async_playwright() as playwright:
         browser = await playwright.chromium.launch()
-        page = await browser.new_page()
+        # A4 at 96dpi. The default 1280px viewport laid the report out far
+        # wider than the paper, so anything measured before printing did not
+        # match what was printed. The stylesheet pins the content width too;
+        # this keeps the whole page consistent.
+        page = await browser.new_page(viewport={"width": 794, "height": 1123})
         await page.set_content(html, wait_until="load")
         await page.emulate_media(media="print")
         await page.wait_for_load_state("networkidle")

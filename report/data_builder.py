@@ -1116,9 +1116,18 @@ def build_report_data(loc, required_hours, results, overall, user_name, user_org
         # this before measuring, so an over-shrunk page is restored to full
         # size rather than shrunk twice.
         #
-        # Calibrated on measured page heights for two to ten devices with
-        # all names wrapped: five devices need 0.988, ten need 0.843.
-        "cover_fit_scale": max(0.65, min(1.0, 1.0 - 0.030 * max(0, total - 4))),
+        # Calibrated on the tallest page one actually produced: a study
+        # with failures, which replaces the compact "365 days / 24 hrs"
+        # hero with explanatory text and needs more room, not less. The
+        # previous calibration used hero-present pages and was therefore
+        # too generous everywhere - it gave an eight-device study 0.88
+        # where that layout needs 0.839, and the five percent of overflow
+        # pushed the gauge legend under the footer.
+        #
+        # Measured need, French (the longest-running language): two
+        # devices 0.982, four 0.929, six 0.891, eight 0.839, ten 0.793.
+        # This sits below every one of those.
+        "cover_fit_scale": max(0.60, min(1.0, 1.01 - 0.024 * total)),
         "devices_total": total,
         "devices_pass_count": pass_count,
         "devices_near_count": near_count,

@@ -330,13 +330,22 @@
       page that already fits is left untouched at full size.
     */
     window.__salaFitPages = function () {
+      /* Mark the footer stamp so a finished PDF shows whether this ran at
+         all. Without it there is no way to tell a page the script fitted
+         from one that merely got the server-side fallback. */
+      var stamps = document.querySelectorAll('.build-stamp');
+      for (var m = 0; m < stamps.length; m++) {
+        if (stamps[m].textContent.indexOf('\u00b7f') === -1) {
+          stamps[m].textContent = stamps[m].textContent + ' \u00b7f';
+        }
+      }
       var pages = document.querySelectorAll('.report-page');
       for (var i = 0; i < pages.length; i++) {
         var page = pages[i];
         var footer = page.querySelector('.page-footer');
         if (!footer) continue;
 
-        var stack = page.querySelector(':scope > .cover-stack, :scope > .section-stack');
+        var stack = page.querySelector(':scope > .cover-stack, :scope > .section-stack, :scope > .fitted-stack');
         if (!stack) {
           /* Pages that keep their blocks as direct children - the device
              and methodology sheets - have nothing to scale. Give them a

@@ -348,19 +348,19 @@ _SP301SL_VARIANT_RENAMES = {
 }
 
 
-def _write_sp301sl_variants(cur):
-    """Force SP-301SL's stored lamp variants back to the set defined in
+def _write_catalog_variants(cur, code):
+    """Force one device's stored lamp variants back to the set defined in
     core/devices.py. Returns its runtime_id, or None if there is no row
     yet (a database seeded after this point gets the current set anyway).
 
     This deliberately overwrites rather than merges: it is the only way to
     remove a variant, and it is also the repair path for values mangled by
     the admin editor's old 0.1 power step."""
-    spec = next((d for d in DEVICES.values() if d.get("code") == "SP-301SL"), None)
+    spec = next((d for d in DEVICES.values() if d.get("code") == code), None)
     if not spec:
         return None
 
-    cur.execute("SELECT id, runtime_id, metadata FROM device_catalog WHERE code = 'SP-301SL'")
+    cur.execute("SELECT id, runtime_id, metadata FROM device_catalog WHERE code = %s", (code,))
     row = cur.fetchone()
     if not row:
         return None
@@ -383,7 +383,7 @@ def _migrate_sp301sl_lamp_variants(cur):
     """Bring SP-301SL's lamp variants in line with the A/LED SP-301 sheet:
     six variants become eleven, runway edge is corrected from 1.48W to
     2.70W and TLOF from 1.33W to 1.32W."""
-    runtime_id = _write_sp301sl_variants(cur)
+    runtime_id = _write_catalog_variants(cur, "SP-301SL")
     if runtime_id is not None:
         _rename_saved_lamp_variants(cur, int(runtime_id), _SP301SL_VARIANT_RENAMES)
 
@@ -394,7 +394,7 @@ def _migrate_sp301sl_drop_faa_variant(cur):
     Re-asserting the whole variant set also repairs any power mangled by
     the admin editor, which until now snapped every figure to a 0.1 grid
     (1.32W became 1.30, 0.99 became 0.90) as soon as a row was edited."""
-    _write_sp301sl_variants(cur)
+    _write_catalog_variants(cur, "SP-301SL")
 
 
 def _migrate_se_optima_identity(cur):
@@ -461,7 +461,7 @@ def _migrate_sp301sl_measured_power(cur):
     almost every one of them rises here. FATO and the MOS holding point
     have no battery-side measurement yet and keep their old values.
     """
-    _write_sp301sl_variants(cur)
+    _write_catalog_variants(cur, "SP-301SL")
 
 
 def _migrate_sp301sl_obstruction_power(cur):
@@ -470,7 +470,7 @@ def _migrate_sp301sl_obstruction_power(cur):
     A separate entry rather than a change to the one above: that one may
     already have run, and a migration that has run never runs again.
     """
-    _write_sp301sl_variants(cur)
+    _write_catalog_variants(cur, "SP-301SL")
 
 
 def _migrate_sp301sl_panel_and_cutoff(cur):
@@ -504,6 +504,15 @@ def _migrate_sp301sl_panel_and_cutoff(cur):
     )
 
 
+def _migrate_sp401smi_rtil(cur):
+    """Add the Runway Threshold Identification Light to SP-401SMI.
+
+    1.4 W at full output, from a measured 360 h autonomy at 30% intensity
+    against the device's 151.2 Wh usable energy. Nothing is removed, so no
+    saved study is affected."""
+    _write_catalog_variants(cur, "SP-401SMI")
+
+
 _DATA_MIGRATIONS = (
     ("2026_08_sp301sl_lamp_variants", _migrate_sp301sl_lamp_variants),
     ("2026_08_sp301sl_drop_faa_variant", _migrate_sp301sl_drop_faa_variant),
@@ -511,6 +520,7 @@ _DATA_MIGRATIONS = (
     ("2026_09_sp301sl_panel_and_cutoff", _migrate_sp301sl_panel_and_cutoff),
     ("2026_09_sp301sl_measured_power", _migrate_sp301sl_measured_power),
     ("2026_09_sp301sl_obstruction_power", _migrate_sp301sl_obstruction_power),
+    ("2026_10_sp401smi_rtil", _migrate_sp401smi_rtil),
 )
 
 

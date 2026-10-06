@@ -442,6 +442,7 @@ def _variant_short_label(lamp_type: str) -> str:
         "Runway threshold/end light": "THR/END",
         "Taxiway edge light": "TWY edge",
         "Approach light": "APP",
+        "Runway Threshold Identification Light (RTIL)": "RTIL",
         "Obstruction Type A LI light": "OBS LI",
         "TLOF light": "TLOF",
         "FATO light": "FATO",

@@ -101,6 +101,10 @@ DEVICES = {
             "Runway threshold/end light": {"power_w": 1.8},
             "Taxiway edge light": {"power_w": 0.6},
             "Approach light": {"power_w": 3.9},
+            # Derived from a measured 360 h autonomy at 30% intensity:
+            # 216 Wh x 0.70 usable = 151.2 Wh, so 151.2 / 360 = 0.42 W at
+            # 30%, and 0.42 / 0.30 = 1.4 W at full output.
+            "Runway Threshold Identification Light (RTIL)": {"power_w": 1.4},
             "Obstruction Type A LI light": {"power_w": 0.6},
             "TLOF light": {"power_w": 2.58},
             "FATO light": {"power_w": 4.5},
@@ -282,6 +286,10 @@ def get_device_by_id(device_id: int):
 _LAMP_VARIANT_GROUPS = (
     # (group, predicate) - first match wins, so the threshold/end family
     # is claimed before the runway rule can take it.
+    # Matched first because it is the most specific: RTIL is named for the
+    # threshold it identifies and sits on the runway, so both of those rules
+    # would otherwise claim it before this one was reached.
+    ("approach", lambda w: bool(w & {"approach", "rtil"})),
     ("threshold_only", lambda w: "threshold" in w and "end" not in w),
     ("end_only", lambda w: "end" in w and "threshold" not in w),
     ("threshold_end", lambda w: "threshold" in w and "end" in w),
@@ -301,6 +309,7 @@ _LAMP_VARIANT_ORDER = (
     "obstruction",
     "fato",
     "tlof",
+    "approach",
 )
 
 

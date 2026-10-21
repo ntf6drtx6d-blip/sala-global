@@ -53,7 +53,7 @@
           <div class="info-row"><span>{{ report.i18n['report.configuration'] }}</span><strong>{{ device.solar_configuration or 'Configured array' }}</strong></div>
           <div class="info-row"><span>{{ report.i18n['report.nominal_power'] }}</span><strong>{{ '%.1f'|format(device.nominal_power_wp) }} Wp</strong></div>
           {% if device.is_single_panel %}
-            <div class="info-row"><span>{{ report.i18n['report.single_panel_tilt'] }}</span><strong>{{ '%.0f'|format(device.single_panel_tilt_deg) }}°</strong></div>
+            <div class="info-row"><span>{{ device.panel_tilt_label or report.i18n['report.single_panel_tilt'] }}</span><strong>{{ '%.0f'|format(device.single_panel_tilt_deg) }}°</strong></div>
             <div class="info-row"><span>{{ report.i18n['report.panel_orientation'] }}</span><strong>{{ device.panel_orientation_label }}</strong></div>
           {% else %}
             <div class="info-row"><span>{{ report.i18n['report.effective_power'] }}</span><strong>{{ '%.1f'|format(device.effective_power_wp) }} Wp</strong></div>

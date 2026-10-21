@@ -34,6 +34,7 @@ def get_runtime_catalog():
                 "name": row.get("name") or row["code"],
                 "short_name": metadata.get("short_name") or str(row["code"]).upper(),
                 "pv": float(row.get("panel_wp") or 0.0),
+                "pv_options": [float(x) for x in (metadata.get("pv_options") or [])],
                 "batt": float(row.get("battery_wh") or 0.0),
                 "battery_type": row.get("battery_type"),
                 "cutoff_pct": row.get("cutoff_pct"),

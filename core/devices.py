@@ -70,6 +70,11 @@ SOLAR_ENGINES = {
         "name": "Solar Engine Max",
         "short_name": "SE MAX",
         "pv": 720,
+        # Extended arrays: two or three of the standard 720 Wp panel, all
+        # at the same tilt and orientation, so the array is simply their
+        # sum. Either extended array is supplied with the 6000 Wh battery,
+        # so choosing one selects batt_ext as well.
+        "pv_options": [720, 1440, 2160],
         "batt": 3000,
         "battery_type": "Lead Acid",
         "cutoff_pct": 30,

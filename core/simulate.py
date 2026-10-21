@@ -154,6 +154,19 @@ def resolve_device_config(device_id, per_device_config=None):
     battery_mode = user_cfg.get("battery_mode", "Std")
     batt = float(eng["batt_ext"]) if (battery_mode == "Ext" and eng.get("batt_ext")) else float(eng["batt"])
 
+    # Panel size, where the engine offers a choice of array. The options are
+    # whole multiples of the standard panel at one tilt and orientation, so
+    # the array is their sum and PVGIS just receives the larger peak power.
+    pv_options = [float(x) for x in (eng.get("pv_options") or [])]
+    pv = float(eng["pv"])
+    try:
+        chosen_pv = float(user_cfg.get("panel_wp"))
+    except (TypeError, ValueError):
+        chosen_pv = None
+    if chosen_pv is not None and pv_options and chosen_pv in pv_options:
+        pv = chosen_pv
+    panel_count = int(round(pv / float(eng["pv"]))) if float(eng["pv"]) > 0 else 1
+
     cfg = {
         "device_id": parsed_device_id,
         "device_code": dspec["code"],
@@ -175,7 +188,9 @@ def resolve_device_config(device_id, per_device_config=None):
         "mixed_intensity_b": mixed_intensity_b,
         "effective_intensity_pct": effective_intensity_pct,
         "standby_power_w": standby_power_w,
-        "pv": float(eng["pv"]),
+        "pv": pv,
+        "panel_wp": pv,
+        "coplanar_panel_count": max(1, panel_count),
         "batt_std": float(eng["batt"]),
         "batt": batt,
         "battery_type": eng.get("battery_type"),
@@ -1040,6 +1055,7 @@ def simulate_for_devices(
             "effective_intensity_pct": resolved.get("effective_intensity_pct", 100.0),
             "standby_power_w": resolved.get("standby_power_w", 0.0),
             "lamp_variant": resolved.get("lamp_variant"),
+            "coplanar_panel_count": resolved.get("coplanar_panel_count", 1),
             "power_group": resolved.get("power_group"),
             "group_members": resolved.get("group_members"),
             "monthly_energy_wh": monthly_energy_wh,

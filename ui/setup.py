@@ -193,7 +193,7 @@ def power_group_engine_conflicts(per_device_config=None) -> list[str]:
         if not group_id:
             continue
         seen.setdefault(group_id, set()).add(
-            (cfg.get("engine_key"), cfg.get("battery_mode", "Std"))
+            (cfg.get("engine_key"), cfg.get("battery_mode", "Std"), cfg.get("panel_wp"))
         )
     return sorted(group_id for group_id, choices in seen.items() if len(choices) > 1)
 
@@ -321,7 +321,19 @@ def _safe_float(value, default=0.0):
         return float(default)
 
 
-def _engine_summary(dspec, solar_engines, engine_key, battery_mode):
+def _apply_extended_panel_battery(panel_key: str, battery_key: str, std_pv: float):
+    """Extended arrays ship with the large battery, so picking one moves the
+    battery option with it. Runs as the panel selector's on_change, before the
+    battery radio is drawn, so the radio shows the new value."""
+    try:
+        chosen = float(st.session_state.get(panel_key))
+    except (TypeError, ValueError):
+        return
+    if chosen > std_pv:
+        st.session_state[battery_key] = "Ext"
+
+
+def _engine_summary(dspec, solar_engines, engine_key, battery_mode, panel_wp=None):
     SOLAR_ENGINES = solar_engines
     system_type = dspec.get("system_type", "builtin")
 
@@ -345,10 +357,13 @@ def _engine_summary(dspec, solar_engines, engine_key, battery_mode):
 
         eng = SOLAR_ENGINES[engine_key]
         batt = eng["batt_ext"] if (battery_mode == "Ext" and eng.get("batt_ext")) else eng["batt"]
+        # The array the user picked, so the caption matches what is simulated
+        # rather than always quoting the standard panel.
+        pv = _safe_float(panel_wp, 0.0) or _safe_float(eng.get("pv", 0.0), 0.0)
 
         return {
             "source_label": eng["short_name"],
-            "pv": _safe_float(eng.get("pv", 0.0), 0.0),
+            "pv": pv,
             "batt": _safe_float(batt, 0.0),
             "battery_mode": battery_mode if battery_mode else "Std",
         }
@@ -409,6 +424,7 @@ def _clear_device_widget_state(sim_key, device_id):
         "engine_",
         "battery_mode_",
         "power_group_",
+        "panel_wp_",
     ]
     for prefix in dynamic_prefixes:
         st.session_state.pop(f"{prefix}{sim_key}", None)
@@ -1014,6 +1030,7 @@ def render_setup(disabled=False):
                 # devices carry their own panel and battery, so this stays
                 # empty for them rather than being left undefined.
                 power_group = ""
+                panel_wp = _safe_float(saved_cfg.get("panel_wp"), 0.0)
                 # Quantity means "N fixtures sharing one solar engine", which
                 # is true of any engine-based device. It used to be pinned to
                 # the SP-200 product code, so every inset light added later
@@ -1221,6 +1238,40 @@ def render_setup(disabled=False):
 
                         eng = SOLAR_ENGINES[engine_key]
 
+                        pv_options = [float(x) for x in (eng.get("pv_options") or [])]
+                        if len(pv_options) > 1:
+                            std_pv = float(eng.get("pv") or pv_options[0])
+                            std_note = t("ui.panel_size_standard", lang)
+                            if panel_wp not in pv_options:
+                                panel_wp = std_pv
+                            panel_wp = st.selectbox(
+                                t("ui.panel_size", lang),
+                                pv_options,
+                                index=pv_options.index(panel_wp),
+                                key=f"panel_wp_{sim_key}",
+                                disabled=disabled,
+                                format_func=lambda v: (
+                                    f"{v:g} Wp ({std_note})" if v == std_pv else f"{v:g} Wp"
+                                ),
+                                on_change=_apply_extended_panel_battery,
+                                args=(
+                                    f"panel_wp_{sim_key}",
+                                    f"battery_mode_{sim_key}",
+                                    std_pv,
+                                ),
+                            )
+                            # A study saved earlier keeps the battery option it
+                            # was saved with; only a device being set up now
+                            # takes the extended array's default battery.
+                            if (
+                                panel_wp > std_pv
+                                and eng.get("batt_ext")
+                                and "battery_mode" not in saved_cfg
+                            ):
+                                battery_mode = "Ext"
+                        else:
+                            panel_wp = float(eng.get("pv") or 0.0)
+
                         if eng.get("batt_ext"):
                             battery_mode = st.radio(
                                 t("ui.battery_mode", lang),
@@ -1236,9 +1287,10 @@ def render_setup(disabled=False):
                     else:
                         engine_key = None
                         battery_mode = "Built-in"
+                        panel_wp = 0.0
                         st.caption(t("ui.built_in_source", lang))
 
-                    summary = _engine_summary(dspec, SOLAR_ENGINES, engine_key, battery_mode)
+                    summary = _engine_summary(dspec, SOLAR_ENGINES, engine_key, battery_mode, panel_wp)
                     total_power = float(power) * float(quantity) if system_type == "external_engine" else float(power)
 
                     m1, m2, m3, m4 = st.columns(4)
@@ -1266,6 +1318,7 @@ def render_setup(disabled=False):
                         "device_id": did,
                         "lamp_variant": lamp_variant,
                         "power_group": (power_group or None),
+                        "panel_wp": (float(panel_wp) if panel_wp else None),
                         "display_label": display_label,
                         "catalog_signature": catalog_signature,
                         "power": float(power),

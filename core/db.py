@@ -182,6 +182,7 @@ def _default_catalog_items():
                 "metadata": {
                     "short_name": engine.get("short_name"),
                     "battery_wh_external": engine.get("batt_ext"),
+                    "pv_options": engine.get("pv_options"),
                     "fixed_tilt_mechanics": engine.get("fixed"),
                 },
             }
@@ -513,6 +514,24 @@ def _migrate_sp401smi_rtil(cur):
     _write_catalog_variants(cur, "SP-401SMI")
 
 
+def _migrate_se_max_panel_options(cur):
+    """Offer SE MAX the extended arrays: 1440 Wp and 2160 Wp alongside the
+    standard 720 Wp. Two and three of the same panel, same tilt."""
+    engine = SOLAR_ENGINES.get("se_max")
+    if not engine or not engine.get("pv_options"):
+        return
+    cur.execute("SELECT id, metadata FROM device_catalog WHERE code = 'se_max'")
+    row = cur.fetchone()
+    if not row:
+        return
+    metadata = dict(row.get("metadata") or {})
+    metadata["pv_options"] = engine["pv_options"]
+    cur.execute(
+        "UPDATE device_catalog SET metadata = %s, updated_at = NOW() WHERE id = %s",
+        (Jsonb(metadata), row["id"]),
+    )
+
+
 _DATA_MIGRATIONS = (
     ("2026_08_sp301sl_lamp_variants", _migrate_sp301sl_lamp_variants),
     ("2026_08_sp301sl_drop_faa_variant", _migrate_sp301sl_drop_faa_variant),
@@ -521,6 +540,7 @@ _DATA_MIGRATIONS = (
     ("2026_09_sp301sl_measured_power", _migrate_sp301sl_measured_power),
     ("2026_09_sp301sl_obstruction_power", _migrate_sp301sl_obstruction_power),
     ("2026_10_sp401smi_rtil", _migrate_sp401smi_rtil),
+    ("2026_10_se_max_panel_options", _migrate_se_max_panel_options),
 )
 
 

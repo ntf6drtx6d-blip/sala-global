@@ -479,8 +479,41 @@ def _hardware_action(r: dict, required_hours: float, i18n: dict):
             i18n[reason_key],
         )
 
+    def _extended_array():
+        """The same engine carrying more panel, where it offers the option.
+
+        Names the next size up rather than the largest: the gap has to be
+        re-simulated either way, and the smaller step may already close
+        it. Only engines that really offer the larger array qualify, so
+        this stays silent on engines sold with one panel.
+        """
+        options = sorted(float(x) for x in (engine.get("pv_options") or []))
+        current = float(r.get("nominal_power_wp") or engine.get("pv") or 0)
+        larger = [value for value in options if value > current + 1e-6]
+        if not larger:
+            return None
+        # The extended arrays are supplied with the large battery, so say
+        # so where the device is still on the standard one - the reader
+        # would otherwise price the panel alone.
+        key = (
+            "report.rec_extended_array_with_battery"
+            if can_extend
+            else "report.rec_extended_array"
+        )
+        text = (
+            i18n[key]
+            .replace("{ext}", f"{larger[0]:.0f}")
+            .replace("{std}", f"{current:.0f}")
+            .replace("{batt}", f"{float(engine.get('batt_ext') or 0):.0f}")
+        )
+        return (text, i18n["report.rec_reason_extended_array"])
+
     if storage_is_short and can_extend:
         return _extended_battery()
+
+    array_upgrade = _extended_array()
+    if array_upgrade:
+        return array_upgrade
 
     for candidate in sorted(engines.values(), key=lambda e: float(e.get("pv") or 0)):
         if float(candidate.get("pv") or 0) > float(engine.get("pv") or 0):
@@ -818,9 +851,28 @@ def _panel_count(r: dict) -> int:
         return 0
 
 
+def _coplanar_panel_count(r: dict) -> int:
+    """How many identical panels the engine's array is made of. S4GA extended
+    arrays are several copies of the standard panel at one tilt and
+    orientation, so they stay a single equivalent panel for the simulation."""
+    try:
+        return max(1, int(r.get("coplanar_panel_count", 1) or 1))
+    except Exception:
+        return 1
+
+
+def _panel_tilt_label(r: dict, language: str = "en") -> str:
+    if _coplanar_panel_count(r) > 1:
+        return t("report.array_tilt", language)
+    return t("report.single_panel_tilt", language)
+
+
 def _solar_configuration_summary(r: dict, language: str = "en") -> str:
     count = _panel_count(r)
     geometry = str(r.get("physical_panel_geometry") or "").strip()
+    coplanar = _coplanar_panel_count(r)
+    if count <= 1 and coplanar > 1:
+        return t("report.coplanar_array", language, count=coplanar)
     if count <= 1:
         return {"en": "single panel", "es": "panel único", "fr": "panneau unique"}.get(language, "single panel")
     if geometry:
@@ -982,6 +1034,7 @@ def build_report_data(loc, required_hours, results, overall, user_name, user_org
             "empty_battery_days_chart": list(r.get("empty_battery_days_by_month") or [0] * 12)[:12] + [0] * max(0, 12 - len(list(r.get("empty_battery_days_by_month") or [])[:12])),
             "solar_configuration": _solar_configuration_summary(r, language),
             "is_single_panel": _panel_count(r) <= 1,
+            "panel_tilt_label": _panel_tilt_label(r, language),
             "nominal_power_wp": float(r.get("total_nominal_wp", r.get("pv", 0)) or 0),
             "effective_power_wp": float(r.get("equivalent_panel_wp", r.get("pv", 0)) or 0),
             "effective_ratio_pct": float(r.get("equivalent_pct_of_physical_nominal", 0) or 0),

@@ -25,6 +25,7 @@ from core.db import (
     update_user_active,
     update_user_password,
     update_user_profile,
+    pvgis_cache_count,
 )
 from core.auth import hash_password
 from core.catalog import get_cached_runtime_catalog, runtime_device_label, invalidate_runtime_catalog_cache
@@ -1202,6 +1203,10 @@ def render_admin_dashboard():
                         days=stats["active_window_days"],
                     )
                 )
+
+    st.caption(
+        t("admin.pvgis_cache_size", lang, count=pvgis_cache_count())
+    )
 
     # --- 2. Where the studies are ------------------------------------------
     st.markdown(f"#### {t('admin.stat_map_title', lang)}")

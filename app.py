@@ -567,6 +567,23 @@ def _mark_run_failed(message: str):
         st.session_state.simulation_auto_continue = False
 
 
+def _simulation_failure_message(exc, lang):
+    """What to put in front of the user when a run dies.
+
+    PVGIS being down is not their doing and not fixable from the study, so
+    it gets its own sentence instead of a raw exception string. Either way
+    the exception is written to the service log with its traceback - this
+    handler used to swallow it, which is why a failed run left nothing in
+    the Render log but Streamlit's deprecation warnings.
+    """
+    logging.getLogger(__name__).error("Simulation failed.", exc_info=exc)
+    from pvgis_client import PvgisUnavailable
+
+    if isinstance(exc, PvgisUnavailable):
+        return t("ui.pvgis_unavailable", lang)
+    return t("ui.simulation_failed", lang, error=str(exc))
+
+
 def _recover_stalled_run_if_needed():
     if not st.session_state.get("running"):
         return
@@ -1713,7 +1730,7 @@ def render_calculator_app():
         try:
             _run_simulation(progress_callback=progress_callback)
         except Exception as exc:
-            _mark_run_failed(t("ui.simulation_failed", lang, error=str(exc)))
+            _mark_run_failed(_simulation_failure_message(exc, lang))
             st.rerun()
 
     if st.session_state.get("results") is not None:

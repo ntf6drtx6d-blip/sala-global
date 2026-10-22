@@ -697,12 +697,76 @@ def init_db():
         cur.execute("ALTER TABLE device_catalog ADD COLUMN IF NOT EXISTS runtime_id INTEGER UNIQUE")
 
         cur.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS pvgis_cache (
+                key TEXT PRIMARY KEY,
+                payload JSONB NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            """
+        )
+
         cur.execute("CREATE INDEX IF NOT EXISTS idx_studies_user_id ON studies(user_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_access_requests_status ON access_requests(status)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_device_catalog_entity_type ON device_catalog(entity_type)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_device_catalog_manufacturer ON device_catalog(manufacturer)")
+        # Answers past their 30-day life are never served anyway (the
+        # request path re-fetches them), so they are only taking up
+        # database storage. Cleared once per start rather than on every
+        # write.
+        cur.execute(
+            "DELETE FROM pvgis_cache WHERE updated_at < NOW() - make_interval(hours => 720)"
+        )
         _sync_default_device_catalog(cur)
         _run_data_migrations(cur)
+
+
+def pvgis_cache_get(key, ttl_hours=720):
+    """A PVGIS answer kept in the database, or None.
+
+    PVGIS answers were cached only on the container filesystem, which Render
+    replaces on every deploy. A deploy therefore threw away every answer the
+    app had ever fetched, and the next study depended entirely on PVGIS being
+    up - which on 22 Oct 2026 it was not, so every run failed. The database
+    survives deploys, so a location simulated once stays simulable.
+    """
+    with db_cursor() as (_, cur):
+        cur.execute(
+            """
+            SELECT payload FROM pvgis_cache
+            WHERE key = %s AND updated_at > NOW() - make_interval(hours => %s)
+            """,
+            (key, int(ttl_hours)),
+        )
+        row = cur.fetchone()
+    return row["payload"] if row else None
+
+
+def pvgis_cache_put(key, payload):
+    with db_cursor() as (_, cur):
+        cur.execute(
+            """
+            INSERT INTO pvgis_cache (key, payload, updated_at)
+            VALUES (%s, %s, NOW())
+            ON CONFLICT (key) DO UPDATE
+                SET payload = EXCLUDED.payload, updated_at = NOW()
+            """,
+            (key, Jsonb(payload)),
+        )
+
+
+def pvgis_cache_count() -> int:
+    """How many PVGIS answers are stored. Shown to admins so the durable
+    cache can be seen working: a figure that grows as studies run means a
+    deploy no longer starts the app with nothing to fall back on."""
+    try:
+        with db_cursor() as (_, cur):
+            cur.execute("SELECT COUNT(*) AS n FROM pvgis_cache")
+            row = cur.fetchone()
+        return int((row or {}).get("n") or 0)
+    except Exception:
+        return 0
 
 
 def create_user(email, password_hash, role="user", full_name=None, organization=None):

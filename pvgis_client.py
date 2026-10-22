@@ -33,6 +33,14 @@ def parse_location_input(city_or_coords: str, country: str = "") -> dict:
     # If we got here, treat as unsupported city-only input
     raise ValueError("Please enter coordinates as 'lat, lon' (e.g., 45.043, 1.490).")
 
+class PvgisUnavailable(RuntimeError):
+    """PVGIS itself is not answering - refused, unreachable or serving an
+    error page. Separate from a bad request or an unexpected payload,
+    because nothing about the study caused it and nothing in the study can
+    fix it: the only honest thing to tell the user is that the external
+    solar database is down."""
+
+
 # ---------- Local cache helpers used by simulate.py ----------
 from utils import CACHE_PATH as _CACHE_PATH  # ~/.pvgis_cache.json
 
@@ -77,6 +85,37 @@ def _cache_file_for(key: str) -> Path:
     base.mkdir(parents=True, exist_ok=True)
     return base / f"{h}.json"
 
+def _db_cache_available() -> bool:
+    """Checked per call rather than remembered: a database that is briefly
+    unreachable must not switch the durable cache off for the life of the
+    process. Without DATABASE_URL (local runs, scripts) there is nothing to
+    try, and skipping is cheaper than an exception per request."""
+    return bool(os.getenv("DATABASE_URL", "").strip())
+
+
+def _db_cache_get(key: str, ttl_hours: int):
+    """Best effort: no database just means no durable cache."""
+    if not _db_cache_available():
+        return None
+    try:
+        from core.db import pvgis_cache_get
+
+        return pvgis_cache_get(key, ttl_hours)
+    except Exception:
+        return None
+
+
+def _db_cache_put(key: str, payload: dict):
+    if not _db_cache_available():
+        return
+    try:
+        from core.db import pvgis_cache_put
+
+        pvgis_cache_put(key, payload)
+    except Exception:
+        pass
+
+
 def _cached_get_json(url: str, params: dict, ttl_hours: int = 720):
     key = url + "?" + "&".join(f"{k}={v}" for k, v in sorted(params.items()))
     cp = _cache_file_for(key)
@@ -90,16 +129,39 @@ def _cached_get_json(url: str, params: dict, ttl_hours: int = 720):
             except Exception:
                 pass
 
+    # Then the database, which outlives the container. Copied back to the
+    # file so the rest of this study reads it without a round trip.
+    stored = _db_cache_get(key, ttl_hours)
+    if stored:
+        try:
+            cp.write_text(json.dumps(stored))
+        except Exception:
+            pass
+        return stored
+
+    import requests
+
     s = _pvgis_session()
-    r = s.get(url, params=params, timeout=30)
-    r.raise_for_status()
+    try:
+        r = s.get(url, params=params, timeout=30)
+        r.raise_for_status()
+    except requests.RequestException as e:
+        status = getattr(getattr(e, "response", None), "status_code", None)
+        # Refused, rate-limited, broken or unreachable is PVGIS being down.
+        # A 400 is our own malformed request, and that must keep its own
+        # error so a real bug is not reported as an outage.
+        if status is None or status in (401, 403, 408, 429) or status >= 500:
+            raise PvgisUnavailable(
+                f"PVGIS did not answer ({status or e.__class__.__name__}) at {url}."
+            ) from e
+        raise
     try:
         data = r.json()
     except Exception as e:
         # PVGIS sometimes returns an HTML error page with 200 OK
         head = r.text[:300].lower()
         if "<html" in head or "rate limit" in head or "error" in head:
-            raise RuntimeError("PVGIS returned non-JSON (likely rate-limited).") from e
+            raise PvgisUnavailable("PVGIS returned an error page instead of data.") from e
         raise
 
     # write cache (best effort)
@@ -107,6 +169,7 @@ def _cached_get_json(url: str, params: dict, ttl_hours: int = 720):
         cp.write_text(json.dumps(data))
     except Exception:
         pass
+    _db_cache_put(key, data)
 
     return data
 
@@ -179,6 +242,10 @@ def pvcalc_monthly_wh_per_day(lat, lon, pv_wp, tilt_deg, aspect_deg):
         except Exception as e:
             last_err = e
             continue
+    if isinstance(last_err, PvgisUnavailable):
+        # Every dataset failed the same way: the service is down, not the
+        # dataset choice. Keep the type so the UI can say so.
+        raise last_err
     raise RuntimeError(f"PVGIS PVcalc failed for datasets {order}. Last error: {last_err}")
 
 # ---------- SHScalc: monthly off-grid metrics (needs f_e) ----------
@@ -265,6 +332,10 @@ def shs_monthly(lat, lon, pv_wp, batt_wh, cons_wh_day, tilt_deg, aspect_deg, cut
         except Exception as e:
             last_err = e
             continue
+    if isinstance(last_err, PvgisUnavailable):
+        # Every dataset failed the same way: the service is down, not the
+        # dataset choice. Keep the type so the UI can say so.
+        raise last_err
     raise RuntimeError(f"PVGIS SHScalc failed for datasets {order}. Last error: {last_err}")
 
 

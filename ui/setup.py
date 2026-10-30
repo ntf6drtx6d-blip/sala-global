@@ -166,16 +166,17 @@ def _devices_missing_lamp_variant() -> list[str]:
     ]
 
 
-POWER_GROUP_IDS = ("A", "B", "C")
+# Ten clusters: a mid-size airfield runs several groups of signs on
+# separate engines, and three ran out on the first real schedule.
+POWER_GROUP_IDS = tuple("ABCDEFGHIJ")
 
 
 def power_group_sharing_enabled() -> bool:
-    """Shared solar engines are an S4GA-internal tool for now: it changes
-    what a result row means (one verdict for several devices), so it stays
-    off for customer accounts until it has been used in anger."""
-    from core.notify import is_internal_email
-
-    return is_internal_email(st.session_state.get("auth_email", "") or "")
+    """Open to every account. It was held back to S4GA while the shared
+    engine was new, but signs standing side by side on one engine is the
+    ordinary case, not an internal trick - and a partner who cannot model
+    it ends up with a study that quietly assumes an engine per sign."""
+    return True
 
 
 def power_group_engine_conflicts(per_device_config=None) -> list[str]:

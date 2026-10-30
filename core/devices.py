@@ -184,13 +184,12 @@ DEVICES = {
             "Runway end light (ICAO)": {"power_w": 0.41, "power_w_no_radio": 0.38},
             "Runway end light (MOS)": {"power_w": 0.40, "power_w_no_radio": 0.37},
             "Runway threshold/end light (ICAO)": {"power_w": 0.91, "power_w_no_radio": 0.88},
-            "Runway threshold/end light (MOS)": {"power_w": 0.85, "power_w_no_radio": 0.82},
+            "Runway threshold/end light (MOS)": {"power_w": 0.91, "power_w_no_radio": 0.88},
             "Taxiway edge light": {"power_w": 0.32, "power_w_no_radio": 0.30},
             "Obstruction Type A LI light": {"power_w": 0.84, "power_w_no_radio": 0.83},
-            # Still the lamp-input figure, and still unconfirmed whether
-            # FATO ships at 0.9 A or 1.2 A, so it keeps one value for both
-            # builds until that is settled.
-            "FATO light": {"power_w": 4.61},
+            # The same module as an ICAO runway edge light, confirmed by
+            # S4GA - it replaces an older 4.61 W lamp-input estimate.
+            "FATO light": {"power_w": 3.23, "power_w_no_radio": 3.20},
             "TLOF light": {"power_w": 1.51, "power_w_no_radio": 1.48},
             "Holding point light (MOS)": {"power_w": 0.27, "power_w_no_radio": 0.25},
         },

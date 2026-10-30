@@ -427,6 +427,7 @@ def _clear_device_widget_state(sim_key, device_id):
         "power_group_",
         "panel_wp_",
         "radio_control_",
+        "sign_legend_",
     ]
     for prefix in dynamic_prefixes:
         st.session_state.pop(f"{prefix}{sim_key}", None)
@@ -474,6 +475,8 @@ def _variant_short_label(lamp_type: str) -> str:
         "Runway end light (ICAO, MOS)": "END",
         "Holding point light (MOS)": "Holding point",
     }
+    if lamp_type and " — " in str(lamp_type):
+        return str(lamp_type).split(" — ", 1)[0].strip()
     return mapping.get(lamp_type, lamp_type)
 
 
@@ -1043,6 +1046,9 @@ def render_setup(disabled=False):
                 # empty for them rather than being left undefined.
                 power_group = ""
                 panel_wp = _safe_float(saved_cfg.get("panel_wp"), 0.0)
+                # What is actually written on this sign, which differs from
+                # airport to airport while the board itself does not.
+                sign_legend = str(saved_cfg.get("sign_legend", "") or "")
                 # Quantity means "N fixtures sharing one solar engine", which
                 # is true of any engine-based device. It used to be pinned to
                 # the SP-200 product code, so every inset light added later
@@ -1305,6 +1311,16 @@ def render_setup(disabled=False):
                         panel_wp = 0.0
                         st.caption(t("ui.built_in_source", lang))
 
+                    if dspec.get("legend_text"):
+                        sign_legend = st.text_input(
+                            t("ui.sign_legend", lang),
+                            value=str(saved_cfg.get("sign_legend", "") or ""),
+                            key=f"sign_legend_{sim_key}",
+                            disabled=disabled,
+                            placeholder=t("ui.sign_legend_placeholder", lang),
+                            help=t("ui.sign_legend_help", lang),
+                        )
+
                     if dspec.get("radio_control"):
                         radio_control = st.radio(
                             t("ui.radio_control", lang),
@@ -1361,6 +1377,7 @@ def render_setup(disabled=False):
                         "effective_intensity_pct": float(effective_intensity_pct) if supports_intensity else 100.0,
                         "standby_power_w": float(standby_power_w),
                         "radio_control": bool(radio_control),
+                        "sign_legend": sign_legend.strip() or None,
                         "engine_key": engine_key,
                         "battery_mode": battery_mode if battery_mode in ["Std", "Ext"] else "Std",
                     }

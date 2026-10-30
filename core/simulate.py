@@ -149,6 +149,11 @@ def resolve_device_config(device_id, per_device_config=None):
     mixed_intensity_b = float(user_cfg.get("mixed_intensity_b", 100.0))
     effective_intensity_pct = float(user_cfg.get("effective_intensity_pct", intensity_pct))
     variant_suffix = f" / {_variant_short_label(lamp_variant)}" if lamp_variant else ""
+    # A sign is known by its legend, so that is what the study calls it -
+    # the board type stays in front so the report still groups by product.
+    sign_legend = str(user_cfg.get("sign_legend") or "").strip()
+    if sign_legend:
+        variant_suffix = f" / {sign_legend}"
     display_name = user_cfg.get("display_label") or f"{dspec['name']}{variant_suffix}"
     if quantity > 1:
         display_name = f"{display_name} × {quantity}"
@@ -219,6 +224,7 @@ def resolve_device_config(device_id, per_device_config=None):
         "device_code": dspec["code"],
         "device_name": display_name,
         "lamp_variant": lamp_variant,
+        "sign_legend": sign_legend or None,
         "system_type": "external_engine",
         "engine_key": engine_key,
         "engine_name": eng["short_name"],

@@ -1,3 +1,4 @@
+import re
 # devices.py
 
 SOLAR_ENGINES = {
@@ -249,38 +250,64 @@ DEVICES = {
         "supports_intensity_adjustment": False,
         "standby_power_w": None,
     },
+    # Signs are chosen by what is written on them, not by a size class:
+    # the legend is what a designer has in front of them, and the board
+    # width follows from it. Each variant is therefore named for a real
+    # legend, with the measured size after it.
+    #
+    # Draw is at the battery, as measured for the 13-sign set of
+    # 2026 (Signs_Battery_Draw). Boards are 800 mm high; the 850 mm
+    # height has not been measured yet.
     9: {
         "code": "SIGN-L",
-        "name": "Large Guidance Sign",
+        "name": "Mandatory Instruction Sign (red)",
         "manufacturer": "S4GA",
         "system_type": "external_engine",
-        "default_power": 35.0,
+        "default_power": 54.5,
         "default_engine": "se_compact",
         "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_optima", "se_max"],
+        "legend_text": True,
         "supports_intensity_adjustment": False,
         "standby_power_w": None,
+        "default_lamp_variant": "31-13 — 1800 × 800 mm",
+        "lamp_variants": {
+            "31-13 — 1800 × 800 mm": {"power_w": 54.5},
+            "A-26 — 2000 × 800 mm": {"power_w": 62.5},
+            "A-31-13 — 2600 × 800 mm": {"power_w": 88.6},
+        },
     },
     10: {
         "code": "SIGN-M",
-        "name": "Medium Guidance Sign",
+        "name": "Direction Sign (yellow)",
         "manufacturer": "S4GA",
         "system_type": "external_engine",
-        "default_power": 22.0,
+        "default_power": 27.3,
         "default_engine": "se_compact",
         "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_optima", "se_max"],
+        "legend_text": True,
         "supports_intensity_adjustment": False,
         "standby_power_w": None,
+        "default_lamp_variant": "A ↗ — 1400 × 800 mm",
+        "lamp_variants": {
+            "A ↗ — 1400 × 800 mm": {"power_w": 27.3},
+            "↑ APRON — 2800 × 800 mm": {"power_w": 60.2},
+        },
     },
     11: {
         "code": "SIGN-S",
-        "name": "Small Guidance Sign",
+        "name": "Location Sign (yellow)",
         "manufacturer": "S4GA",
         "system_type": "external_engine",
-        "default_power": 15.0,
+        "default_power": 18.2,
         "default_engine": "se_compact",
         "compatible_engines": ["se_micro", "se_mini", "se_compact", "se_optima", "se_max"],
+        "legend_text": True,
         "supports_intensity_adjustment": False,
         "standby_power_w": None,
+        "default_lamp_variant": "A — 800 × 800 mm",
+        "lamp_variants": {
+            "A — 800 × 800 mm": {"power_w": 18.2},
+        },
     },
 }
 
@@ -335,6 +362,15 @@ _LAMP_VARIANT_ORDER = (
 )
 
 
+_BOARD_WIDTH_RE = re.compile(r"(\d{3,4})\s*[x\u00d7]\s*(\d{3,4})\s*mm")
+
+
+def _board_width_mm(name: str) -> int:
+    """Board width from a sign variant name, or 0 for anything else."""
+    m = _BOARD_WIDTH_RE.search(str(name))
+    return int(m.group(1)) if m else 0
+
+
 def _lamp_variant_sort_key(name: str):
     # Split on non-letters so "threshold/end" gives both words and a
     # trailing "(ICAO, MOS)" cannot be mistaken for one.
@@ -342,9 +378,10 @@ def _lamp_variant_sort_key(name: str):
     for group, matches in _LAMP_VARIANT_GROUPS:
         if matches(words):
             return (_LAMP_VARIANT_ORDER.index(group), str(name).lower())
-    # Anything unrecognised sorts last, alphabetically, rather than
-    # disappearing or landing in the middle of a named group.
-    return (len(_LAMP_VARIANT_ORDER), str(name).lower())
+    # Anything unrecognised sorts last. Signs order by board width, which
+    # is the sequence a designer reads them in; everything else falls back
+    # to alphabetical rather than disappearing or landing mid-group.
+    return (len(_LAMP_VARIANT_ORDER), _board_width_mm(name), str(name).lower())
 
 
 def sort_lamp_variant_names(names) -> list[str]:

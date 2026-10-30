@@ -67,6 +67,7 @@ def get_runtime_catalog():
             # Radio build: the catalogue carries the non-radio figures as
             # well, so a study can be run either way.
             "radio_control": bool(metadata.get("radio_control")),
+            "legend_text": bool(metadata.get("legend_text")),
             "standby_power_w_no_radio": metadata.get("standby_power_w_no_radio", 0.0),
             "default_power_no_radio": metadata.get("default_power_no_radio"),
             "default_lamp_variant": metadata.get("default_lamp_variant"),

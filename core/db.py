@@ -200,6 +200,7 @@ def _default_catalog_items():
         panel_tilt_deg = device.get("tilt")
         metadata = {
             "device_id": device_id,
+            "legend_text": device.get("legend_text"),
             "lamp_variants": device.get("lamp_variants"),
             "default_lamp_variant": device.get("default_lamp_variant"),
             "tilt_options": device.get("tilt_options"),
@@ -576,6 +577,38 @@ def _migrate_sp301sl_radio_and_standby(cur):
         })
 
 
+def _migrate_signs_measured_draw(cur):
+    """Signs were three size classes carrying 15, 22 and 35 W. The measured
+    set draws 18.2 to 88.6 W, and what decides it is the legend - its board
+    width and whether the face is red or yellow - so the three products
+    become sign types whose variants are named for real legends.
+
+    A saved study keeps its device, so it survives; it loses the old flat
+    power, which was understated by up to a factor of 2.5 on the large red
+    boards.
+    """
+    for code in ("SIGN-L", "SIGN-M", "SIGN-S"):
+        spec = next((d for d in DEVICES.values() if d.get("code") == code), None)
+        if not spec:
+            continue
+        cur.execute("SELECT id, metadata FROM device_catalog WHERE code = %s", (code,))
+        row = cur.fetchone()
+        if not row:
+            continue
+        metadata = dict(row.get("metadata") or {})
+        metadata["lamp_variants"] = spec["lamp_variants"]
+        metadata["default_lamp_variant"] = spec["default_lamp_variant"]
+        metadata["legend_text"] = spec.get("legend_text")
+        cur.execute(
+            """
+            UPDATE device_catalog
+            SET name = %s, default_power_w = %s, metadata = %s, updated_at = NOW()
+            WHERE id = %s
+            """,
+            (spec["name"], spec["default_power"], Jsonb(metadata), row["id"]),
+        )
+
+
 _DATA_MIGRATIONS = (
     ("2026_08_sp301sl_lamp_variants", _migrate_sp301sl_lamp_variants),
     ("2026_08_sp301sl_drop_faa_variant", _migrate_sp301sl_drop_faa_variant),
@@ -586,6 +619,7 @@ _DATA_MIGRATIONS = (
     ("2026_10_sp401smi_rtil", _migrate_sp401smi_rtil),
     ("2026_10_se_max_panel_options", _migrate_se_max_panel_options),
     ("2026_10_sp301sl_radio_and_standby", _migrate_sp301sl_radio_and_standby),
+    ("2026_10_signs_measured_draw", _migrate_signs_measured_draw),
 )
 
 

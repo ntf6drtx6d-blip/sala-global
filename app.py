@@ -500,6 +500,7 @@ def _clear_setup_widget_state_before_study_restore(selected_devices, base_device
         "power_group_",
         "panel_wp_",
         "radio_control_",
+        "sign_legend_",
     )
     saved_keys = {str(item) for item in (selected_devices or [])}
     saved_keys.update(str(item) for item in (base_device_ids or []))

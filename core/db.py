@@ -204,6 +204,9 @@ def _default_catalog_items():
             "default_lamp_variant": device.get("default_lamp_variant"),
             "tilt_options": device.get("tilt_options"),
             "fixed_tilt_mechanics": device.get("fixed"),
+            "radio_control": device.get("radio_control"),
+            "default_power_no_radio": device.get("default_power_no_radio"),
+            "standby_power_w_no_radio": device.get("standby_power_w_no_radio"),
         }
 
         if device.get("system_type") == "avlite_fixture":
@@ -532,6 +535,47 @@ def _migrate_se_max_panel_options(cur):
     )
 
 
+def _migrate_sp301sl_radio_and_standby(cur):
+    """Load the September/October measurement sheet: both radio builds per
+    variant, the 0.06 W radio standby, and the threshold and end optics
+    split by standard.
+
+    Threshold and end were one entry each covering ICAO and MOS; a saved
+    study cannot be split automatically, so it keeps the ICAO figure, which
+    is the heavier of the two and the common case.
+    """
+    spec = next((d for d in DEVICES.values() if d.get("code") == "SP-301SL"), None)
+    if not spec:
+        return
+    cur.execute("SELECT id, runtime_id, metadata FROM device_catalog WHERE code = 'SP-301SL'")
+    row = cur.fetchone()
+    if not row:
+        return
+    metadata = dict(row.get("metadata") or {})
+    metadata["lamp_variants"] = spec["lamp_variants"]
+    metadata["default_lamp_variant"] = spec["default_lamp_variant"]
+    metadata["radio_control"] = spec.get("radio_control")
+    metadata["default_power_no_radio"] = spec.get("default_power_no_radio")
+    metadata["standby_power_w_no_radio"] = spec.get("standby_power_w_no_radio")
+    cur.execute(
+        """
+        UPDATE device_catalog
+        SET metadata = %s,
+            default_power_w = %s,
+            standby_power_w = %s,
+            updated_at = NOW()
+        WHERE id = %s
+        """,
+        (Jsonb(metadata), spec["default_power"], spec.get("standby_power_w"), row["id"]),
+    )
+    runtime_id = row.get("runtime_id")
+    if runtime_id is not None:
+        _rename_saved_lamp_variants(cur, int(runtime_id), {
+            "Runway threshold light (ICAO, MOS)": "Runway threshold light (ICAO)",
+            "Runway end light (ICAO, MOS)": "Runway end light (ICAO)",
+        })
+
+
 _DATA_MIGRATIONS = (
     ("2026_08_sp301sl_lamp_variants", _migrate_sp301sl_lamp_variants),
     ("2026_08_sp301sl_drop_faa_variant", _migrate_sp301sl_drop_faa_variant),
@@ -541,6 +585,7 @@ _DATA_MIGRATIONS = (
     ("2026_09_sp301sl_obstruction_power", _migrate_sp301sl_obstruction_power),
     ("2026_10_sp401smi_rtil", _migrate_sp401smi_rtil),
     ("2026_10_se_max_panel_options", _migrate_se_max_panel_options),
+    ("2026_10_sp301sl_radio_and_standby", _migrate_sp301sl_radio_and_standby),
 )
 
 

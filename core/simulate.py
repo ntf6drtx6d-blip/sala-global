@@ -21,6 +21,51 @@ def _days_in_month_non_leap(month_index_1_based: int) -> int:
     return calendar.monthrange(2025, month_index_1_based)[1]
 
 
+def variant_power(dspec, lamp_variant, radio_control=True):
+    """Lit draw for one lamp variant, for the radio build that was chosen.
+
+    A variant with no measured non-radio figure falls back to the
+    radio-controlled one rather than inventing a saving.
+    """
+    variants = dspec.get("lamp_variants") or {}
+    entry = variants.get(lamp_variant) if lamp_variant else None
+    if entry is None:
+        if not radio_control and dspec.get("default_power_no_radio") is not None:
+            return float(dspec["default_power_no_radio"])
+        return float(dspec["default_power"])
+    if not radio_control and entry.get("power_w_no_radio") is not None:
+        return float(entry["power_w_no_radio"])
+    return float(entry["power_w"])
+
+
+def device_standby_w(dspec, radio_control=True):
+    """Standby draw. Only the radio-controlled build carries one: without a
+    radio there is nothing listening between dusk and dawn."""
+    if not radio_control:
+        return float(dspec.get("standby_power_w_no_radio", 0.0) or 0.0)
+    return float(dspec.get("standby_power_w", 0.0) or 0.0)
+
+
+def standby_day_wh(standby_power_w, required_hrs):
+    """Standby only applies while the light is off: the measured lit draw
+    already contains the electronics, so charging standby for all 24 hours
+    would count it twice."""
+    off_hours = max(0.0, 24.0 - max(0.0, float(required_hrs)))
+    return max(0.0, float(standby_power_w)) * off_hours
+
+
+def hours_from_budget(budget_wh, power_w, standby_power_w):
+    """Hours a daily budget sustains once standby is paid for the hours the
+    light is off: budget = h x power + (24 - h) x standby."""
+    power = max(float(power_w), 0.001)
+    standby = max(0.0, float(standby_power_w))
+    net = power - standby
+    if net <= 0:
+        return 0.0
+    hours = (float(budget_wh) - 24.0 * standby) / net
+    return max(0.0, min(hours, 24.0))
+
+
 def _parse_device_identifier(device_identifier, per_device_config=None):
     per_device_config = per_device_config or {}
     user_cfg = per_device_config.get(device_identifier) or per_device_config.get(str(device_identifier), {})
@@ -85,16 +130,16 @@ def resolve_device_config(device_id, per_device_config=None):
     parsed_device_id, lamp_variant, user_cfg = _parse_device_identifier(device_id, per_device_config)
     dspec = DEVICES[parsed_device_id]
 
-    if lamp_variant and dspec.get("lamp_variants") and lamp_variant in dspec["lamp_variants"]:
-        default_power = float(dspec["lamp_variants"][lamp_variant]["power_w"])
-    else:
-        default_power = float(dspec["default_power"])
+    # Radio-controlled is the default build: it is what ships unless the
+    # customer asks otherwise, and it is the heavier of the two.
+    radio_control = bool(user_cfg.get("radio_control", True)) if dspec.get("radio_control") else True
+    default_power = variant_power(dspec, lamp_variant, radio_control)
 
     supports_intensity_adjustment = bool(
         dspec.get("supports_intensity_adjustment", dspec.get("system_type") in {"builtin", "avlite_fixture"})
     )
     quantity = max(1, int(user_cfg.get("quantity", 1) or 1))
-    standby_power_w = float(user_cfg.get("standby_power_w", dspec.get("standby_power_w", 0.0) or 0.0))
+    standby_power_w = float(user_cfg.get("standby_power_w", device_standby_w(dspec, radio_control)))
     power = float(user_cfg.get("unit_power", user_cfg.get("power", default_power)))
     base_power_100 = float(user_cfg.get("base_power_w", default_power))
     intensity_mode = str(user_cfg.get("intensity_mode", "fixed"))
@@ -134,6 +179,8 @@ def resolve_device_config(device_id, per_device_config=None):
             "mixed_intensity_b": mixed_intensity_b,
             "effective_intensity_pct": effective_intensity_pct,
             "standby_power_w": standby_power_w,
+            "radio_control": radio_control,
+            "radio_control_supported": bool(dspec.get("radio_control")),
             "pv": float(dspec["pv"]),
             "batt_std": float(dspec["batt"]),
             "batt": float(dspec["batt"]),
@@ -188,6 +235,8 @@ def resolve_device_config(device_id, per_device_config=None):
         "mixed_intensity_b": mixed_intensity_b,
         "effective_intensity_pct": effective_intensity_pct,
         "standby_power_w": standby_power_w,
+        "radio_control": radio_control,
+        "radio_control_supported": bool(dspec.get("radio_control")),
         "pv": pv,
         "panel_wp": pv,
         "coplanar_panel_count": max(1, panel_count),
@@ -380,7 +429,7 @@ def _battery_behavior_metrics(
     0% on the graph = usable reserve exhausted (operational cut-off reached).
     """
     usable_battery_wh = max(0.001, float(batt_wh) * (1.0 - float(cutoff_pct) / 100.0))
-    discharge_day_wh = max(float(power_w), 0.0) * max(float(required_hrs), 0.0) + max(float(standby_power_w), 0.0) * 24.0
+    discharge_day_wh = max(float(power_w), 0.0) * max(float(required_hrs), 0.0) + standby_day_wh(standby_power_w, required_hrs)
     discharge_pct_per_day = discharge_day_wh / usable_battery_wh * 100.0
     discharge_pct_per_hr = discharge_pct_per_day / max(float(required_hrs), 1e-6) if required_hrs else 0.0
 
@@ -638,7 +687,7 @@ def max_wh_for_month_fast(lat, lon, pv_wp, batt_wh, tilt, aspect, mi, shs_eval_c
 
 
 def get_empty_battery_stats_for_required_mode(lat, lon, resolved, required_hrs, tilt, aspect, shs_eval_cache=None, cutoff_pct=30):
-    daily_wh = float(required_hrs) * max(float(resolved["power"]), 0.001) + max(float(resolved.get("standby_power_w", 0.0)), 0.0) * 24.0
+    daily_wh = float(required_hrs) * max(float(resolved["power"]), 0.001) + standby_day_wh(resolved.get("standby_power_w", 0.0), required_hrs)
     shs_eval_cache = shs_eval_cache if shs_eval_cache is not None else {}
     cache_key = (round(float(daily_wh), 6), round(float(cutoff_pct), 3))
 
@@ -721,6 +770,7 @@ def _combine_power_group(group_id, items):
         # so the report's intensity maths works on it unchanged.
         "effective_intensity_pct": (total_power / total_base * 100.0) if total_base > 0 else 100.0,
         "standby_power_w": sum(float(r.get("standby_power_w", 0.0) or 0.0) for r in resolved_list),
+        "radio_control": bool(resolved_list[0].get("radio_control", True)),
         "quantity": 1,
         # Dimming is only a lever for the group if something in it dims.
         "supports_intensity_adjustment": any(m["supports_intensity_adjustment"] for m in members),
@@ -923,10 +973,8 @@ def simulate_for_devices(
                 search_progress_callback=month_search_progress,
             )
             monthly_energy_wh.append(best_wh)
-            active_power = max(float(resolved["power"]), 0.001)
-            standby_day_wh = max(float(resolved.get("standby_power_w", 0.0)), 0.0) * 24.0
-            active_budget_wh = max(float(best_wh) - standby_day_wh, 0.0)
-            hours.append(min(active_budget_wh / active_power, 24.0))
+            hours.append(hours_from_budget(best_wh, resolved["power"],
+                                           resolved.get("standby_power_w", 0.0)))
 
             completed_steps += 1
             if progress_callback:
@@ -1054,6 +1102,8 @@ def simulate_for_devices(
             "mixed_intensity_b": resolved.get("mixed_intensity_b", 100.0),
             "effective_intensity_pct": resolved.get("effective_intensity_pct", 100.0),
             "standby_power_w": resolved.get("standby_power_w", 0.0),
+            "radio_control": resolved.get("radio_control", True),
+            "radio_control_supported": bool(resolved.get("radio_control_supported")),
             "lamp_variant": resolved.get("lamp_variant"),
             "coplanar_panel_count": resolved.get("coplanar_panel_count", 1),
             "power_group": resolved.get("power_group"),

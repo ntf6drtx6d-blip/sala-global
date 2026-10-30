@@ -52,6 +52,9 @@
           {% endif %}
           <div class="info-row"><span>{{ report.i18n['report.configuration'] }}</span><strong>{{ device.solar_configuration or 'Configured array' }}</strong></div>
           <div class="info-row"><span>{{ report.i18n['report.nominal_power'] }}</span><strong>{{ '%.1f'|format(device.nominal_power_wp) }} Wp</strong></div>
+          {% if device.radio_control_supported %}
+          <div class="info-row"><span>{{ report.i18n['report.radio_control'] }}</span><strong>{% if device.radio_control %}{{ report.i18n['ui.radio_yes'] }}{% if device.standby_power_w > 0 %} ({{ '%.2f'|format(device.standby_power_w) }} W {{ report.i18n['report.standby_suffix'] }}){% endif %}{% else %}{{ report.i18n['ui.radio_no'] }}{% endif %}</strong></div>
+          {% endif %}
           {% if device.is_single_panel %}
             <div class="info-row"><span>{{ device.panel_tilt_label or report.i18n['report.single_panel_tilt'] }}</span><strong>{{ '%.0f'|format(device.single_panel_tilt_deg) }}°</strong></div>
             <div class="info-row"><span>{{ report.i18n['report.panel_orientation'] }}</span><strong>{{ device.panel_orientation_label }}</strong></div>

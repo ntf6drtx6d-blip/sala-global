@@ -141,7 +141,12 @@ DEVICES = {
         "name": "STD SP-301SL",
         "manufacturer": "S4GA",
         "system_type": "builtin",
-        "default_power": 3.26,
+        "default_power": 3.23,
+        # The radio costs about 0.03 W while lit and doubles the standby
+        # draw, so the two builds are simulated as different lights rather
+        # than as one light with an accessory.
+        "radio_control": True,
+        "default_power_no_radio": 3.20,
         # 6 Wp panel, measured in the field at 75-88% of nominal - at or
         # above the ~75% performance ratio PVGIS models for this class of
         # site, so the study stays on the conservative side of the test.
@@ -152,29 +157,41 @@ DEVICES = {
         "tilt": 33,
         "fixed": True,
         "supports_intensity_adjustment": True,
-        "standby_power_w": None,
+        # Measured with the Wurth repeater on: 0.06 W around the clock.
+        # The non-radio build is treated as having none, so standby only
+        # ever loads a radio-controlled study.
+        "standby_power_w": 0.06,
+        "standby_power_w_no_radio": 0.0,
         # Battery-side draw, which is what the simulation needs: these are
         # measured at the battery rather than at the lamp input, so the
-        # conversion loss is already in them. FATO and the MOS holding
-        # point have no battery-side measurement yet and keep their
-        # lamp-input figures - understated by roughly the converter loss.
+        # conversion loss is already in them. Each variant carries the
+        # radio-controlled figure (Wurth column) and, where measured, the
+        # same optic without a radio.
+        #
+        # Source: SP-301 Power Consumption Summary, LiFePO4 columns,
+        # measured 11.09.2026 / 12.10.2026 at 100% intensity.
         #
         # The regulator suffix is carried in the name only where the same
         # optic exists under more than one standard, so Taxiway,
         # Obstruction, TLOF and FATO stay unsuffixed.
         "default_lamp_variant": "Runway edge light (ICAO)",
         "lamp_variants": {
-            "Runway edge light (ICAO)": {"power_w": 3.26},
-            "Runway edge light (MOS)": {"power_w": 4.9},
-            "Runway threshold light (ICAO, MOS)": {"power_w": 0.86},
-            "Runway end light (ICAO, MOS)": {"power_w": 0.36},
-            "Runway threshold/end light (ICAO)": {"power_w": 0.91},
-            "Runway threshold/end light (MOS)": {"power_w": 0.85},
-            "Taxiway edge light": {"power_w": 0.32},
-            "Obstruction Type A LI light": {"power_w": 0.842},
+            "Runway edge light (ICAO)": {"power_w": 3.23, "power_w_no_radio": 3.20},
+            "Runway edge light (MOS)": {"power_w": 4.90, "power_w_no_radio": 4.87},
+            "Runway threshold light (ICAO)": {"power_w": 0.89, "power_w_no_radio": 0.86},
+            "Runway threshold light (MOS)": {"power_w": 0.76, "power_w_no_radio": 0.73},
+            "Runway end light (ICAO)": {"power_w": 0.41, "power_w_no_radio": 0.38},
+            "Runway end light (MOS)": {"power_w": 0.40, "power_w_no_radio": 0.37},
+            "Runway threshold/end light (ICAO)": {"power_w": 0.91, "power_w_no_radio": 0.88},
+            "Runway threshold/end light (MOS)": {"power_w": 0.85, "power_w_no_radio": 0.82},
+            "Taxiway edge light": {"power_w": 0.32, "power_w_no_radio": 0.30},
+            "Obstruction Type A LI light": {"power_w": 0.84, "power_w_no_radio": 0.83},
+            # Still the lamp-input figure, and still unconfirmed whether
+            # FATO ships at 0.9 A or 1.2 A, so it keeps one value for both
+            # builds until that is settled.
             "FATO light": {"power_w": 4.61},
-            "TLOF light": {"power_w": 1.53},
-            "Holding point light (MOS)": {"power_w": 0.15},
+            "TLOF light": {"power_w": 1.51, "power_w_no_radio": 1.48},
+            "Holding point light (MOS)": {"power_w": 0.27, "power_w_no_radio": 0.25},
         },
     },
     4: {

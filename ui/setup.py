@@ -6,6 +6,7 @@ import folium
 
 from core.catalog import get_cached_runtime_catalog
 from core.devices import sort_lamp_variant_names
+from core.simulate import device_standby_w, variant_power
 from core.geocoding import search_airport, country_from_coordinates
 from core.i18n import t
 from ui.map_embed import render_folium_map
@@ -425,6 +426,7 @@ def _clear_device_widget_state(sim_key, device_id):
         "battery_mode_",
         "power_group_",
         "panel_wp_",
+        "radio_control_",
     ]
     for prefix in dynamic_prefixes:
         st.session_state.pop(f"{prefix}{sim_key}", None)
@@ -1015,8 +1017,18 @@ def render_setup(disabled=False):
                     st.session_state.per_device_config = per_device_state
                     _clear_device_widget_state(sim_key, did)
 
+                # Radio-controlled lights draw more while lit and keep a
+                # standby load; the choice therefore has to be known before
+                # the power is derived, hence reading the widget's own state
+                # rather than waiting for it to be drawn.
+                radio_control = True
+                if dspec.get("radio_control"):
+                    radio_control = bool(
+                        st.session_state.get(f"radio_control_{sim_key}",
+                                             saved_cfg.get("radio_control", True))
+                    )
                 if lamp_variant and dspec.get("lamp_variants"):
-                    base_power = float(dspec["lamp_variants"][lamp_variant]["power_w"])
+                    base_power = variant_power(dspec, lamp_variant, radio_control)
                 else:
                     base_power = _safe_float(dspec.get("default_power", dspec.get("power", dspec.get("default_consumption", 0.0))), 0.0)
 
@@ -1067,7 +1079,10 @@ def render_setup(disabled=False):
                     mixed_share_pct = _safe_float(saved_cfg.get("mixed_share_pct", default_share_pct), default_share_pct)
                     mixed_intensity_a = int(round(_safe_float(saved_cfg.get("mixed_intensity_a", default_intensity_a), default_intensity_a)))
                     mixed_intensity_b = int(round(_safe_float(saved_cfg.get("mixed_intensity_b", default_intensity_b), default_intensity_b)))
-                    standby_power_w = _safe_float(saved_cfg.get("standby_power_w", dspec.get("standby_power_w", 0.0) or 0.0), 0.0)
+                    # Derived from the build rather than from the saved
+                    # study, so flipping the radio cannot leave the old
+                    # standby figure behind.
+                    standby_power_w = device_standby_w(dspec, radio_control)
 
                     if supports_intensity:
                         st.markdown("<div class='intensity-shell'>", unsafe_allow_html=True)
@@ -1290,6 +1305,18 @@ def render_setup(disabled=False):
                         panel_wp = 0.0
                         st.caption(t("ui.built_in_source", lang))
 
+                    if dspec.get("radio_control"):
+                        radio_control = st.radio(
+                            t("ui.radio_control", lang),
+                            [True, False],
+                            horizontal=True,
+                            index=0 if radio_control else 1,
+                            format_func=lambda v: t("ui.radio_yes" if v else "ui.radio_no", lang),
+                            key=f"radio_control_{sim_key}",
+                            disabled=disabled,
+                            help=t("ui.radio_control_help", lang),
+                        )
+
                     summary = _engine_summary(dspec, SOLAR_ENGINES, engine_key, battery_mode, panel_wp)
                     total_power = float(power) * float(quantity) if system_type == "external_engine" else float(power)
 
@@ -1333,6 +1360,7 @@ def render_setup(disabled=False):
                         "mixed_intensity_b": int(mixed_intensity_b) if supports_intensity else 100,
                         "effective_intensity_pct": float(effective_intensity_pct) if supports_intensity else 100.0,
                         "standby_power_w": float(standby_power_w),
+                        "radio_control": bool(radio_control),
                         "engine_key": engine_key,
                         "battery_mode": battery_mode if battery_mode in ["Std", "Ext"] else "Std",
                     }

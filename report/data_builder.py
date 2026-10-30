@@ -1035,6 +1035,11 @@ def build_report_data(loc, required_hours, results, overall, user_name, user_org
             "solar_configuration": _solar_configuration_summary(r, language),
             "is_single_panel": _panel_count(r) <= 1,
             "panel_tilt_label": _panel_tilt_label(r, language),
+            # Disclosed because it changes the load: the radio build draws
+            # more while lit and keeps a standby draw between dusk and dawn.
+            "radio_control_supported": bool(r.get("radio_control_supported")),
+            "radio_control": bool(r.get("radio_control", True)),
+            "standby_power_w": float(r.get("standby_power_w", 0.0) or 0.0),
             "nominal_power_wp": float(r.get("total_nominal_wp", r.get("pv", 0)) or 0),
             "effective_power_wp": float(r.get("equivalent_panel_wp", r.get("pv", 0)) or 0),
             "effective_ratio_pct": float(r.get("equivalent_pct_of_physical_nominal", 0) or 0),
